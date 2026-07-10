@@ -143,14 +143,38 @@ FLUSH PRIVILEGES;
 
 ## 代码更新后如何更新容器
 
-`docker-compose-non-dev.yml` 会把源码构建进镜像。代码更新后执行：
+不需要每修改一点代码都执行完整构建。是否需要重新构建，取决于改动内容和使用的 Compose 文件。
+
+`docker-compose-non-dev.yml` 会把后端、前端源码和依赖构建进镜像，因此修改这些内容后，需要重新构建相关镜像并重启容器：
+
+- Python 后端源码
+- React/TypeScript 前端源码
+- Python、Node.js 或系统依赖
+- Dockerfile 或镜像构建配置
+
+可以构建并启动所有受影响的服务：
+
+```powershell
+docker compose -f docker-compose-non-dev.yml up -d --build
+```
+
+也可以分开执行：
 
 ```powershell
 docker compose -f docker-compose-non-dev.yml build
 docker compose -f docker-compose-non-dev.yml up -d
 ```
 
-如果更新包含数据库迁移，执行：
+如果只需要更新 Superset 应用镜像，可以只构建并启动对应服务，避免构建全部镜像：
+
+```powershell
+docker compose -f docker-compose-non-dev.yml build superset
+docker compose -f docker-compose-non-dev.yml up -d superset
+```
+
+Docker 会复用构建缓存，但修改前端依赖或影响较早的镜像层时，构建仍可能耗时较长。
+
+如果更新包含数据库迁移，构建后执行初始化：
 
 ```powershell
 docker compose -f docker-compose-non-dev.yml build
@@ -158,17 +182,25 @@ docker compose -f docker-compose-non-dev.yml run --rm superset-init
 docker compose -f docker-compose-non-dev.yml up -d
 ```
 
-如果只是修改了 `.env-local`，通常不需要重新构建：
+以下改动通常不需要重新构建镜像：
+
+- 只修改通过 volume 挂载的配置文件
+- 只修改 `.env-local` 等运行时环境变量
+- 只修改文档、测试或未被镜像使用的文件
+
+修改运行时配置后，通常重新创建容器即可：
 
 ```powershell
 docker compose -f docker-compose-non-dev.yml up -d
 ```
 
-或者：
+如果配置由容器重启时重新读取，也可以执行：
 
 ```powershell
 docker compose -f docker-compose-non-dev.yml restart
 ```
+
+日常频繁开发建议使用 `docker-compose.yml`。它会挂载本地源码并支持前端热更新，通常不需要在每次代码修改后重新构建镜像。
 
 ## 部署到其他服务器
 
