@@ -202,6 +202,165 @@ docker compose -f docker-compose-non-dev.yml restart
 
 日常频繁开发建议使用 `docker-compose.yml`。它会挂载本地源码并支持前端热更新，通常不需要在每次代码修改后重新构建镜像。
 
+## Windows 安装 python-ldap
+
+Superset 的 `development` 依赖要求 `python-ldap>=3.4.7`。PyPI 没有提供适用于 CPython 3.11 x64 的 Windows wheel，因此 `pip` 会尝试从源码编译。出现下列错误时，说明编译环境缺少 OpenLDAP 开发头文件：
+
+```text
+fatal error C1083: 无法打开包括文件: “lber.h”: No such file or directory
+```
+
+`D:\app\OpenLDAP-2.6.9` 只包含 OpenLDAP 运行时和服务端文件，不包含 `include\lber.h`、`include\ldap.h` 和编译所需的 `.lib` 文件，不能直接用于编译 `python-ldap`。
+
+当前本机环境使用公开仓库 [lv5kakita/python-ldap-build](https://github.com/lv5kakita/python-ldap-build) 在 [GitHub Actions run 28920160802](https://github.com/lv5kakita/python-ldap-build/actions/runs/28920160802) 中构建的 AMD64 artifact。AMD64 job 的构建和 `import ldap` 测试均成功；整个 workflow 显示失败是因为无关的 ARM64 job 失败。这是第三方非官方 Windows wheel，不是 PyPI 发布物。
+
+下载 AMD64 artifact：
+
+```powershell
+$artifactDir = Join-Path $env:TEMP "python-ldap-3.4.7-wheels"
+New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+$artifactZip = Join-Path $artifactDir "wheels-win-amd64.zip"
+
+curl.exe -fL `
+  "https://nightly.link/lv5kakita/python-ldap-build/actions/runs/28920160802/wheels-win-amd64.zip" `
+  -o $artifactZip
+
+tar.exe -xf $artifactZip -C $artifactDir
+```
+
+安装前校验 CPython 3.11 x64 wheel。已验证的 SHA-256 为 `411CACAC657771C12F37B05639EA59BE6ED0614D7ED41F94C33B5F5A7CE1896B`：
+
+```powershell
+$wheel = Join-Path $artifactDir "python_ldap-3.4.7-cp311-cp311-win_amd64.whl"
+Get-FileHash -Algorithm SHA256 $wheel
+```
+
+校验值匹配后安装到项目虚拟环境：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --no-deps $wheel
+```
+
+验证 Python 包、底层扩展模块和依赖一致性：
+
+```powershell
+.\.venv\Scripts\python.exe -c "import ldap, _ldap; print(ldap.__version__); print(_ldap.__file__); print(ldap.get_option(ldap.OPT_API_INFO))"
+.\.venv\Scripts\python.exe -m pip show python-ldap
+.\.venv\Scripts\python.exe -m pip check
+```
+
+预期 `ldap.__version__` 输出 `3.4.7`，`_ldap` 路径指向 `.venv\Lib\site-packages\_ldap.cp311-win_amd64.pyd`，并且 `pip check` 输出 `No broken requirements found.`。
+
+## 前端走 Docker，后端走本机
+
+如果希望保留 Docker 中的前端开发环境，同时在宿主机单独启动 Superset 后端，可以使用：
+
+```text
+docker-compose.backend-local.yml
+```
+
+这个覆盖文件会做两件事：
+
+- 把 `superset-node` 的后端地址改成 `http://host.docker.internal:8089`
+- 把 Docker 里的 `superset`、`superset-init`、`superset-worker`、`superset-worker-beat` 放进 `backend-in-docker` profile，默认 `up` 时不会启动
+
+只进行前端开发时，只需启动前端开发容器：
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.backend-local.yml up -d superset-node
+```
+
+前端开发服务器访问地址为：
+
+```text
+http://localhost:9002
+```
+
+这里使用宿主机 `9002` 映射容器内 Webpack 的 `9000`，以避免与其他服务占用的
+宿主机 `9000` 和 `9001` 冲突。前端 API 请求会代理到本机后端的 `8089`。
+
+宿主机后端连接 Docker 中的 Postgres 和 Redis 时，先设置环境变量：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+$env:FLASK_APP="superset.app:create_app()"
+$env:FLASK_DEBUG="1"
+$env:SUPERSET_CONFIG_PATH="D:\data\PycharmProjects\superset\docker\pythonpath_dev\superset_config.py"
+$env:SUPERSET_SECRET_KEY="replace_with_a_fixed_local_secret"
+$env:SUPERSET__SQLALCHEMY_DATABASE_URI="postgresql+psycopg2://superset:superset@127.0.0.1:5432/superset"
+$env:REDIS_HOST="127.0.0.1"
+$env:REDIS_PORT="6379"
+$env:REDIS_CELERY_DB="0"
+$env:REDIS_RESULTS_DB="1"
+```
+
+首次运行或元数据库有迁移时，执行：
+
+```powershell
+superset db upgrade
+superset fab create-admin --username admin --firstname Superset --lastname Admin --email admin@superset.com --password admin
+superset init
+```
+
+然后在宿主机单独启动后端：
+
+```powershell
+python -m flask run -p 8089 --reload --host 0.0.0.0
+```
+
+### PyCharm 启动配置
+
+在 PyCharm 中创建 `Python` Run/Debug Configuration，使用项目虚拟环境：
+
+```text
+D:\data\PycharmProjects\superset\.venv\Scripts\python.exe
+```
+
+选择 `Module name`，填写 `flask`，参数填写：
+
+```text
+run -p 8089 --reload --host 0.0.0.0
+```
+
+工作目录设为项目根目录，并将上一节的环境变量添加到该运行配置中，至少包括
+`FLASK_APP=superset.app:create_app()`、`SUPERSET_CONFIG_PATH`、
+`SUPERSET_SECRET_KEY`、`SUPERSET__SQLALCHEMY_DATABASE_URI` 和 Redis 配置。
+
+不要把 `superset` 填入 `Module name`。这会执行 `python -m superset`，但
+`superset` 包不提供 `__main__.py`，会报：
+
+```text
+No module named superset.__main__; 'superset' is a package and cannot be directly executed
+```
+
+不使用 PyCharm 调试器时，也可以直接调用 Superset CLI：
+
+```powershell
+.\.venv\Scripts\superset.exe run -p 8089 --with-threads --reload --debugger --debug
+```
+
+如果元数据库 URI 使用 `mysql+mysqlconnector://...`，需在本机虚拟环境安装对应驱动：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install mysql-connector-python
+```
+
+访问前端开发服务器：
+
+```text
+http://localhost:9002
+```
+
+注意事项：
+
+- 本机后端需要监听 `0.0.0.0:8089`，这样容器内的 `host.docker.internal:8089` 才能访问到它
+- 如果本机后端使用 Docker 中的 Postgres/Redis，需要保持 `db` 和 `redis` 服务已启动
+- 如果要切回“后端也跑在 Docker 中”的模式，需要显式启用 profile：
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.backend-local.yml --profile backend-in-docker up -d
+```
+
 ## 部署到其他服务器
 
 可以在本地构建镜像后推送到镜像仓库，或者导出为 tar 包再传到服务器。
