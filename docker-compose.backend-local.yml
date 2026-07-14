@@ -26,9 +26,9 @@ services:
 
   superset-node:
     environment:
-      superset: "http://host.docker.internal:8089"
+      superset: "http://host.docker.internal:8088"
     ports: !override
-      - "127.0.0.1:9002:9000"
+      - "127.0.0.1:9000:9000"
 
   superset-worker:
     profiles:
