@@ -45,7 +45,7 @@ docker compose -f docker-compose-non-dev.yml up -d
 ```env
 SUPERSET_LOAD_EXAMPLES=no
 SUPERSET_SECRET_KEY=replace_with_a_fixed_strong_secret
-DATABASE_DIALECT=mysql+mysqlconnector
+DATABASE_DIALECT=mysql
 DATABASE_HOST=127.0.0.1
 DATABASE_PORT=3306
 DATABASE_DB=superset
@@ -58,34 +58,42 @@ REDIS_PORT=6379
 
 不要在使用 `docker/pythonpath_dev/superset_config.py` 时只设置 `SUPERSET__SQLALCHEMY_DATABASE_URI` 后忽略 `DATABASE_*`。该文件不会用 `SUPERSET__SQLALCHEMY_DATABASE_URI` 覆盖主元数据库连接。
 
-`mysql://...` 会使用 SQLAlchemy 的 mysqldb 方言，需要 `mysqlclient` 并导入 `MySQLdb`。若不想编译 `mysqlclient`，推荐使用纯 Python 驱动：
+`mysql://...` 会使用 SQLAlchemy 的 mysqldb 方言，需要安装 `mysqlclient`，该依赖会提供 `MySQLdb` 模块。当前环境按 MySQL 方式支持数据库连接，因此保持：
 
 ```env
-DATABASE_DIALECT=mysql+mysqlconnector
+DATABASE_DIALECT=mysql
 ```
 
 并安装：
 
 ```text
-mysql-connector-python
+mysqlclient
 ```
 
-`docker/pythonpath_dev/superset_config.py` 会根据 `DATABASE_DIALECT` 同时拼接 `SQLALCHEMY_DATABASE_URI` 与 `SQLALCHEMY_EXAMPLES_URI`。将其设为 `mysql` 时，若镜像没有 `mysqlclient`，初始化会报 `No module named 'MySQLdb'`。
+`docker/pythonpath_dev/superset_config.py` 会根据 `DATABASE_DIALECT` 同时拼接 `SQLALCHEMY_DATABASE_URI` 与 `SQLALCHEMY_EXAMPLES_URI`。将其设为 `mysql` 时，若镜像没有 `mysqlclient`，初始化或连接测试会报 `No module named 'MySQLdb'`。
 
-数据库 URI 所用驱动必须写入 `docker/requirements-local.txt` 并重新构建镜像：
+`mysqlclient` 不是纯 Python 依赖，源码构建时需要 C 编译器、`pkg-config` 和 MySQL/MariaDB 开发库。当前 `Dockerfile` 的 `lean` 与 `dev` target 都已安装 `build-essential`、`pkg-config`、`default-libmysqlclient-dev`，且 `docker/requirements-local.txt` 已固定 `mysqlclient==2.2.8`。如果仍然看到 `No module named 'MySQLdb'`，优先重新构建当前镜像：
+
+```powershell
+docker compose -f docker-compose-non-dev.yml build --no-cache
+docker compose -f docker-compose-non-dev.yml up -d
+```
+
+不要只在缺少系统构建依赖的旧运行时镜像里通过 `docker/requirements-local.txt` 加 `mysqlclient`，否则会在 `superset-init` 中构建失败并出现 `pkg-config: not found`。修改 `Dockerfile` 或 `docker/requirements-local.txt` 后必须重新构建镜像。
+
+数据库 URI 所用驱动对应关系：
 
 | URI | 所需依赖 |
 | --- | --- |
 | `mysql://...` | `mysqlclient` |
-| `mysql+mysqlconnector://...` | `mysql-connector-python` |
 
-例如，在 `docker/requirements-local.txt` 中加入：
+当前 `docker/requirements-local.txt` 内容为：
 
 ```text
-mysql-connector-python
+mysqlclient==2.2.8
 ```
 
-然后执行：
+修改后执行：
 
 ```powershell
 docker compose -f docker-compose-non-dev.yml build
@@ -281,7 +289,7 @@ SUPERSET_DEFAULT_LOCALE=zh
 cat > /opt/superset/docker/pythonpath_dev/superset_config_docker.py <<'EOF'
 import os
 
-BABEL_DEFAULT_LOCALE = os.getenv("SUPERSET_DEFAULT_LOCALE", "zh")
+BABEL_DEFAULT_LOCALE = os.getenv("SUPERSET_DEFAULT_LOCALE") or "zh"
 
 LANGUAGES = {
     "en": {"flag": "us", "name": "English"},
@@ -368,10 +376,10 @@ python -m flask run -p 8088 --reload --host 0.0.0.0
 .\.venv\Scripts\superset.exe run -p 8088 --with-threads --reload --debugger --debug
 ```
 
-若元数据库 URI 使用 `mysql+mysqlconnector://...`，请在本机虚拟环境安装驱动：
+若元数据库 URI 使用 `mysql://...`，请在本机虚拟环境安装驱动：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install mysql-connector-python
+.\.venv\Scripts\python.exe -m pip install mysqlclient
 ```
 
 注意：本机后端必须监听 `0.0.0.0:8088`，使 Docker 容器可以通过 `host.docker.internal:8088` 访问。使用 Docker 中的 Postgres 与 Redis 时，需保持 `db` 和 `redis` 服务运行。
@@ -516,11 +524,13 @@ docker load -i superset-prod.tar
 └── superset-prod.tar
 ```
 
-`docker/requirements-local.txt` 用于安装服务器运行时额外驱动。连接 MySQL 且使用 `mysql+mysqlconnector` 时写入：
+`superset-prod:latest` 连接 MySQL 且使用 `mysql` 方言时，镜像内必须具备编译 `mysqlclient` 的系统依赖。本仓库 `Dockerfile` 的 `lean` target 已安装 `build-essential`、`pkg-config` 和 `default-libmysqlclient-dev`，服务器目录中的 `docker/requirements-local.txt` 应保持：
 
 ```text
-mysql-connector-python
+mysqlclient==2.2.8
 ```
+
+如果服务器仍报 `pkg-config: not found`，说明运行的不是按当前 `Dockerfile` 重新构建的镜像，需要重新构建并导出 `superset-prod:latest`。
 
 服务器启动文件 `docker-compose.server.yml` 示例：
 
@@ -621,7 +631,7 @@ REDIS_PORT=6379
 REDIS_CELERY_DB=0
 REDIS_RESULTS_DB=1
 
-DATABASE_DIALECT=mysql+mysqlconnector
+DATABASE_DIALECT=mysql
 DATABASE_HOST=172.30.0.1
 DATABASE_PORT=3306
 DATABASE_DB=superset
@@ -682,7 +692,9 @@ firewall-cmd --reload
 
 | 错误 | 原因 | 处理 |
 | --- | --- | --- |
-| `No module named 'MySQLdb'` | 使用了 `DATABASE_DIALECT=mysql`，但镜像没有 `mysqlclient` | 改为 `mysql+mysqlconnector` 并安装 `mysql-connector-python`，或打包 `mysqlclient` |
+| `No module named 'MySQLdb'` | 使用了 `DATABASE_DIALECT=mysql`，但镜像没有 `mysqlclient` | 使用包含 `mysqlclient` 的镜像，或在带 `pkg-config`、`default-libmysqlclient-dev` 的构建阶段安装 `mysqlclient` 后重新构建 |
+| `pkg-config: not found` / `Can not find valid pkg-config name` | 运行的镜像没有按当前 `Dockerfile` 构建，缺少 `pkg-config`、`default-libmysqlclient-dev` | 重新构建并部署包含 MySQL 系统依赖的镜像 |
+| `error: command 'gcc' failed: No such file or directory` | 运行的镜像缺少 C 编译工具链，无法源码编译 `mysqlclient` | 重新构建并部署包含 `build-essential` 的镜像 |
 | `Name or service not known: host.docker.internal` | Linux 服务器默认没有 Docker Desktop 的宿主机别名 | 使用 Docker 网关 IP，或在 Compose 中显式配置 `host-gateway` |
 | `No route to host` | 防火墙或宿主机网络拒绝 Docker 网段访问 3306 | 放行 `172.30.0.0/16` 到 3306，并确认 MySQL 监听 `0.0.0.0` |
 
