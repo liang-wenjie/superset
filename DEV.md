@@ -10,6 +10,8 @@
   - [端口与健康检查](#端口与健康检查)
   - [初始化与日志](#初始化与日志)
   - [更新镜像与代码](#更新镜像与代码)
+  - [构建生产镜像包](#构建生产镜像包)
+  - [设置中文界面](#设置中文界面)
 - [前端 Docker、后端本机](#前端-docker后端本机)
   - [启动前端容器](#启动前端容器)
   - [启动本机后端](#启动本机后端)
@@ -38,29 +40,37 @@ docker compose -f docker-compose-non-dev.yml up -d
 
 ### 配置元数据库
 
-元数据库配置位于 `docker/.env-local`。使用 Superset 的最终覆盖变量 `SUPERSET__SQLALCHEMY_DATABASE_URI`，不要通过修改 `DATABASE_DIALECT` 切换元数据库。
+元数据库配置位于 `docker/.env-local`。当前挂载的 `docker/pythonpath_dev/superset_config.py` 会根据 `DATABASE_*` 变量拼接 `SQLALCHEMY_DATABASE_URI`，因此使用该配置文件时应直接维护 `DATABASE_DIALECT`、`DATABASE_HOST`、`DATABASE_PORT`、`DATABASE_DB`、`DATABASE_USER` 和 `DATABASE_PASSWORD`。
 
 ```env
 SUPERSET_LOAD_EXAMPLES=no
 SUPERSET_SECRET_KEY=replace_with_a_fixed_strong_secret
-SUPERSET__SQLALCHEMY_DATABASE_URI=mysql://superset:password@127.0.0.1:3306/superset
-
-SUPERSET_PORT=8088
-REDIS_PORT=6379
-```
-
-不要使用下列变量配置元数据库：
-
-```env
-DATABASE_DIALECT=mysql
+DATABASE_DIALECT=mysql+mysqlconnector
 DATABASE_HOST=127.0.0.1
 DATABASE_PORT=3306
 DATABASE_DB=superset
 DATABASE_USER=superset
 DATABASE_PASSWORD=password
+
+SUPERSET_PORT=8088
+REDIS_PORT=6379
 ```
 
-`docker/pythonpath_dev/superset_config.py` 会根据 `DATABASE_DIALECT` 同时拼接 `SQLALCHEMY_DATABASE_URI` 与 `SQLALCHEMY_EXAMPLES_URI`。将其设为 `mysql` 后，示例数据加载流程可能使用 MySQL 驱动连接 Compose 中的 Postgres 服务，从而导致 handshake 失败。
+不要在使用 `docker/pythonpath_dev/superset_config.py` 时只设置 `SUPERSET__SQLALCHEMY_DATABASE_URI` 后忽略 `DATABASE_*`。该文件不会用 `SUPERSET__SQLALCHEMY_DATABASE_URI` 覆盖主元数据库连接。
+
+`mysql://...` 会使用 SQLAlchemy 的 mysqldb 方言，需要 `mysqlclient` 并导入 `MySQLdb`。若不想编译 `mysqlclient`，推荐使用纯 Python 驱动：
+
+```env
+DATABASE_DIALECT=mysql+mysqlconnector
+```
+
+并安装：
+
+```text
+mysql-connector-python
+```
+
+`docker/pythonpath_dev/superset_config.py` 会根据 `DATABASE_DIALECT` 同时拼接 `SQLALCHEMY_DATABASE_URI` 与 `SQLALCHEMY_EXAMPLES_URI`。将其设为 `mysql` 时，若镜像没有 `mysqlclient`，初始化会报 `No module named 'MySQLdb'`。
 
 数据库 URI 所用驱动必须写入 `docker/requirements-local.txt` 并重新构建镜像：
 
@@ -72,7 +82,7 @@ DATABASE_PASSWORD=password
 例如，在 `docker/requirements-local.txt` 中加入：
 
 ```text
-mysqlclient
+mysql-connector-python
 ```
 
 然后执行：
@@ -173,7 +183,135 @@ docker compose -f docker-compose-non-dev.yml restart
 
 Docker 会复用构建缓存，但修改前端依赖或较早镜像层时，构建仍可能耗时较长。日常频繁开发建议使用 `docker-compose.yml`，无需在每次代码修改后重新构建。
 
+### 构建生产镜像包
+
+`docker-compose-non-dev.yml` 中 Superset 服务默认仍使用 Dockerfile 的 `dev` target。需要导出部署到服务器的生产镜像包时，叠加 `docker-compose-prod-export.yml`，将 Superset 应用镜像构建为 `lean` target：
+
+`docker-compose-prod-export.yml` 应启用翻译包构建：
+
+```yaml
+args:
+  DEV_MODE: "false"
+  BUILD_TRANSLATIONS: "true"
+  NPM_BUILD_CMD: build
+```
+
+```powershell
+docker compose `
+  -f docker-compose-non-dev.yml `
+  -f docker-compose-prod-export.yml `
+  build superset
+```
+
+构建完成后，本地镜像名为：
+
+```text
+superset-prod:latest
+```
+
+导出镜像包：
+
+```powershell
+docker save -o superset-prod.tar superset-prod:latest
+```
+
+如果需要压缩后传输：
+
+```powershell
+tar.exe -czf superset-prod.tar.gz superset-prod.tar
+```
+
+目标服务器加载镜像：
+
+```bash
+docker load -i superset-prod.tar
+```
+
+服务器部署用的 Compose 文件应使用已加载的镜像，而不是在服务器上重新 `build`：
+
+```yaml
+services:
+  superset:
+    image: superset-prod:latest
+  superset-init:
+    image: superset-prod:latest
+  superset-worker:
+    image: superset-prod:latest
+  superset-worker-beat:
+    image: superset-prod:latest
+```
+
+首次部署或包含数据库迁移时，在服务器执行初始化后再启动服务：
+
+```bash
+docker compose run --rm superset-init
+docker compose up -d
+```
+
+### 设置中文界面
+
+Superset 默认关闭多语言列表，不能只通过 `.env` 设置一个语言变量。要让前端页面显示中文，需要在构建阶段生成翻译包，并在运行时配置中启用 `zh`。
+
+构建生产镜像包时，确认 `docker-compose-prod-export.yml` 的 build args 包含：
+
+```yaml
+BUILD_TRANSLATIONS: "true"
+```
+
+然后重新构建并导出：
+
+```powershell
+docker compose `
+  -f docker-compose-non-dev.yml `
+  -f docker-compose-prod-export.yml `
+  build superset
+
+docker save -o superset-prod.tar superset-prod:latest
+```
+
+服务器加载新镜像后，在 `docker/.env-local` 中加入：
+
+```env
+SUPERSET_DEFAULT_LOCALE=zh
+```
+
+`SUPERSET_DEFAULT_LOCALE` 是本地自定义变量，需要由 `superset_config_docker.py` 读取。服务器创建或更新 `docker/pythonpath_dev/superset_config_docker.py`：
+
+```bash
+cat > /opt/superset/docker/pythonpath_dev/superset_config_docker.py <<'EOF'
+import os
+
+BABEL_DEFAULT_LOCALE = os.getenv("SUPERSET_DEFAULT_LOCALE", "zh")
+
+LANGUAGES = {
+    "en": {"flag": "us", "name": "English"},
+    "zh": {"flag": "cn", "name": "简体中文"},
+}
+EOF
+```
+
+重启服务：
+
+```bash
+cd /opt/superset
+docker-compose -f docker-compose.server.yml down
+docker-compose -f docker-compose.server.yml up -d
+```
+
+已经登录过的浏览器会话可能仍保留旧语言。可访问语言切换地址，或清理浏览器 Cookie 后重新登录：
+
+```text
+http://服务器IP:8088/lang/zh
+```
+
+若中文仍不生效，优先检查两点：
+
+- 构建镜像时是否设置了 `BUILD_TRANSLATIONS=true`
+- 容器日志中是否加载了 `superset_config_docker.py`
+
 ## 前端 Docker、后端本机
+
+注意：只能访问8088开发端口，9000无法加载开发js环境
 
 覆盖文件 `docker-compose.backend-local.yml` 会：
 
@@ -295,12 +433,16 @@ tar.exe -xf $artifactZip -C $artifactDir
 ```powershell
 $wheel = Join-Path $artifactDir "python_ldap-3.4.7-cp311-cp311-win_amd64.whl"
 Get-FileHash -Algorithm SHA256 $wheel
+
+# 如果 python为3.12
+$wheel = Join-Path $artifactDir "python_ldap-3.4.7-cp312-cp312-win_amd64.whl"
 ```
 
 校验值匹配后，安装并验证：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install --no-deps $wheel
+# 执行完这一步，再执行：pip install -r .\requirements\development.txt
 .\.venv\Scripts\python.exe -c "import ldap, _ldap; print(ldap.__version__); print(_ldap.__file__); print(ldap.get_option(ldap.OPT_API_INFO))"
 .\.venv\Scripts\python.exe -m pip show python-ldap
 .\.venv\Scripts\python.exe -m pip check
@@ -335,33 +477,221 @@ FLUSH PRIVILEGES;
 
 ## 部署到其他服务器
 
-可选择推送镜像到镜像仓库，或导出为 tar 包传输。
+可选择推送镜像到镜像仓库，或导出为 tar 包传输。服务器只需要加载生产镜像并使用不含 `build:` 的 Compose 文件启动，不需要完整源码。
 
 推送到镜像仓库：
 
 ```powershell
-docker compose -f docker-compose-non-dev.yml build
-docker tag superset-superset:latest your-registry/superset:custom
+docker compose `
+  -f docker-compose-non-dev.yml `
+  -f docker-compose-prod-export.yml `
+  build superset
+docker tag superset-prod:latest your-registry/superset:custom
 docker push your-registry/superset:custom
 ```
 
 导出 tar 包：
 
 ```powershell
-docker save superset-superset:latest -o superset-custom.tar
+docker save -o superset-prod.tar superset-prod:latest
 ```
 
 目标服务器加载并启动：
 
 ```bash
-docker load -i superset-custom.tar
-docker compose run --rm superset-init
-docker compose up -d
+docker load -i superset-prod.tar
 ```
 
-在目标服务器通过环境变量或 `.env` 文件配置：
+服务器目录示例：
+
+```text
+/opt/superset/
+├── docker/
+│   ├── .env
+│   ├── .env-local
+│   ├── pythonpath_dev/
+│   │   └── superset_config.py
+│   └── requirements-local.txt
+├── docker-compose.server.yml
+└── superset-prod.tar
+```
+
+`docker/requirements-local.txt` 用于安装服务器运行时额外驱动。连接 MySQL 且使用 `mysql+mysqlconnector` 时写入：
+
+```text
+mysql-connector-python
+```
+
+服务器启动文件 `docker-compose.server.yml` 示例：
+
+```yaml
+x-superset-volumes: &superset-volumes
+  - ./docker/pythonpath_dev:/app/pythonpath
+  - ./docker/requirements-local.txt:/app/docker/requirements-local.txt:ro
+  - superset_home:/app/superset_home
+
+services:
+  redis:
+    image: redis:7
+    container_name: superset_cache
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+
+  superset-init:
+    image: superset-prod:latest
+    container_name: superset_init
+    command: ["/app/docker/docker-init.sh"]
+    user: "root"
+    env_file:
+      - docker/.env
+      - docker/.env-local
+    depends_on:
+      - redis
+    volumes: *superset-volumes
+    healthcheck:
+      disable: true
+
+  superset:
+    image: superset-prod:latest
+    container_name: superset_app
+    command: ["/app/docker/docker-bootstrap.sh", "app-gunicorn"]
+    user: "root"
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    env_file:
+      - docker/.env
+      - docker/.env-local
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    volumes: *superset-volumes
+
+  superset-worker:
+    image: superset-prod:latest
+    container_name: superset_worker
+    command: ["/app/docker/docker-bootstrap.sh", "worker"]
+    user: "root"
+    restart: unless-stopped
+    env_file:
+      - docker/.env
+      - docker/.env-local
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    volumes: *superset-volumes
+
+  superset-worker-beat:
+    image: superset-prod:latest
+    container_name: superset_worker_beat
+    command: ["/app/docker/docker-bootstrap.sh", "beat"]
+    user: "root"
+    restart: unless-stopped
+    env_file:
+      - docker/.env
+      - docker/.env-local
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    volumes: *superset-volumes
+    healthcheck:
+      disable: true
+
+volumes:
+  superset_home:
+  redis:
+```
+
+不要挂载整个 `./docker:/app/docker`。生产镜像内已经有 `/app/docker/docker-init.sh` 和 `/app/docker/docker-bootstrap.sh`，整目录挂载会覆盖镜像内脚本并导致：
+
+```text
+exec: "/app/docker/docker-init.sh": stat /app/docker/docker-init.sh: no such file or directory
+```
+
+在目标服务器通过 `docker/.env-local` 配置：
 
 ```env
 SUPERSET_SECRET_KEY=replace_with_the_same_fixed_secret
-SUPERSET__SQLALCHEMY_DATABASE_URI=mysql://superset:password@mysql-host:3306/superset
+SUPERSET_LOAD_EXAMPLES=no
+
+SUPERSET_PORT=8088
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_CELERY_DB=0
+REDIS_RESULTS_DB=1
+
+DATABASE_DIALECT=mysql+mysqlconnector
+DATABASE_HOST=172.30.0.1
+DATABASE_PORT=3306
+DATABASE_DB=superset
+DATABASE_USER=superset
+DATABASE_PASSWORD=password
+
+EXAMPLES_HOST=172.30.0.1
+EXAMPLES_PORT=3306
+EXAMPLES_DB=superset
+EXAMPLES_USER=superset
+EXAMPLES_PASSWORD=password
+```
+
+Linux 容器内的 `127.0.0.1` 是容器自身，不是宿主机。若 MySQL 与 Superset 部署在同一台服务器，容器访问宿主机 MySQL 应使用 Docker 网关地址，例如固定为 `172.30.0.1`。
+
+为避免每次 `docker-compose down` 后 Docker 重新分配网关，在 `docker-compose.server.yml` 末尾固定默认网络：
+
+```yaml
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+          gateway: 172.30.0.1
+```
+
+宿主机 MySQL 必须监听非 localhost 地址：
+
+```bash
+ss -lntp | grep 3306
+```
+
+若只看到 `127.0.0.1:3306`，需要在 MySQL 配置的 `[mysqld]` 下设置：
+
+```ini
+bind-address = 0.0.0.0
+```
+
+然后重启 MySQL。
+
+MySQL 授权示例：
+
+```sql
+CREATE USER IF NOT EXISTS 'superset'@'172.30.%' IDENTIFIED BY 'password';
+ALTER USER 'superset'@'172.30.%' IDENTIFIED BY 'password';
+GRANT ALL PRIVILEGES ON superset.* TO 'superset'@'172.30.%';
+FLUSH PRIVILEGES;
+```
+
+如果服务器开启 firewalld，需要放行 Docker 固定网段访问宿主机 3306：
+
+```bash
+firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="172.30.0.0/16" port protocol="tcp" port="3306" accept'
+firewall-cmd --reload
+```
+
+常见错误与含义：
+
+| 错误 | 原因 | 处理 |
+| --- | --- | --- |
+| `No module named 'MySQLdb'` | 使用了 `DATABASE_DIALECT=mysql`，但镜像没有 `mysqlclient` | 改为 `mysql+mysqlconnector` 并安装 `mysql-connector-python`，或打包 `mysqlclient` |
+| `Name or service not known: host.docker.internal` | Linux 服务器默认没有 Docker Desktop 的宿主机别名 | 使用 Docker 网关 IP，或在 Compose 中显式配置 `host-gateway` |
+| `No route to host` | 防火墙或宿主机网络拒绝 Docker 网段访问 3306 | 放行 `172.30.0.0/16` 到 3306，并确认 MySQL 监听 `0.0.0.0` |
+
+启动与查看日志：
+
+```bash
+docker-compose -f docker-compose.server.yml down
+docker-compose -f docker-compose.server.yml up -d
+docker-compose -f docker-compose.server.yml logs -f superset-init
+docker-compose -f docker-compose.server.yml logs -f superset
+curl http://localhost:8088/health
 ```
