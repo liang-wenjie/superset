@@ -258,7 +258,7 @@ docker compose up -d
 
 ### 设置中文界面
 
-Superset 不会自动把 `SUPERSET_DEFAULT_LOCALE=zh` 这种环境变量映射成界面语言配置。要让中文显示出来，需要在 `superset_config.py` 或 Docker 挂载的配置文件里显式设置 `BABEL_DEFAULT_LOCALE` 和 `LANGUAGES`。
+当前这套本地配置已经不再使用 `BABEL_DEFAULT_LOCALE`。要让中文在界面里可选并正常显示，需要在 `superset_config.py` 或 Docker 挂载的配置文件里启用 `SUPPORTED_LANGUAGES`，再通过 `SUPERSET_LANGUAGES` 控制实际开放的语言列表。
 
 如果是本地源码启动，仓库根目录的 [superset_config.py](/D:/data/projects/superset/superset_config.py) 可按下面方式配置：
 
@@ -269,8 +269,6 @@ SUPPORTED_LANGUAGES = {
     "en": {"flag": "us", "name": "English"},
     "zh": {"flag": "cn", "name": "Chinese"},
 }
-
-BABEL_DEFAULT_LOCALE = os.getenv("SUPERSET_DEFAULT_LOCALE", "zh")
 
 
 def get_enabled_languages() -> dict[str, dict[str, str]]:
@@ -294,7 +292,6 @@ LANGUAGES = get_enabled_languages()
 
 ```powershell
 $env:SUPERSET_CONFIG_PATH="D:\data\projects\superset\superset_config.py"
-$env:SUPERSET_DEFAULT_LOCALE="zh"
 $env:SUPERSET_LANGUAGES="en,zh"
 python -m flask run -p 8088 --reload --host 0.0.0.0
 ```
@@ -302,7 +299,6 @@ python -m flask run -p 8088 --reload --host 0.0.0.0
 如果是 Docker 或服务器部署，可以继续在 `docker/.env-local` 中放环境变量，但它们只是给配置文件读取用的输入值：
 
 ```env
-SUPERSET_DEFAULT_LOCALE=zh
 SUPERSET_LANGUAGES=en,zh
 ```
 
@@ -316,7 +312,6 @@ SUPPORTED_LANGUAGES = {
     "zh": {"flag": "cn", "name": "Chinese"},
 }
 
-BABEL_DEFAULT_LOCALE = os.getenv("SUPERSET_DEFAULT_LOCALE", "zh")
 LANGUAGES = {
     code: SUPPORTED_LANGUAGES[code]
     for code in [item.strip() for item in os.getenv("SUPERSET_LANGUAGES", "en,zh").split(",")]
@@ -352,7 +347,7 @@ http://服务器IP:8088/lang/zh
 若中文仍不生效，优先检查这几项：
 
 - `SUPERSET_CONFIG_PATH` 或容器挂载的配置文件是否真的被加载
-- 配置文件里是否设置了 `BABEL_DEFAULT_LOCALE` 和 `LANGUAGES`
+- 配置文件里是否定义了 `SUPPORTED_LANGUAGES`，并正确导出了 `LANGUAGES`
 - 生产镜像构建时是否设置了 `BUILD_TRANSLATIONS=true`
 - 浏览器当前会话是否还缓存着旧语言
 
