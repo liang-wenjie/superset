@@ -68,7 +68,7 @@ REDIS_RESULTS_DB = os.getenv("REDIS_RESULTS_DB", "1")
 
 SUPPORTED_LANGUAGES = {
     "en": {"flag": "us", "name": "English"},
-    "zh": {"flag": "cn", "name": "Chinese"},
+    "zh": {"flag": "cn", "name": "简体中文"},
 }
 
 
