@@ -66,6 +66,30 @@ REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_CELERY_DB = os.getenv("REDIS_CELERY_DB", "0")
 REDIS_RESULTS_DB = os.getenv("REDIS_RESULTS_DB", "1")
 
+SUPPORTED_LANGUAGES = {
+    "en": {"flag": "us", "name": "English"},
+    "zh": {"flag": "cn", "name": "简体中文"},
+}
+
+
+def get_enabled_languages() -> dict[str, dict[str, str]]:
+    """Return the configured UI languages, falling back to English."""
+
+    language_codes = [
+        code.strip()
+        for code in os.getenv("SUPERSET_LANGUAGES", "en,zh").split(",")
+        if code.strip()
+    ]
+    languages = {
+        code: SUPPORTED_LANGUAGES[code]
+        for code in language_codes
+        if code in SUPPORTED_LANGUAGES
+    }
+    return languages or {"en": SUPPORTED_LANGUAGES["en"]}
+
+
+LANGUAGES = get_enabled_languages()
+
 RESULTS_BACKEND = FileSystemCache("/app/superset_home/sqllab")
 
 CACHE_CONFIG = {
