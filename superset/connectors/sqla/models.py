@@ -401,6 +401,7 @@ class BaseDatasource(
         for metric in metrics:
             if metric.metric_name not in existing_metrics:
                 metric.table_id = self.id
+                db.session.add(metric)
                 self.metrics.append(metric)
 
     @property
@@ -961,6 +962,7 @@ class TableColumn(AuditMixinNullable, ImportExportMixin, CertificationMixin, Mod
     table: Mapped["SqlaTable"] = relationship(
         "SqlaTable",
         back_populates="columns",
+        cascade_backrefs=False,
     )
 
     export_fields = [
@@ -1206,6 +1208,7 @@ class SqlMetric(AuditMixinNullable, ImportExportMixin, CertificationMixin, Model
     table: Mapped["SqlaTable"] = relationship(
         "SqlaTable",
         back_populates="metrics",
+        cascade_backrefs=False,
     )
 
     export_fields = [
@@ -1297,12 +1300,14 @@ class SqlaTable(
         TableColumn,
         back_populates="table",
         cascade="all, delete-orphan",
+        cascade_backrefs=False,
         passive_deletes=True,
     )
     metrics: Mapped[list[SqlMetric]] = relationship(
         SqlMetric,
         back_populates="table",
         cascade="all, delete-orphan",
+        cascade_backrefs=False,
         passive_deletes=True,
     )
     metric_class = SqlMetric
@@ -2024,6 +2029,7 @@ class SqlaTable(
                     type=col["type"],
                     table=self,
                 )
+                db.session.add(new_column)
                 new_column.is_dttm = new_column.is_temporal
                 # Set description from comment field if available
                 if col.get("comment"):
