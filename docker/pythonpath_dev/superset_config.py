@@ -42,11 +42,15 @@ EXAMPLES_HOST = os.getenv("EXAMPLES_HOST")
 EXAMPLES_PORT = os.getenv("EXAMPLES_PORT")
 EXAMPLES_DB = os.getenv("EXAMPLES_DB")
 
-# The SQLAlchemy connection string.
-SQLALCHEMY_DATABASE_URI = (
-    f"{DATABASE_DIALECT}://"
-    f"{DATABASE_USER}:{DATABASE_PASSWORD}@"
-    f"{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_DB}"
+# The SQLAlchemy connection string. An explicit URI takes precedence so local
+# development can use SQLite without populating database component variables.
+SQLALCHEMY_DATABASE_URI = os.getenv(
+    "SQLALCHEMY_DATABASE_URI",
+    (
+        f"{DATABASE_DIALECT}://"
+        f"{DATABASE_USER}:{DATABASE_PASSWORD}@"
+        f"{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_DB}"
+    ),
 )
 
 # Use environment variable if set, otherwise construct from components

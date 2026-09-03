@@ -353,7 +353,8 @@ http://服务器IP:8088/lang/zh
 
 ## 前端 Docker、后端本机
 
-注意：只能访问8088开发端口，9000无法加载开发js环境
+本模式下后端监听宿主机 `8088`，前端开发服务器监听宿主机 `9000`。
+浏览器应访问 `http://localhost:9000`；不要把 `9000` 当作后端 API 端口。
 
 覆盖文件 `docker-compose.backend-local.yml` 会：
 
@@ -371,7 +372,7 @@ docker compose -f docker-compose.yml -f docker-compose.backend-local.yml up -d s
 
 前端开发服务器地址：`http://localhost:9000`。
 
-这里使用宿主机 `9000` 映射容器内 Webpack 的 `9000`，以避免与其他服务占用的宿主机 `9000` 和 `9001` 冲突。前端 API 请求会代理到本机后端的 `8089`。
+这里使用宿主机 `9000` 映射容器内 Webpack 的 `9000`。前端 API 请求会代理到宿主机后端的 `8088`，对应覆盖文件中的 `http://host.docker.internal:8088`。
 
 ### 启动本机后端
 
@@ -381,7 +382,7 @@ docker compose -f docker-compose.yml -f docker-compose.backend-local.yml up -d s
 .\.venv\Scripts\Activate.ps1
 $env:FLASK_APP="superset.app:create_app()"
 $env:FLASK_DEBUG="1"
-$env:SUPERSET_CONFIG_PATH="D:\data\PycharmProjects\superset\docker\pythonpath_dev\superset_config.py"
+$env:SUPERSET_CONFIG_PATH="D:\data\projects\superset\docker\pythonpath_dev\superset_config.py"
 $env:SUPERSET_SECRET_KEY="replace_with_a_fixed_local_secret"
 $env:SUPERSET__SQLALCHEMY_DATABASE_URI="postgresql+psycopg2://superset:superset@127.0.0.1:5432/superset"
 $env:REDIS_HOST="127.0.0.1"
@@ -430,13 +431,23 @@ docker compose -f docker-compose.yml -f docker-compose.backend-local.yml --profi
 
 | 字段 | 值 |
 | --- | --- |
-| Python interpreter | `D:\data\PycharmProjects\superset\.venv\Scripts\python.exe` |
+| Python interpreter | `D:\data\projects\superset\.venv\Scripts\python.exe` |
 | Run mode | `Module name` |
 | Module name | `flask` |
 | Parameters | `run -p 8088 --reload --host 0.0.0.0` |
 | Working directory | 项目根目录 |
 
 将上一节的环境变量加入该运行配置，至少包含 `FLASK_APP`、`SUPERSET_CONFIG_PATH`、`SUPERSET_SECRET_KEY`、`SUPERSET__SQLALCHEMY_DATABASE_URI` 和 Redis 配置。
+
+### 筛选列搜索无响应
+
+如果 Explore 中能打开页面，但筛选列搜索没有反应，请按顺序检查：
+
+1. 浏览器访问的是 `http://localhost:9000`，而不是直接访问 `8088`。
+2. 本机后端确实监听 `0.0.0.0:8088`，并可访问 `http://localhost:8088/health`。
+3. 浏览器 Network 中搜索时应出现 `/api/v1/datasource/table/<id>/column/<column>/values/` 请求。
+4. 如果没有该请求，通常是加载了旧的前端 bundle；重启 `superset-node` 并强制刷新浏览器。
+5. 如果请求返回 `401/403/404/500`，分别检查登录状态、权限、前后端版本和后端日志。
 
 不要将 `superset` 设为 `Module name`。这会执行 `python -m superset`，但该包没有 `__main__.py`，会报错：
 

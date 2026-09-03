@@ -29,6 +29,9 @@ services:
       superset: "http://host.docker.internal:8088"
     ports: !override
       - "127.0.0.1:9000:9000"
+    volumes:
+      # Keep Linux dependencies outside the Windows source bind mount.
+      - superset_frontend_node_modules:/app/superset-frontend/node_modules
 
   superset-worker:
     profiles:
@@ -37,3 +40,7 @@ services:
   superset-worker-beat:
     profiles:
       - backend-in-docker
+
+volumes:
+  superset_frontend_node_modules:
+    external: false
