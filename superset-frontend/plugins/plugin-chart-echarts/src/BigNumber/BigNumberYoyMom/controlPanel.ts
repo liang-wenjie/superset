@@ -154,6 +154,60 @@ const config: ControlPanelConfig = {
             },
           },
         ],
+        [
+          {
+            name: 'show_additional_metrics',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Show Additional Metrics'),
+              renderTrigger: true,
+              default: false,
+              description: t(
+                'Display extra statistics as small title + value items below ' +
+                  'the big number. Add or remove metrics to control how many ' +
+                  'items are shown.',
+              ),
+            },
+          },
+        ],
+        [
+          {
+            name: 'additional_metrics',
+            config: {
+              ...sharedControls.metrics,
+              label: t('Additional metrics'),
+              description: t(
+                'Metrics to display as small statistics below the big number ' +
+                  '(each one renders its own title and value).',
+              ),
+              default: [],
+              validators: [],
+              resetOnHide: false,
+              visibility: ({ controls }: ControlPanelsContainerProps) =>
+                controls?.show_additional_metrics?.value === true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'additional_metric_font_size',
+            config: {
+              type: 'SelectControl',
+              label: t('Additional Metric Font Size'),
+              renderTrigger: true,
+              clearable: false,
+              default: 0.15,
+              options: [
+                { label: t('Tiny'), value: 0.12 },
+                { label: t('Small'), value: 0.15 },
+                { label: t('Normal'), value: 0.2 },
+                { label: t('Large'), value: 0.25 },
+              ],
+              visibility: ({ controls }: ControlPanelsContainerProps) =>
+                controls?.show_additional_metrics?.value === true,
+            },
+          },
+        ],
       ],
     },
     {

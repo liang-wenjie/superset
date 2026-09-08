@@ -50,9 +50,9 @@ export default function buildQuery(formData: BigNumberYoyMomQueryFormData) {
       {
         ...baseQueryObject,
         groupby,
-        metrics: ensureIsArray(baseQueryObject.metrics).concat(
-          ensureIsArray(formData.comparison_metric),
-        ),
+        metrics: ensureIsArray(baseQueryObject.metrics)
+          .concat(ensureIsArray(formData.comparison_metric))
+          .concat(ensureIsArray(formData.additional_metrics)),
         post_processing: [],
         time_offsets: [],
       },
@@ -98,6 +98,9 @@ export default function buildQuery(formData: BigNumberYoyMomQueryFormData) {
       {
         ...baseQueryObject,
         groupby,
+        metrics: ensureIsArray(baseQueryObject.metrics).concat(
+          ensureIsArray(formData.additional_metrics),
+        ),
         post_processing: postProcessing,
         time_offsets:
           isTimeComparison(formData, baseQueryObject) ||

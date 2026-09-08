@@ -79,6 +79,17 @@
 > 提示：`Previous period metric` 也可以直接选数据集里的计算列或另一个聚合指标，
 > 只要它在同一行即可；SQL 里注意用 `NULLIF(基期, 0)` 防除零。
 
+### 5. 主统计 + 附加小指标（指标个数自由控制）
+
+在主大数字下方展示一组"标题 + 值"的小统计项：
+
+1. 图表 **Chart Options** 区打开 **Show Additional Metrics**
+2. **Additional metrics** 里用拖拽/搜索多选任意指标（几个选几个，个数即展示个数）
+3. `Additional Metric Font Size` 调整小标题字号（Tiny/Small/Normal/Large）
+4. 每个小项自动用该指标名作标题、按 **Number format** 格式化数值
+
+适合把"环比 % / 同比 % / 订单数 / 客单价"等一屏摆在大数字下方。
+
 ## 关联代码位置（本仓库）
 
 - 大数字图实现：`superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberTotal/`
