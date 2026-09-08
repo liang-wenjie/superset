@@ -197,12 +197,77 @@ export default function BigNumberYoyMom(props: BigNumberYoyMomProps) {
           </MetricNameText>
         )}
 
-        <div css={bigValueContainerStyles}>
-          {bigNumber}
-          {percentDifferenceNumber !== 0 && (
-            <span css={arrowIndicatorStyle}>
-              {percentDifferenceNumber > 0 ? '↑' : '↓'}
-            </span>
+        <div
+          css={css`
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: ${theme.sizeUnit * 4}px;
+            margin-bottom: ${theme.sizeUnit * 4}px;
+            min-width: 0;
+            width: 100%;
+          `}
+        >
+          <div css={bigValueContainerStyles}>
+            {bigNumber}
+            {percentDifferenceNumber !== 0 && (
+              <span css={arrowIndicatorStyle}>
+                {percentDifferenceNumber > 0 ? '↑' : '↓'}
+              </span>
+            )}
+          </div>
+
+          {showAdditionalMetrics && additionalMetrics.length > 0 && (
+            <div
+              css={css`
+                display: flex;
+                justify-content: center;
+                gap: ${theme.sizeUnit * 3}px;
+                flex-wrap: wrap;
+                min-width: 0;
+              `}
+            >
+              {additionalMetrics.map(item => (
+                <div
+                  key={item.label}
+                  css={css`
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    min-width: 56px;
+                    padding: ${theme.sizeUnit * 1.5}px ${theme.sizeUnit * 2}px;
+                    border-radius: ${theme.borderRadius}px;
+                    background: rgba(127, 127, 127, 0.12);
+                  `}
+                >
+                  <div
+                    css={css`
+                      font-size: ${Math.max(
+                        10,
+                        additionalMetricFontSize * height * 0.4,
+                      )}px;
+                      color: ${theme.colorTextSecondary};
+                      text-align: center;
+                      overflow-wrap: anywhere;
+                    `}
+                  >
+                    {item.label}
+                  </div>
+                  <div
+                    css={css`
+                      font-size: ${comparisonFontSize}px;
+                      font-weight: ${theme.fontWeightNormal};
+                      color: ${theme.colorText};
+                      text-align: center;
+                      margin-top: ${theme.sizeUnit}px;
+                    `}
+                  >
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
         {subtitle && (
@@ -252,61 +317,6 @@ export default function BigNumberYoyMom(props: BigNumberYoyMomProps) {
           </div>
         )}
 
-        {showAdditionalMetrics && additionalMetrics.length > 0 && (
-          <div
-            css={css`
-              display: flex;
-              justify-content: center;
-              align-items: flex-start;
-              gap: ${theme.sizeUnit * 4}px;
-              flex-wrap: wrap;
-              margin-top: ${theme.sizeUnit * 4}px;
-              min-width: 0;
-              width: 100%;
-            `}
-          >
-            {additionalMetrics.map(item => (
-              <div
-                key={item.label}
-                css={css`
-                  display: flex;
-                  flex-direction: column;
-                  align-items: center;
-                  flex: 1 1 90px;
-                  min-width: 90px;
-                  padding: ${theme.sizeUnit * 2}px;
-                  border-radius: ${theme.borderRadius}px;
-                  background: rgba(127, 127, 127, 0.12);
-                `}
-              >
-                <div
-                  css={css`
-                    font-size: ${Math.max(
-                      11,
-                      additionalMetricFontSize * height * 0.4,
-                    )}px;
-                    color: ${theme.colorTextSecondary};
-                    text-align: center;
-                    overflow-wrap: anywhere;
-                  `}
-                >
-                  {item.label}
-                </div>
-                <div
-                  css={css`
-                    font-size: ${comparisonFontSize}px;
-                    font-weight: ${theme.fontWeightNormal};
-                    color: ${theme.colorText};
-                    text-align: center;
-                    margin-top: ${theme.sizeUnit}px;
-                  `}
-                >
-                  {item.value}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </NumbersContainer>
     </div>
   );
