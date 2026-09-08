@@ -110,13 +110,6 @@ export default function transformProps(chartProps: ChartProps) {
       ? getMetricLabel(formData.comparison_metric)
       : '';
 
-  // Comparison badges only make sense when a comparison is actually
-  // configured (a time shift, or a manual previous-period metric). Without
-  // one, the chart renders just the big number plus any additional metrics.
-  const hasComparison =
-    Boolean(timeComparison) ||
-    (isManualMode && Boolean(formData.comparison_metric));
-
   const { value1, value2 } = data.reduce(
     (acc: { value1: number; value2: number }, curr: { [x: string]: any }) => {
       Object.keys(curr).forEach(key => {
@@ -233,11 +226,9 @@ export default function transformProps(chartProps: ChartProps) {
     comparisonColorEnabled,
     shift: isManualMode ? comparisonMetricLabel : timeComparison,
     // Extra props resolved from raw form data
-    showPrevValue: (chartProps.rawFormData?.show_prev_value ?? true) && hasComparison,
-    showValueDifference:
-      (chartProps.rawFormData?.show_value_difference ?? true) && hasComparison,
-    showPercentChange:
-      (chartProps.rawFormData?.show_percent_change ?? true) && hasComparison,
+    showPrevValue: chartProps.rawFormData?.show_prev_value ?? true,
+    showValueDifference: chartProps.rawFormData?.show_value_difference ?? true,
+    showPercentChange: chartProps.rawFormData?.show_percent_change ?? true,
     showAdditionalMetrics: Boolean(formData.show_additional_metrics),
     additionalMetrics,
     additionalMetricFontSize: formData.additional_metric_font_size ?? 0.15,
