@@ -60,7 +60,6 @@ import {
   EchartsBubbleChartPlugin,
   EchartsWaterfallChartPlugin,
   BigNumberPeriodOverPeriodChartPlugin,
-  BigNumberYoyMomChartPlugin,
   EchartsHeatmapChartPlugin,
   EchartsGanttChartPlugin,
   EchartsRoseChartPlugin,
@@ -110,9 +109,6 @@ export default class MainPreset extends Preset {
         new BigNumberChartPlugin().configure({ key: VizType.BigNumber }),
         new BigNumberTotalChartPlugin().configure({
           key: VizType.BigNumberTotal,
-        }),
-        new BigNumberYoyMomChartPlugin().configure({
-          key: VizType.BigNumberYoyMom,
         }),
         new EchartsBoxPlotChartPlugin().configure({ key: VizType.BoxPlot }),
         new EchartsBulletChartPlugin().configure({ key: VizType.Bullet }),

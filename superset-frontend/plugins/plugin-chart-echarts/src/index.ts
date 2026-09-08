@@ -41,7 +41,6 @@ export {
   BigNumberChartPlugin,
   BigNumberTotalChartPlugin,
   BigNumberPeriodOverPeriodChartPlugin,
-  BigNumberYoyMomChartPlugin,
 } from './BigNumber';
 export { default as EchartsSunburstChartPlugin } from './Sunburst';
 export { default as EchartsBubbleChartPlugin } from './Bubble';
