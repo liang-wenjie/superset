@@ -31,7 +31,6 @@ import {
   getMetricNameFontSize,
 } from '../BigNumberPeriodOverPeriod/utils';
 import { getOriginalLabel } from '../utils';
-import { BigNumberYoyMomQueryFormData } from './types';
 
 export const parseMetricValue = (metricValue: number | string | null) => {
   if (typeof metricValue === 'string') {
@@ -57,7 +56,7 @@ export default function transformProps(chartProps: ChartProps) {
   const {
     width,
     height,
-    formData: formDataUntyped,
+    formData,
     queriesData,
     datasource: {
       currencyFormats = {},
@@ -65,7 +64,6 @@ export default function transformProps(chartProps: ChartProps) {
       currencyCodeColumn,
     },
   } = chartProps;
-  const formData = formDataUntyped as BigNumberYoyMomQueryFormData;
   const {
     metric,
     metricNameFontSize,
@@ -100,28 +98,10 @@ export default function transformProps(chartProps: ChartProps) {
     }
   }
 
-  // Manual comparison mode: the previous-period value is a sibling metric in
-  // the same row (e.g. a SQL-computed `prev_month` column), so no shifted
-  // column is expected and the comparison works regardless of how much
-  // history the dataset holds.
-  const isManualMode = formData.comparison_mode === 'manual';
-  const comparisonMetricLabel =
-    isManualMode && formData.comparison_metric
-      ? getMetricLabel(formData.comparison_metric)
-      : '';
-
   const { value1, value2 } = data.reduce(
     (acc: { value1: number; value2: number }, curr: { [x: string]: any }) => {
       Object.keys(curr).forEach(key => {
-        if (isManualMode) {
-          // Exact column-name match: the main metric and the previous-period
-          // metric are distinct sibling columns in the same row.
-          if (key === comparisonMetricLabel) {
-            acc.value2 += curr[key];
-          } else if (key === metricName) {
-            acc.value1 += curr[key];
-          }
-        } else if (
+        if (
           key.includes(
             `${metricName}__${
               !isCustomOrInherit ? timeComparison : dataOffset[0]
@@ -192,7 +172,7 @@ export default function transformProps(chartProps: ChartProps) {
     subtitle,
     subtitleFontSize,
     comparisonColorEnabled,
-    shift: isManualMode ? comparisonMetricLabel : timeComparison,
+    shift: timeComparison,
     // Extra props resolved from raw form data
     showPrevValue: chartProps.rawFormData?.show_prev_value ?? true,
     showValueDifference: chartProps.rawFormData?.show_value_difference ?? true,

@@ -16,48 +16,26 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { buildQueryContext, PostProcessingRule, ensureIsArray } from '@superset-ui/core';
+import { buildQueryContext, QueryFormData, PostProcessingRule, ensureIsArray } from '@superset-ui/core';
 import { isTimeComparison, timeCompareOperator } from '@superset-ui/chart-controls';
 import { isEmpty } from 'lodash-es';
-import { BigNumberYoyMomQueryFormData } from './types';
 
 /**
  * Build the query for the Big Number YoY/MoM chart.
  *
- * The automatic comparison relies on the standard time-comparison mechanism:
+ * The comparison relies on the standard time-comparison mechanism:
  * - `timeCompareOperator` emits a `compare` post-processing rule when a
  *   `comparison_type` other than `values` is selected;
  * - `time_offsets` make the backend return the shifted metric columns
  *   (e.g. `SUM(sales)__1 year ago`), which `transformProps` reads to
  *   compute the previous-period value, difference and percent change.
  *
- * In manual mode (`comparison_mode === 'manual'`) no time shifting happens:
- * both the current and the previous-period values come from metrics in the
- * same row (e.g. a SQL-computed `prev_month` column), so the comparison keeps
- * working even when the dataset only holds a single period of data.
- *
  * Data can come from any dataset, including one backed by a SQL query
  * (see `sql_examples/big_number_yoy_mom/` in the repository root), so the
  * chart itself requires no custom SQL.
  */
-export default function buildQuery(formData: BigNumberYoyMomQueryFormData) {
+export default function buildQuery(formData: QueryFormData) {
   const { cols: groupby, extra_form_data } = formData;
-
-  if (formData.comparison_mode === 'manual') {
-    // Manual comparison: fetch the current-period metric plus the
-    // previous-period metric in the same row; no post-processing rules.
-    return buildQueryContext(formData, baseQueryObject => [
-      {
-        ...baseQueryObject,
-        groupby,
-        metrics: ensureIsArray(baseQueryObject.metrics).concat(
-          ensureIsArray(formData.comparison_metric),
-        ),
-        post_processing: [],
-        time_offsets: [],
-      },
-    ]);
-  }
 
   const queryContextA = buildQueryContext(formData, baseQueryObject => {
     const postProcessing: PostProcessingRule[] = [];

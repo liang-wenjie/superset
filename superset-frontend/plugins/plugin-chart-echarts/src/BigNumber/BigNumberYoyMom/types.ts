@@ -16,11 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import {
-  QueryFormData,
-  QueryFormMetric,
-  TimeseriesDataRecord,
-} from '@superset-ui/core';
+import { QueryFormData, TimeseriesDataRecord } from '@superset-ui/core';
 
 export interface BigNumberYoyMomStylesProps {
   height: number;
@@ -42,12 +38,7 @@ export interface BigNumberYoyMomStylesProps {
 }
 
 export type BigNumberYoyMomQueryFormData = QueryFormData &
-  BigNumberYoyMomStylesProps & {
-    /** Comparison mode: 'auto' shifts the time range, 'manual' reads a previous-period metric from the same row. */
-    comparison_mode?: string;
-    /** In manual mode, the metric holding the previous-period value in the same row. */
-    comparison_metric?: QueryFormMetric;
-  };
+  BigNumberYoyMomStylesProps;
 
 export interface BigNumberYoyMomProps extends BigNumberYoyMomStylesProps {
   data: TimeseriesDataRecord[];
