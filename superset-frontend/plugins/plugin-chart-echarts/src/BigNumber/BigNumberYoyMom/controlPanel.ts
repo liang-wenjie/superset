@@ -19,6 +19,7 @@
 import { t } from '@apache-superset/core/translation';
 import {
   ControlPanelConfig,
+  ControlPanelsContainerProps,
   getStandardizedControls,
   sharedControls,
   sections,
@@ -39,6 +40,44 @@ const config: ControlPanelConfig = {
       controlSetRows: [
         ['metric'],
         ['adhoc_filters'],
+        [
+          {
+            name: 'comparison_mode',
+            config: {
+              type: 'SelectControl',
+              label: t('Comparison mode'),
+              default: 'auto',
+              choices: [
+                ['auto', t('Automatic (time offset)')],
+                ['manual', t('Manual (previous value in row)')],
+              ],
+              description: t(
+                'Automatic shifts the selected time range to compute the ' +
+                  'comparison. Manual reads a previous-period metric that sits ' +
+                  'in the same row as the current-period value, which keeps ' +
+                  'the comparison working even when the dataset only holds a ' +
+                  'single period of data.',
+              ),
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'comparison_metric',
+            config: {
+              type: 'MetricControl',
+              label: t('Previous period metric'),
+              description: t(
+                'In manual mode, the metric holding the previous-period value ' +
+                  'in the same row (e.g. a SQL-computed `prev_month` or ' +
+                  '`prev_year` column).',
+              ),
+              visibility: ({ controls }: ControlPanelsContainerProps) =>
+                controls?.comparison_mode?.value === 'manual',
+            },
+          },
+        ],
         [
           {
             name: 'row_limit',
@@ -117,11 +156,15 @@ const config: ControlPanelConfig = {
         ],
       ],
     },
-    sections.timeComparisonControls({
-      multi: false,
-      showCalculationType: false,
-      showFullChoices: false,
-    }),
+    {
+      ...sections.timeComparisonControls({
+        multi: false,
+        showCalculationType: false,
+        showFullChoices: false,
+      }),
+      visibility: ({ controls }: ControlPanelsContainerProps) =>
+        controls?.comparison_mode?.value !== 'manual',
+    },
   ],
   controlOverrides: {
     y_axis_format: {

@@ -54,9 +54,35 @@
 - **PopKPI（pop_kpi）**：内置"上一期值 / Δ差值 / %变化"三个对比徽标，
   在 **Customize columns**（`column_config`）中把不需要的列 `visible` 关掉即可控制显示个数
 
+### 4. 新图表插件：Big Number with YoY/MoM（手动对比模式）
+
+本仓库新增图表 **Big Number with YoY/MoM**（viz type `big_number_yoy_mom`），
+支持两种对比方式：
+
+- **Automatic（自动）**：走 Superset 标准 `time_compare` 机制，后端把时间范围
+  整体平移取对比期（与官方 PopKPI 相同）
+- **Manual（手动）**：上期值由 SQL 算好放在**同一行**，图表直接读取，不触发
+  任何历史区间查询——**即使数据源只保留一个月，对比依然有效**
+
+手动模式使用步骤：
+
+1. 在数据集 SQL 里算好当期值与上期值两列（本目录的窗口函数版已输出
+   `sales / prev_month / prev_year`，另存为数据集）
+2. **Explore → 新建图表**，类型选 **Big Number with YoY/MoM**
+3. **Query** 区：`Metric` 选 `sales`；`Comparison mode` 选 **Manual**；
+   `Previous period metric` 选 `prev_month`（环比）或 `prev_year`（同比）；
+   时间过滤正常选当月/最近一个月即可
+4. **Chart Options** 区：`Big Number Font Size` / `Metric Name Font Size` /
+   `Subtitle` 控制标题与字号；`Show Previous Value` / `Show Value Difference` /
+   `Show Percent Change` 三个开关自由控制对比指标显示个数
+
+> 提示：`Previous period metric` 也可以直接选数据集里的计算列或另一个聚合指标，
+> 只要它在同一行即可；SQL 里注意用 `NULLIF(基期, 0)` 防除零。
+
 ## 关联代码位置（本仓库）
 
 - 大数字图实现：`superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberTotal/`
+- 新插件 Big Number with YoY/MoM：`superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberYoyMom/`
 - 同比/环比控件：`superset-frontend/packages/superset-ui-chart-controls/src/sections/timeComparison.tsx`
 - 对比后处理规则：`superset-frontend/packages/superset-ui-chart-controls/src/operators/timeCompareOperator.ts`
 - 后端计算：`superset/utils/pandas_postprocessing/compare.py`
