@@ -176,38 +176,6 @@ export default function transformProps(chartProps: ChartProps) {
   valueDifference = numberFormatter(valueDifference);
   const percentDifference: string = formatPercentChange(percentDifferenceNum);
 
-  // Additional metrics: each one is rendered as a small title + value item
-  // below the big number. Values come from the same query result row and are
-  // formatted with the same number format as the main metric.
-  const additionalMetrics = (
-    formData.show_additional_metrics
-      ? ensureIsArray(formData.additional_metrics)
-      : []
-  ).map(additionalMetric => {
-    const additionalMetricKey = getMetricLabel(additionalMetric);
-    const rawValue = data.reduce((acc: number, curr: { [x: string]: any }) => {
-      if (additionalMetricKey in curr) {
-        acc += curr[additionalMetricKey];
-      }
-      return acc;
-    }, 0);
-    const additionalFormatter = getValueFormatter(
-      additionalMetric,
-      currencyFormats,
-      columnFormats,
-      yAxisFormat,
-      currencyFormat,
-      undefined,
-      data,
-      currencyCodeColumn,
-      detectedCurrency,
-    );
-    return {
-      label: getOriginalLabel(additionalMetric, metrics),
-      value: additionalFormatter(parseMetricValue(rawValue)),
-    };
-  });
-
   return {
     width,
     height,
@@ -229,8 +197,5 @@ export default function transformProps(chartProps: ChartProps) {
     showPrevValue: chartProps.rawFormData?.show_prev_value ?? true,
     showValueDifference: chartProps.rawFormData?.show_value_difference ?? true,
     showPercentChange: chartProps.rawFormData?.show_percent_change ?? true,
-    showAdditionalMetrics: Boolean(formData.show_additional_metrics),
-    additionalMetrics,
-    additionalMetricFontSize: formData.additional_metric_font_size ?? 0.15,
   };
 }

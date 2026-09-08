@@ -92,9 +92,6 @@ export default function BigNumberYoyMom(props: BigNumberYoyMomProps) {
     showPercentChange,
     comparisonColorEnabled,
     percentDifferenceNumber,
-    showAdditionalMetrics,
-    additionalMetrics,
-    additionalMetricFontSize,
   } = props;
 
   const theme = useTheme();
@@ -248,62 +245,6 @@ export default function BigNumberYoyMom(props: BigNumberYoyMomProps) {
                   {badge.value}
                 </Tooltip>
               </ComparisonValue>
-            ))}
-          </div>
-        )}
-
-        {showAdditionalMetrics && additionalMetrics.length > 0 && (
-          <div
-            css={css`
-              display: flex;
-              justify-content: center;
-              align-items: flex-start;
-              gap: ${theme.sizeUnit * 4}px;
-              flex-wrap: wrap;
-              margin-top: ${theme.sizeUnit * 4}px;
-              min-width: 0;
-              width: 100%;
-            `}
-          >
-            {additionalMetrics.map(item => (
-              <div
-                key={item.label}
-                css={css`
-                  display: flex;
-                  flex-direction: column;
-                  align-items: center;
-                  flex: 1 1 90px;
-                  min-width: 90px;
-                  padding: ${theme.sizeUnit * 2}px;
-                  border-radius: ${theme.borderRadius}px;
-                  background: rgba(127, 127, 127, 0.12);
-                `}
-              >
-                <div
-                  css={css`
-                    font-size: ${Math.max(
-                      11,
-                      additionalMetricFontSize * height * 0.4,
-                    )}px;
-                    color: ${theme.colorTextSecondary};
-                    text-align: center;
-                    overflow-wrap: anywhere;
-                  `}
-                >
-                  {item.label}
-                </div>
-                <div
-                  css={css`
-                    font-size: ${comparisonFontSize}px;
-                    font-weight: ${theme.fontWeightNormal};
-                    color: ${theme.colorText};
-                    text-align: center;
-                    margin-top: ${theme.sizeUnit}px;
-                  `}
-                >
-                  {item.value}
-                </div>
-              </div>
             ))}
           </div>
         )}

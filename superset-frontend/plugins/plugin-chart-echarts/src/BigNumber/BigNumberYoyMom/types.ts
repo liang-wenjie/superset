@@ -39,12 +39,6 @@ export interface BigNumberYoyMomStylesProps {
   showPercentChange: boolean;
   /** Whether to color the badges by the sign of the change. */
   comparisonColorEnabled: boolean;
-  /** Whether to render the additional-metrics panel below the big number. */
-  showAdditionalMetrics: boolean;
-  /** Font size ratio for additional-metric titles. */
-  additionalMetricFontSize: number;
-  /** Additional metrics rendered as small title + value items. */
-  additionalMetrics: { label: string; value: string }[];
 }
 
 export type BigNumberYoyMomQueryFormData = QueryFormData &
@@ -53,12 +47,6 @@ export type BigNumberYoyMomQueryFormData = QueryFormData &
     comparison_mode?: string;
     /** In manual mode, the metric holding the previous-period value in the same row. */
     comparison_metric?: QueryFormMetric;
-    /** Whether to display the additional-metrics panel. */
-    show_additional_metrics?: boolean;
-    /** Additional metrics rendered as small title + value items below the big number. */
-    additional_metrics?: QueryFormMetric[];
-    /** Font size ratio for additional-metric titles. */
-    additional_metric_font_size?: number;
   };
 
 export interface BigNumberYoyMomProps extends BigNumberYoyMomStylesProps {
