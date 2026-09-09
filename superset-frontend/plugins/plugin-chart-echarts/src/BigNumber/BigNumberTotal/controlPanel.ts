@@ -25,6 +25,9 @@ import {
   D3_TIME_FORMAT_OPTIONS,
   Dataset,
   getStandardizedControls,
+  ControlPanelsContainerProps,
+  sharedControls,
+  sections,
 } from '@superset-ui/chart-controls';
 import {
   headerFontSize,
@@ -39,7 +42,42 @@ export default {
     {
       label: t('Query'),
       expanded: true,
-      controlSetRows: [['metric'], ['adhoc_filters']],
+      controlSetRows: [
+        ['metric'],
+        ['adhoc_filters'],
+        [{
+          name: 'comparison_mode',
+          config: {
+            type: 'SelectControl',
+            label: t('Comparison mode'),
+            default: 'none',
+            choices: [
+              ['none', t('None')],
+              ['auto', t('Automatic time comparison')],
+              ['manual', t('SQL calculated values')],
+            ],
+            renderTrigger: true,
+          },
+        }],
+        [{
+          name: 'comparison_metric_month',
+          config: {
+            ...sharedControls.metric,
+            label: t('Previous month metric'),
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controls?.comparison_mode?.value === 'manual',
+          },
+        }],
+        [{
+          name: 'comparison_metric_year',
+          config: {
+            ...sharedControls.metric,
+            label: t('Previous year metric'),
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controls?.comparison_mode?.value === 'manual',
+          },
+        }],
+      ],
     },
     {
       label: t('Chart Options'),
@@ -125,6 +163,15 @@ export default {
           },
         ],
       ],
+    },
+    {
+      ...sections.timeComparisonControls({
+        multi: true,
+        showCalculationType: false,
+        showFullChoices: false,
+      }),
+      visibility: ({ controls }: ControlPanelsContainerProps) =>
+        controls?.comparison_mode?.value === 'auto',
     },
   ],
   controlOverrides: {

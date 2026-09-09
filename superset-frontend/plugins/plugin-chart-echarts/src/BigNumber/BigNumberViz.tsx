@@ -419,6 +419,20 @@ function BigNumberVis({
   const { height } = props;
   const componentClassName = getClassName();
 
+  if (props.graphicOptions) {
+    return (
+      <div className={componentClassName} style={{ height, width: props.width }}>
+        <Echart
+          refs={props.refs}
+          width={Math.floor(props.width)}
+          height={Math.floor(height)}
+          echartOptions={props.graphicOptions}
+          vizType={props.formData?.vizType}
+        />
+      </div>
+    );
+  }
+
   if (showTrendLine) {
     const chartHeight = Math.floor(PROPORTION.TRENDLINE * height);
     const allTextHeight = height - chartHeight;

@@ -16,8 +16,45 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { buildQueryContext, QueryFormData } from '@superset-ui/core';
+import {
+  buildQueryContext,
+  getMetricLabel,
+  QueryFormData,
+  QueryFormMetric,
+  ensureIsArray,
+} from '@superset-ui/core';
+import { isTimeComparison, timeCompareOperator } from '@superset-ui/chart-controls';
+
+const addMetrics = (
+  metrics: QueryFormMetric[],
+  ...extra: Array<QueryFormMetric | undefined>
+) => {
+  const labels = new Set(metrics.map(metric => getMetricLabel(metric)));
+  return metrics.concat(
+    extra.filter((metric): metric is QueryFormMetric => {
+      if (!metric) return false;
+      const label = getMetricLabel(metric);
+      if (labels.has(label)) return false;
+      labels.add(label);
+      return true;
+    }),
+  );
+};
 
 export default function buildQuery(formData: QueryFormData) {
-  return buildQueryContext(formData, baseQueryObject => [baseQueryObject]);
+  return buildQueryContext(formData, baseQueryObject => [{
+    ...baseQueryObject,
+    metrics: addMetrics(
+      ensureIsArray(baseQueryObject.metrics),
+      formData.comparison_metric,
+      formData.comparison_metric_month,
+      formData.comparison_metric_year,
+    ),
+    post_processing: formData.comparison_mode === 'auto'
+      ? [timeCompareOperator(formData, baseQueryObject)]
+      : [],
+    time_offsets: formData.comparison_mode === 'auto' && isTimeComparison(formData, baseQueryObject)
+      ? ensureIsArray(formData.time_compare)
+      : [],
+  }]);
 }

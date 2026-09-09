@@ -38,6 +38,10 @@ export type BigNumberTotalFormData = QueryFormData & {
   metric?: QueryFormMetric;
   yAxisFormat?: string;
   forceTimestampFormatting?: boolean;
+  comparison_mode?: 'auto' | 'manual';
+  comparison_metric_month?: QueryFormMetric;
+  comparison_metric_year?: QueryFormMetric;
+  comparison_metric?: QueryFormMetric;
 };
 
 export type BigNumberWithTrendlineFormData = BigNumberTotalFormData & {
@@ -107,4 +111,11 @@ export type BigNumberVizProps = {
   formData?: BigNumberWithTrendlineFormData;
   refs: Refs;
   colorThresholdFormatters?: ColorFormatters;
+  monthChange?: string;
+  yearChange?: string;
+  monthChangeNumber?: number;
+  yearChangeNumber?: number;
+  showMonthChange?: boolean;
+  showYearChange?: boolean;
+  graphicOptions?: EChartsCoreOption;
 };
