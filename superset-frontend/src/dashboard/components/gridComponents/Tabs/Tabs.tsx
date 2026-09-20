@@ -420,6 +420,11 @@ const Tabs = (props: TabsProps): ReactElement => {
 
   const { children: tabIds } = tabsComponent;
 
+  // Vertical tabs render the tab bar as a column on the left; every other
+  // layout behavior (editing, nesting, navigation) stays identical.
+  const tabPosition =
+    tabsComponent.meta.tabPosition === 'left' ? 'left' : 'top';
+
   const tabBarPaddingLeft =
     renderTabContent === false
       ? nativeFiltersBarOpen
@@ -543,6 +548,7 @@ const Tabs = (props: TabsProps): ReactElement => {
         onTabsReorder={handleTabsReorder}
         isEditingTabTitle={isEditingTabTitle}
         onTabTitleEditingChange={handleTabTitleEditingChange}
+        tabPosition={tabPosition}
       />
     ),
     [

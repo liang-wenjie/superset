@@ -142,6 +142,23 @@ test('Should render editMode:true', () => {
   expect(DeleteComponentButton).toHaveBeenCalledTimes(1);
 });
 
+test('Should render vertical tabs when meta.tabPosition is left', () => {
+  const props = createProps();
+  props.component.meta = { tabPosition: 'left' };
+  const { container } = render(<Tabs {...props} />, {
+    useRedux: true,
+    useDnd: true,
+  });
+  expect(container.querySelector('.ant-tabs-left')).toBeInTheDocument();
+  expect(container.querySelector('.ant-tabs-top')).not.toBeInTheDocument();
+  // tabs still render in vertical mode
+  expect(
+    screen
+      .getAllByRole('tab')
+      .filter(tab => !tab.classList.contains('ant-tabs-tab-remove')),
+  ).toHaveLength(3);
+});
+
 test('Should render HoverMenu in editMode', () => {
   const props = createProps();
   const { container } = render(<Tabs {...props} />, {

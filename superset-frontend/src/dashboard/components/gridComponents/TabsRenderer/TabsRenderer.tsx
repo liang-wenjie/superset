@@ -42,6 +42,7 @@ import {
 } from '@dnd-kit/core';
 import {
   horizontalListSortingStrategy,
+  verticalListSortingStrategy,
   SortableContext,
   useSortable,
 } from '@dnd-kit/sortable';
@@ -77,6 +78,13 @@ const StyledTabsContainer = styled.div<{
 
   & .dashboard-component-tabs-content {
     height: 100%;
+  }
+
+  /* Vertical tabs: keep the nav column readable while antd lays out the
+     flex row (nav on the left, content on the right). */
+  & > .ant-tabs-left > .ant-tabs-nav {
+    min-width: 168px;
+    max-width: 50%;
   }
 
   & > .hover-menu:hover {
@@ -192,6 +200,8 @@ export interface TabsRendererProps {
   onTabsReorder?: (oldIndex: number, newIndex: number) => void;
   isEditingTabTitle?: boolean;
   onTabTitleEditingChange?: (isEditing: boolean) => void;
+  /** Render the tab bar as a column on the left ('left') or on top ('top') */
+  tabPosition?: 'top' | 'left';
 }
 
 interface DraggableTabNodeProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -252,14 +262,18 @@ const TabsRenderer = memo<TabsRendererProps>(
     tabBarPaddingLeft = 0,
     onTabsReorder,
     isEditingTabTitle = false,
+    tabPosition = 'top',
   }) => {
     const [activeId, setActiveId] = useState<string | null>(null);
 
+    const isVertical = tabPosition === 'left';
+
     // Sticky tab bars only apply in view mode: while editing, drag-and-drop
     // targets and hover menus are positioned against the tab bar's place in
-    // document flow.
+    // document flow. Vertical tabs pin their nav as a left column instead, so
+    // the top-pinning rules only apply to horizontal tab bars.
     const parentStickyOffset = useContext(StickyTabsOffsetContext);
-    const stickyTop = editMode ? undefined : parentStickyOffset;
+    const stickyTop = editMode || isVertical ? undefined : parentStickyOffset;
     const containerRef = useRef<HTMLDivElement>(null);
     const [tabBarHeight, setTabBarHeight] = useState(0);
 
@@ -351,8 +365,11 @@ const TabsRenderer = memo<TabsRendererProps>(
         stickyTop={stickyTop}
       >
         {editMode && renderHoverMenu && tabsDragSourceRef && (
-          <HoverMenu innerRef={tabsDragSourceRef} position="left">
-            <DragHandle position="left" />
+          <HoverMenu
+            innerRef={tabsDragSourceRef}
+            position={isVertical ? 'top' : 'left'}
+          >
+            <DragHandle position={isVertical ? 'top' : 'left'} />
             <DeleteComponentButton onDelete={handleDeleteComponent} />
           </HoverMenu>
         )}
@@ -361,6 +378,7 @@ const TabsRenderer = memo<TabsRendererProps>(
           <LineEditableTabs
             id={tabsComponent.id}
             activeKey={activeKey}
+            tabPosition={tabPosition}
             onChange={key => {
               if (typeof key === 'string') {
                 const tabIndex = tabIds.indexOf(key);
@@ -388,7 +406,11 @@ const TabsRenderer = memo<TabsRendererProps>(
                 >
                   <SortableContext
                     items={tabIds}
-                    strategy={horizontalListSortingStrategy}
+                    strategy={
+                      isVertical
+                        ? verticalListSortingStrategy
+                        : horizontalListSortingStrategy
+                    }
                   >
                     <DefaultTabBar {...tabBarProps}>
                       {(node: React.ReactElement) => (
