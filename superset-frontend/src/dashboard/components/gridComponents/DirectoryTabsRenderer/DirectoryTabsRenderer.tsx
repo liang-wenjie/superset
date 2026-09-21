@@ -78,8 +78,8 @@ const DirectoryContainer = styled.div`
 
 const DirectoryNav = styled.nav`
   ${({ theme }) => css`
-    flex: 0 0 ${theme.sizeUnit * 50}px;
-    max-width: 50%;
+    flex: 0 0 ${theme.sizeUnit * 38}px;
+    max-width: 40%;
     border-right: 1px solid ${theme.colorBorderSecondary};
     padding: ${theme.sizeUnit * 2}px;
     background-color: ${theme.colorBgContainer};
@@ -273,6 +273,16 @@ const DirectoryContent = styled.div`
   min-width: 0;
   position: relative;
   z-index: 1;
+
+  /* Row/Column widths are computed from the full dashboard grid width
+     (widthMultiple x columnWidth); inside the narrower directory content
+     pane they would overflow to the right of the pane. Clamp every
+     descendant so the whole content chain (including the dynamically
+     classed wrapper components) stays inside the pane and never looks
+     pushed off to the side. */
+  & * {
+    max-width: 100%;
+  }
 `;
 
 const DirectoryContentDropzone = styled.div`
