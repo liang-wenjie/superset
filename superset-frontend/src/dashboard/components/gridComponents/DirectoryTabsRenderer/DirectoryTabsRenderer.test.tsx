@@ -287,8 +287,21 @@ test('clicking the already-active node is a no-op', async () => {
   expect(props.onChangeTab).not.toHaveBeenCalled();
 });
 
-test('renames a node through EditableTitle', async () => {
+test('clicking a node in edit mode still navigates', async () => {
   const { props } = renderDirectory({ editMode: true });
+  await userEvent.click(screen.getByRole('button', { name: 'Chapter 2' }));
+  expect(props.handleClickTab).toHaveBeenCalledWith(1);
+});
+
+test('renames a node through the rename button', async () => {
+  const { props } = renderDirectory({ editMode: true });
+
+  const chapter1Row = screen
+    .getByText('Chapter 1')
+    .closest('[data-test="directory-tree-item"]') as HTMLElement;
+  await userEvent.click(
+    within(chapter1Row).getByRole('button', { name: 'Rename tab' }),
+  );
 
   const titleInput = screen.getByDisplayValue('Chapter 1');
   await userEvent.clear(titleInput);
@@ -339,5 +352,8 @@ test('view mode hides editing controls', () => {
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: 'Remove tab' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Rename tab' }),
   ).not.toBeInTheDocument();
 });

@@ -198,6 +198,26 @@ const DirectoryItemButton = styled.button`
   `}
 `;
 
+const DirectoryRenameButton = styled.button`
+  ${({ theme }) => css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: ${theme.sizeUnit * 6}px;
+    height: ${theme.sizeUnit * 6}px;
+    border: 0;
+    background: transparent;
+    color: ${theme.colorTextTertiary};
+    cursor: pointer;
+    padding: 0;
+
+    &:hover {
+      color: ${theme.colorPrimary};
+    }
+  `}
+`;
+
 const DirectoryAddButton = styled.button`
   ${({ theme }) => css`
     width: 100%;
@@ -223,6 +243,8 @@ const DirectoryAddButton = styled.button`
 const DirectoryContent = styled.div`
   flex: 1;
   min-width: 0;
+  position: relative;
+  z-index: 1;
 `;
 
 function DirectoryTabsRenderer({
@@ -277,6 +299,9 @@ function DirectoryTabsRenderer({
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
     () => new Set(),
   );
+  // The tab currently being renamed in edit mode. While a tab is being
+  // renamed, clicking its node edits the title instead of navigating.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const isExpanded = useCallback(
     (nodeId: string) => !collapsedIds.has(nodeId) || activePathIds.has(nodeId),
     [collapsedIds, activePathIds],
@@ -328,6 +353,22 @@ function DirectoryTabsRenderer({
       });
     },
     [layout, updateComponents],
+  );
+
+  const startRenaming = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, nodeId: string) => {
+      event.stopPropagation();
+      setRenamingId(nodeId);
+    },
+    [],
+  );
+
+  const finishRenaming = useCallback(
+    (nodeId: string, nextText: string) => {
+      handleRenameTab(nodeId, nextText);
+      setRenamingId(null);
+    },
+    [handleRenameTab],
   );
 
   const activeIndex = Math.max(
@@ -387,25 +428,39 @@ function DirectoryTabsRenderer({
           <DirectoryItemButton
             type="button"
             aria-current={isActive ? 'page' : undefined}
-            onClick={event => {
-              // In edit mode the title is an editable textarea; clicking it
-              // should rename the item instead of navigating.
-              if (editMode && event.target instanceof HTMLTextAreaElement) {
+            onClick={() => {
+              // While this node is being renamed, clicks land on its title
+              // editor and should edit instead of navigating.
+              if (renamingId === node.id) {
                 return;
               }
               handleSelectNode(node);
             }}
           >
             <EditableTitle
+              key={
+                renamingId === node.id
+                  ? `rename-${node.id}`
+                  : `title-${node.id}`
+              }
               title={component?.meta.text}
               defaultTitle={component?.meta.defaultText}
               placeholder={component?.meta.placeholder}
-              canEdit={editMode}
+              canEdit={renamingId === node.id}
               showTooltip={false}
-              editing={false}
-              onSaveTitle={nextText => handleRenameTab(node.id, nextText)}
+              editing={renamingId === node.id}
+              onSaveTitle={nextText => finishRenaming(node.id, nextText)}
             />
           </DirectoryItemButton>
+          {editMode && (
+            <DirectoryRenameButton
+              type="button"
+              aria-label={t('Rename tab')}
+              onClick={event => startRenaming(event, node.id)}
+            >
+              <Icons.EditOutlined iconSize="s" />
+            </DirectoryRenameButton>
+          )}
         </DirectoryItemRow>
         {hasChildren && expanded && (
           <DirectoryTreeSub>{node.children.map(renderNode)}</DirectoryTreeSub>

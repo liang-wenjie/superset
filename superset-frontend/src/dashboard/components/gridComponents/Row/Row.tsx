@@ -290,7 +290,12 @@ const Row = memo((props: RowProps) => {
     if (updatedHeight !== undefined && updatedHeight !== containerHeight) {
       setContainerHeight(updatedHeight);
     }
-  });
+    // Only measure once when entering edit mode: the droptarget height is
+    // derived from containerHeight, so re-measuring on every render can feed
+    // back into the row height (e.g. when a row is nested in a flex container
+    // that stacks the droptarget), producing an infinite update loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode]);
 
   const handleChangeFocus = useCallback((nextFocus: boolean) => {
     setIsFocused(Boolean(nextFocus));
