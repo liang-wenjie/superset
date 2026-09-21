@@ -539,6 +539,7 @@ const Tabs = (props: TabsProps): ReactElement => {
           handleDeleteComponent={handleDeleteComponent}
           deleteComponent={props.deleteComponent}
           tabsComponent={tabsComponent}
+          depth={depth}
           activeKey={activeKey}
           tabIds={tabIds}
           handleClickTab={handleClickTab}

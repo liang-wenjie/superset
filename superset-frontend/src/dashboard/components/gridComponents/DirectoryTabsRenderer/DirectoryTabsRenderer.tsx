@@ -19,15 +19,17 @@
 import {
   MouseEvent,
   ReactElement,
+  ReactNode,
   RefObject,
   memo,
   useCallback,
   useMemo,
   useState,
 } from 'react';
+import cx from 'classnames';
 import { css, styled } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Icons } from '@superset-ui/core/components/Icons';
 import { EditableTitle } from '@superset-ui/core/components';
 import type { TabsProps as AntdTabsProps } from '@superset-ui/core/components/Tabs';
@@ -35,6 +37,8 @@ import type { TabsProps as AntdTabsProps } from '@superset-ui/core/components/Ta
 import DeleteComponentButton from '../../DeleteComponentButton';
 import DragHandle from '../../dnd/DragHandle';
 import HoverMenu from '../../menu/HoverMenu';
+import { Droppable } from 'src/dashboard/components/dnd/DragDroppable';
+import { handleComponentDrop } from 'src/dashboard/actions/dashboardLayout';
 import type { TabItem } from '../TabsRenderer';
 import { TAB_TYPE, TABS_TYPE } from '../../../util/componentTypes';
 import { NEW_DIRECTORY_TABS_ID, NEW_TAB_ID } from '../../../util/constants';
@@ -50,6 +54,7 @@ interface DirectoryTabsRendererProps {
   handleDeleteComponent: () => void;
   deleteComponent: (id: string, parentId: string | null) => void;
   tabsComponent: LayoutItem;
+  depth: number;
   activeKey: string;
   tabIds: string[];
   handleClickTab: (index: number) => void;
@@ -270,6 +275,12 @@ const DirectoryContent = styled.div`
   z-index: 1;
 `;
 
+const DirectoryContentDropzone = styled.div`
+  ${({ theme }) => css`
+    min-height: ${theme.sizeUnit * 8}px;
+  `}
+`;
+
 function DirectoryTabsRenderer({
   tabItems,
   editMode,
@@ -278,6 +289,7 @@ function DirectoryTabsRenderer({
   handleDeleteComponent,
   deleteComponent,
   tabsComponent,
+  depth,
   activeKey,
   tabIds,
   handleClickTab,
@@ -286,6 +298,7 @@ function DirectoryTabsRenderer({
   onChangeTab,
   updateComponents,
 }: DirectoryTabsRendererProps): ReactElement {
+  const dispatch = useDispatch();
   const layout = useSelector(
     (state: RootState) => state.dashboardLayout.present,
   );
@@ -462,6 +475,63 @@ function DirectoryTabsRenderer({
   );
   const activeItem = tabItems[activeIndex] ?? tabItems[0];
 
+  // The active tab's layout item; used as the drop target so palette
+  // components can be dragged anywhere into the content area (mirrors the
+  // base Tabs interaction where the tab pane accepts drops).
+  const activeTabComponent = activeItem?.key
+    ? layout[activeItem.key]
+    : undefined;
+
+  // Drop handler aligned with base Tabs: any non-tab component dropped on the
+  // content area is inserted as the first child of the active tab.
+  const handleDropToTab = useCallback(
+    (dropResult: DropResult) => {
+      if (
+        dropResult.dragging.type !== TABS_TYPE &&
+        dropResult.destination
+      ) {
+        dispatch(
+          handleComponentDrop({
+            ...dropResult,
+            destination: {
+              ...dropResult.destination,
+              index: 0,
+            },
+          }),
+        );
+      }
+    },
+    [dispatch],
+  );
+
+  const renderContentDropzone = useCallback(
+    (children: ReactNode) => {
+      if (!editMode || !activeTabComponent) return children;
+      const isEmpty = !(activeTabComponent.children?.length > 0);
+      return (
+        <Droppable
+          component={activeTabComponent}
+          orientation="column"
+          index={0}
+          depth={depth}
+          onDrop={handleDropToTab}
+          editMode
+          dropToChild={isEmpty}
+          className={cx('empty-droptarget', {
+            'empty-droptarget--full': isEmpty,
+          })}
+        >
+          {() => (
+            <DirectoryContentDropzone data-test="directory-content-dropzone">
+              {children}
+            </DirectoryContentDropzone>
+          )}
+        </Droppable>
+      );
+    },
+    [editMode, activeTabComponent, depth, handleDropToTab],
+  );
+
   const renderNode = (node: DirectoryTreeNode): ReactElement => {
     const hasChildren = node.children.length > 0;
     const expanded = isExpanded(node.id);
@@ -583,7 +653,7 @@ function DirectoryTabsRenderer({
           </HoverMenu>
         )}
         <DirectoryContent id={`${tabsComponent.id}-directory-content`}>
-          {activeItem?.children}
+          {renderContentDropzone(activeItem?.children)}
         </DirectoryContent>
       </DirectoryContainer>
     );
@@ -623,7 +693,7 @@ function DirectoryTabsRenderer({
         )}
       </DirectoryNav>
       <DirectoryContent id={`${tabsComponent.id}-directory-content`}>
-        {activeItem?.children}
+        {renderContentDropzone(activeItem?.children)}
       </DirectoryContent>
     </DirectoryContainer>
   );

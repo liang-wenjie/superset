@@ -141,6 +141,7 @@ const createProps = (
   handleDeleteComponent: jest.fn(),
   deleteComponent: jest.fn(),
   tabsComponent,
+  depth: 0,
   activeKey: 'TAB-1',
   tabIds: ['TAB-1', 'TAB-2'],
   handleClickTab: jest.fn(),
@@ -176,6 +177,7 @@ const renderDirectory = (
   return {
     ...render(<DirectoryTabsRenderer {...mergedProps} />, {
       useRedux: true,
+      useDnd: true,
       initialState: {
         dashboardLayout: {
           present: { ...layout, ...layoutOverride },
@@ -336,6 +338,9 @@ test('edit mode shows toolbar and add control; nodes expose remove buttons', asy
 
   expect(screen.getByTestId('directory-toolbar')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Add tab' })).toBeInTheDocument();
+  // The content area is wrapped in a drop target so layout elements can be
+  // dragged in, mirroring the base Tabs interaction.
+  expect(screen.getByTestId('directory-content-dropzone')).toBeInTheDocument();
   // Each tree node carries its own remove (x) button; the toolbar no longer
   // needs an extra remove control.
   expect(screen.getAllByRole('button', { name: 'Remove tab' }).length).toBeGreaterThan(0);
@@ -348,6 +353,9 @@ test('view mode hides editing controls', () => {
   renderDirectory({ editMode: false });
 
   expect(screen.queryByTestId('directory-toolbar')).not.toBeInTheDocument();
+  expect(
+    screen.queryByTestId('directory-content-dropzone'),
+  ).not.toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: 'Add tab' }),
   ).not.toBeInTheDocument();
