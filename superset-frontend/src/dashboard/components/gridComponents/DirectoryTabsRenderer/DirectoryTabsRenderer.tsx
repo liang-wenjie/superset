@@ -17,13 +17,16 @@
  * under the License.
  */
 import {
+  CSSProperties,
   MouseEvent,
   ReactElement,
   ReactNode,
   RefObject,
   memo,
   useCallback,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import cx from 'classnames';
@@ -283,6 +286,15 @@ const DirectoryContent = styled.div`
   & * {
     max-width: 100%;
   }
+
+  /* Charts are sized in grid columns relative to the full dashboard width,
+     so inside this narrower pane they would stick out past the right edge.
+     Clamp them to the measured pane width (via a CSS variable) so content
+     aligns to the left edge of the pane. */
+  & .resizable-container,
+  & .dashboard-component-chart-holder {
+    max-width: var(--directory-content-width, 100%) !important;
+  }
 `;
 
 const DirectoryContentDropzone = styled.div`
@@ -362,6 +374,32 @@ function DirectoryTabsRenderer({
   // The tab currently being renamed in edit mode. While a tab is being
   // renamed, clicking its node edits the title instead of navigating.
   const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  // Measured width of the content pane. Charts are sized in grid columns
+  // relative to the full dashboard width, which is wider than this pane when
+  // the directory nav takes space; clamp them via a CSS variable so content
+  // starts at the pane's left edge instead of overflowing to the right.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [contentWidth, setContentWidth] = useState<number>();
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el) return undefined;
+    const update = () =>
+      setContentWidth(Math.floor(el.getBoundingClientRect().width));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const contentStyle = useMemo(
+    () =>
+      contentWidth
+        ? ({
+            '--directory-content-width': `${contentWidth}px`,
+          } as CSSProperties)
+        : undefined,
+    [contentWidth],
+  );
   const isExpanded = useCallback(
     (nodeId: string) => !collapsedIds.has(nodeId) || activePathIds.has(nodeId),
     [collapsedIds, activePathIds],
@@ -656,7 +694,11 @@ function DirectoryTabsRenderer({
             <DeleteComponentButton onDelete={handleDeleteComponent} />
           </HoverMenu>
         )}
-        <DirectoryContent id={`${tabsComponent.id}-directory-content`}>
+        <DirectoryContent
+          ref={contentRef}
+          style={contentStyle}
+          id={`${tabsComponent.id}-directory-content`}
+        >
           {renderContentDropzone(activeItem?.children)}
         </DirectoryContent>
       </DirectoryContainer>
@@ -696,7 +738,11 @@ function DirectoryTabsRenderer({
           </DirectoryAddButton>
         )}
       </DirectoryNav>
-      <DirectoryContent id={`${tabsComponent.id}-directory-content`}>
+      <DirectoryContent
+        ref={contentRef}
+        style={contentStyle}
+        id={`${tabsComponent.id}-directory-content`}
+      >
         {renderContentDropzone(activeItem?.children)}
       </DirectoryContent>
     </DirectoryContainer>
