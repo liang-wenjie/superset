@@ -1,0 +1,465 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+import {
+  MouseEvent,
+  ReactElement,
+  RefObject,
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+} from 'react';
+import { css, styled } from '@apache-superset/core/theme';
+import { t } from '@apache-superset/core/translation';
+import { useSelector } from 'react-redux';
+import { Icons } from '@superset-ui/core/components/Icons';
+import { EditableTitle } from '@superset-ui/core/components';
+import type { TabsProps as AntdTabsProps } from '@superset-ui/core/components/Tabs';
+
+import DeleteComponentButton from '../../DeleteComponentButton';
+import DragHandle from '../../dnd/DragHandle';
+import HoverMenu from '../../menu/HoverMenu';
+import IconButton from '../../IconButton';
+import type { TabItem } from '../TabsRenderer';
+import { TAB_TYPE } from '../../../util/componentTypes';
+import type { LayoutItem, RootState } from 'src/dashboard/types';
+import { DirectoryTreeNode, getDirectoryTree } from './getDirectoryTree';
+
+interface DirectoryTabsRendererProps {
+  tabItems: TabItem[];
+  editMode: boolean;
+  renderHoverMenu?: boolean;
+  tabsDragSourceRef?: RefObject<HTMLDivElement>;
+  handleDeleteComponent: () => void;
+  tabsComponent: LayoutItem;
+  activeKey: string;
+  tabIds: string[];
+  handleClickTab: (index: number) => void;
+  handleEdit: AntdTabsProps['onEdit'];
+  onChangeTab: (params: { pathToTabIndex: string[] }) => void;
+  updateComponents: (components: Record<string, LayoutItem>) => void;
+}
+
+const DirectoryContainer = styled.div`
+  ${({ theme }) => css`
+    width: 100%;
+    display: flex;
+    background-color: ${theme.colorBgContainer};
+
+    & > .hover-menu:hover {
+      opacity: 1;
+    }
+  `}
+`;
+
+const DirectoryNav = styled.nav`
+  ${({ theme }) => css`
+    flex: 0 0 ${theme.sizeUnit * 50}px;
+    max-width: 50%;
+    border-right: 1px solid ${theme.colorBorderSecondary};
+    padding: ${theme.sizeUnit * 2}px;
+    background-color: ${theme.colorBgContainer};
+    overflow: auto;
+  `}
+`;
+
+const DirectoryToolbar = styled.div`
+  ${({ theme }) => css`
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: ${theme.sizeUnit}px;
+    min-height: ${theme.sizeUnit * 8}px;
+    padding: 0 ${theme.sizeUnit}px ${theme.sizeUnit}px;
+    margin-bottom: ${theme.sizeUnit}px;
+    border-bottom: 1px solid ${theme.colorBorderSecondary};
+  `}
+`;
+
+const DirectoryToolbarTitle = styled.div`
+  ${({ theme }) => css`
+    min-width: 0;
+    overflow: hidden;
+    color: ${theme.colorTextSecondary};
+    font-size: ${theme.fontSizeSM}px;
+    font-weight: ${theme.fontWeightStrong};
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `}
+`;
+
+const DirectoryTree = styled.ul`
+  list-style: none;
+  margin: 0;
+  padding: 0;
+`;
+
+const DirectoryTreeSub = styled.ul`
+  list-style: none;
+  margin: 0;
+  padding: 0;
+`;
+
+const DirectoryItem = styled.li``;
+
+const DirectoryItemRow = styled.div<{
+  active: boolean;
+  inPath: boolean;
+  depth: number;
+}>`
+  ${({ active, inPath, depth, theme }) => css`
+    display: flex;
+    align-items: center;
+    gap: ${theme.sizeUnit}px;
+    padding-left: ${depth * theme.sizeUnit * 2 + theme.sizeUnit}px;
+    border-left: 3px solid ${active ? theme.colorPrimary : 'transparent'};
+    background: ${
+      active
+        ? theme.colorPrimaryBg
+        : inPath
+          ? theme.colorFillTertiary
+          : 'transparent'
+    };
+    color: ${active ? theme.colorPrimary : theme.colorText};
+    border-radius: ${theme.borderRadius}px;
+    margin-bottom: ${theme.sizeUnit / 2}px;
+    min-height: ${theme.sizeUnit * 6}px;
+  `}
+`;
+
+const DirectoryToggle = styled.button`
+  ${({ theme }) => css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: ${theme.sizeUnit * 4}px;
+    height: ${theme.sizeUnit * 4}px;
+    border: 0;
+    background: transparent;
+    color: ${theme.colorTextTertiary};
+    cursor: pointer;
+    padding: 0;
+
+    &:hover {
+      color: ${theme.colorPrimary};
+    }
+  `}
+`;
+
+const DirectoryIconSpacer = styled.span`
+  ${({ theme }) => css`
+    flex-shrink: 0;
+    width: ${theme.sizeUnit * 4}px;
+  `}
+`;
+
+const DirectoryItemIcon = styled.span`
+  ${({ theme }) => css`
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: ${theme.colorTextTertiary};
+  `}
+`;
+
+const DirectoryItemButton = styled.button`
+  ${({ theme }) => css`
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    padding: ${theme.sizeUnit}px ${theme.sizeUnit * 2}px ${theme.sizeUnit}px 0;
+
+    &:hover {
+      color: ${theme.colorPrimary};
+    }
+  `}
+`;
+
+const DirectoryAddButton = styled.button`
+  ${({ theme }) => css`
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: ${theme.sizeUnit}px;
+    border: 1px dashed ${theme.colorBorder};
+    background: transparent;
+    color: ${theme.colorTextSecondary};
+    cursor: pointer;
+    margin-top: ${theme.sizeUnit * 2}px;
+    padding: ${theme.sizeUnit * 2}px;
+    border-radius: ${theme.borderRadius}px;
+
+    &:hover {
+      color: ${theme.colorPrimary};
+      border-color: ${theme.colorPrimary};
+    }
+  `}
+`;
+
+const DirectoryContent = styled.div`
+  flex: 1;
+  min-width: 0;
+`;
+
+function DirectoryTabsRenderer({
+  tabItems,
+  editMode,
+  renderHoverMenu = true,
+  tabsDragSourceRef,
+  handleDeleteComponent,
+  tabsComponent,
+  activeKey,
+  tabIds,
+  handleClickTab,
+  handleEdit,
+  onChangeTab,
+  updateComponents,
+}: DirectoryTabsRendererProps): ReactElement {
+  const layout = useSelector(
+    (state: RootState) => state.dashboardLayout.present,
+  );
+  const directPathToChild = useSelector(
+    (state: RootState) => state.dashboardState.directPathToChild,
+  );
+
+  const tree = useMemo(
+    () => getDirectoryTree(tabsComponent, layout),
+    [tabsComponent, layout],
+  );
+
+  // The active node is the deepest tab in the direct path; the tabs between
+  // this directory and it form the active (ancestor) path used for
+  // highlighting and auto-expansion.
+  const { activeTabId, activePathIds } = useMemo(() => {
+    const path = directPathToChild ?? [];
+    const directIndex = tabIds.indexOf(activeKey);
+    const directFallback = directIndex > -1 ? tabIds[directIndex] : tabIds[0];
+    const directoryIndex = path.indexOf(tabsComponent.id);
+    if (directoryIndex === -1) {
+      return { activeTabId: directFallback, activePathIds: new Set<string>() };
+    }
+    const pathTabs = path
+      .slice(directoryIndex + 1)
+      .filter(tabId => layout[tabId]?.type === TAB_TYPE);
+    const deepest = pathTabs[pathTabs.length - 1];
+    return {
+      activeTabId: deepest ?? directFallback,
+      activePathIds: new Set(pathTabs.slice(0, -1)),
+    };
+  }, [tabIds, activeKey, directPathToChild, tabsComponent.id, layout]);
+
+  // Nodes are expanded by default; collapsing is opt-in. Tabs on the active
+  // path stay expanded so the current chapter/section is always reachable.
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const isExpanded = useCallback(
+    (nodeId: string) => !collapsedIds.has(nodeId) || activePathIds.has(nodeId),
+    [collapsedIds, activePathIds],
+  );
+  const toggleCollapsed = useCallback((nodeId: string) => {
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectNode = useCallback(
+    (node: DirectoryTreeNode) => {
+      if (node.id === activeTabId) {
+        return;
+      }
+      if (node.depth === 0) {
+        const tabIndex = tabIds.indexOf(node.id);
+        if (tabIndex > -1) {
+          handleClickTab(tabIndex);
+        }
+        return;
+      }
+      const parents = layout[node.id]?.parents ?? [];
+      onChangeTab({ pathToTabIndex: [...parents, node.id] });
+    },
+    [activeTabId, tabIds, handleClickTab, layout, onChangeTab],
+  );
+
+  const handleRenameTab = useCallback(
+    (tabId: string, nextText: string) => {
+      const component = layout[tabId];
+      if (!component || !nextText || nextText === component.meta.text) {
+        return;
+      }
+      updateComponents({
+        [tabId]: {
+          ...component,
+          meta: {
+            ...component.meta,
+            text: nextText,
+          },
+        },
+      });
+    },
+    [layout, updateComponents],
+  );
+
+  const activeIndex = Math.max(
+    0,
+    tabIds.findIndex(tabId => tabId === activeKey),
+  );
+  const activeItem = tabItems[activeIndex] ?? tabItems[0];
+
+  const renderNode = (node: DirectoryTreeNode): ReactElement => {
+    const hasChildren = node.children.length > 0;
+    const expanded = isExpanded(node.id);
+    const isActive = node.id === activeTabId;
+    const inPath = activePathIds.has(node.id);
+    const component = layout[node.id];
+
+    return (
+      <DirectoryItem key={node.id}>
+        <DirectoryItemRow
+          active={isActive}
+          inPath={inPath}
+          depth={node.depth}
+          data-depth={node.depth}
+          data-active={isActive}
+          data-in-path={inPath}
+          data-test="directory-tree-item"
+        >
+          {hasChildren ? (
+            <DirectoryToggle
+              type="button"
+              aria-label={expanded ? t('Collapse') : t('Expand')}
+              aria-expanded={expanded}
+              onClick={event => {
+                event.stopPropagation();
+                toggleCollapsed(node.id);
+              }}
+            >
+              {expanded ? (
+                <Icons.CaretDownOutlined iconSize="s" />
+              ) : (
+                <Icons.CaretRightOutlined iconSize="s" />
+              )}
+            </DirectoryToggle>
+          ) : (
+            <DirectoryIconSpacer />
+          )}
+          <DirectoryItemIcon>
+            {hasChildren ? (
+              expanded ? (
+                <Icons.FolderOpenOutlined iconSize="s" />
+              ) : (
+                <Icons.FolderOutlined iconSize="s" />
+              )
+            ) : (
+              <Icons.FileTextOutlined iconSize="s" />
+            )}
+          </DirectoryItemIcon>
+          <DirectoryItemButton
+            type="button"
+            aria-current={isActive ? 'page' : undefined}
+            onClick={event => {
+              // In edit mode the title is an editable textarea; clicking it
+              // should rename the item instead of navigating.
+              if (editMode && event.target instanceof HTMLTextAreaElement) {
+                return;
+              }
+              handleSelectNode(node);
+            }}
+          >
+            <EditableTitle
+              title={component?.meta.text}
+              defaultTitle={component?.meta.defaultText}
+              placeholder={component?.meta.placeholder}
+              canEdit={editMode}
+              showTooltip={false}
+              editing={false}
+              onSaveTitle={nextText => handleRenameTab(node.id, nextText)}
+            />
+          </DirectoryItemButton>
+        </DirectoryItemRow>
+        {hasChildren && expanded && (
+          <DirectoryTreeSub>{node.children.map(renderNode)}</DirectoryTreeSub>
+        )}
+      </DirectoryItem>
+    );
+  };
+
+  return (
+    <DirectoryContainer
+      className="dashboard-component dashboard-component-tabs dashboard-component-directory"
+      data-test="dashboard-component-directory"
+    >
+      {editMode && renderHoverMenu && tabsDragSourceRef && (
+        <HoverMenu innerRef={tabsDragSourceRef} position="left">
+          <DragHandle position="left" />
+          <DeleteComponentButton onDelete={handleDeleteComponent} />
+        </HoverMenu>
+      )}
+      <DirectoryNav aria-label={t('Directory')}>
+        {editMode && (
+          <DirectoryToolbar data-test="directory-toolbar">
+            <DirectoryToolbarTitle>{t('Directory')}</DirectoryToolbarTitle>
+            {activeItem && (
+              <IconButton
+                label={t('Remove tab')}
+                hideVisibleLabel
+                icon={<Icons.CloseOutlined iconSize="s" />}
+                onClick={() => handleEdit?.(activeItem.key, 'remove')}
+              />
+            )}
+          </DirectoryToolbar>
+        )}
+        <DirectoryTree data-test="directory-tree">
+          {tree.map(renderNode)}
+        </DirectoryTree>
+        {editMode && (
+          <DirectoryAddButton
+            type="button"
+            aria-label={t('Add tab')}
+            onClick={(event: MouseEvent<HTMLButtonElement>) =>
+              handleEdit?.(event, 'add')
+            }
+          >
+            <Icons.PlusOutlined iconSize="s" />
+            {t('Add item')}
+          </DirectoryAddButton>
+        )}
+      </DirectoryNav>
+      <DirectoryContent id={`${tabsComponent.id}-directory-content`}>
+        {activeItem?.children}
+      </DirectoryContent>
+    </DirectoryContainer>
+  );
+}
+
+export default memo(DirectoryTabsRenderer);

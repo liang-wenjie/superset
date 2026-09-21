@@ -41,6 +41,7 @@ import { NEW_TAB_ID } from '../../../util/constants';
 import { RENDER_TAB, RENDER_TAB_CONTENT } from '../Tab';
 import { TABS_TYPE, TAB_TYPE } from '../../../util/componentTypes';
 import TabsRenderer from '../TabsRenderer';
+import DirectoryTabsRenderer from '../DirectoryTabsRenderer';
 import type { LayoutItem, RootState } from 'src/dashboard/types';
 import type { DropResult } from 'src/dashboard/components/dnd/dragDroppableConfig';
 
@@ -419,11 +420,7 @@ const Tabs = (props: TabsProps): ReactElement => {
   } = props;
 
   const { children: tabIds } = tabsComponent;
-
-  // Vertical tabs render the tab bar as a column on the left; every other
-  // layout behavior (editing, nesting, navigation) stays identical.
-  const tabPosition =
-    tabsComponent.meta.tabPosition === 'left' ? 'left' : 'top';
+  const isDirectory = tabsComponent.meta?.tabMode === 'directory';
 
   const tabBarPaddingLeft =
     renderTabContent === false
@@ -532,26 +529,42 @@ const Tabs = (props: TabsProps): ReactElement => {
   );
 
   const renderChild = useCallback(
-    ({ dragSourceRef: tabsDragSourceRef }: DraggableChildProps) => (
-      <TabsRenderer
-        tabItems={tabItems}
-        editMode={editMode}
-        renderHoverMenu={renderHoverMenu}
-        tabsDragSourceRef={tabsDragSourceRef}
-        handleDeleteComponent={handleDeleteComponent}
-        tabsComponent={tabsComponent}
-        activeKey={activeKey}
-        tabIds={tabIds}
-        handleClickTab={handleClickTab}
-        handleEdit={handleEdit}
-        tabBarPaddingLeft={tabBarPaddingLeft}
-        onTabsReorder={handleTabsReorder}
-        isEditingTabTitle={isEditingTabTitle}
-        onTabTitleEditingChange={handleTabTitleEditingChange}
-        tabPosition={tabPosition}
-      />
-    ),
+    ({ dragSourceRef: tabsDragSourceRef }: DraggableChildProps) =>
+      isDirectory ? (
+        <DirectoryTabsRenderer
+          tabItems={tabItems}
+          editMode={editMode}
+          renderHoverMenu={renderHoverMenu}
+          tabsDragSourceRef={tabsDragSourceRef}
+          handleDeleteComponent={handleDeleteComponent}
+          tabsComponent={tabsComponent}
+          activeKey={activeKey}
+          tabIds={tabIds}
+          handleClickTab={handleClickTab}
+          handleEdit={handleEdit}
+          onChangeTab={props.onChangeTab}
+          updateComponents={props.updateComponents}
+        />
+      ) : (
+        <TabsRenderer
+          tabItems={tabItems}
+          editMode={editMode}
+          renderHoverMenu={renderHoverMenu}
+          tabsDragSourceRef={tabsDragSourceRef}
+          handleDeleteComponent={handleDeleteComponent}
+          tabsComponent={tabsComponent}
+          activeKey={activeKey}
+          tabIds={tabIds}
+          handleClickTab={handleClickTab}
+          handleEdit={handleEdit}
+          tabBarPaddingLeft={tabBarPaddingLeft}
+          onTabsReorder={handleTabsReorder}
+          isEditingTabTitle={isEditingTabTitle}
+          onTabTitleEditingChange={handleTabTitleEditingChange}
+        />
+      ),
     [
+      isDirectory,
       tabItems,
       editMode,
       renderHoverMenu,
@@ -561,6 +574,8 @@ const Tabs = (props: TabsProps): ReactElement => {
       tabIds,
       handleClickTab,
       handleEdit,
+      props.onChangeTab,
+      props.updateComponents,
       tabBarPaddingLeft,
       handleTabsReorder,
       isEditingTabTitle,
