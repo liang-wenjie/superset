@@ -26,6 +26,8 @@ import {
 import {
   DASHBOARD_GRID_ID,
   DASHBOARD_ROOT_ID,
+  NEW_DIRECTORY_TABS_ID,
+  NEW_TAB_ID,
 } from 'src/dashboard/util/constants';
 import {
   DASHBOARD_GRID_TYPE,
@@ -142,6 +144,7 @@ const createProps = (
   tabIds: ['TAB-1', 'TAB-2'],
   handleClickTab: jest.fn(),
   handleEdit: jest.fn(),
+  createComponent: jest.fn() as DirectoryProps['createComponent'],
   onChangeTab: jest.fn(),
   updateComponents: jest.fn(),
   ...overrides,
@@ -166,13 +169,18 @@ const directPathToSection11 = [
 const renderDirectory = (
   props: Partial<DirectoryProps> = {},
   directPathToChild: string[] = directPathToTab1,
+  layoutOverride: Record<string, LayoutItem> = {},
 ) => {
   const mergedProps = createProps(props);
   return {
     ...render(<DirectoryTabsRenderer {...mergedProps} />, {
       useRedux: true,
       initialState: {
-        dashboardLayout: { present: layout, past: [], future: [] },
+        dashboardLayout: {
+          present: { ...layout, ...layoutOverride },
+          past: [],
+          future: [],
+        },
         dashboardState: { directPathToChild },
       },
     }),
@@ -356,4 +364,68 @@ test('view mode hides editing controls', () => {
   expect(
     screen.queryByRole('button', { name: 'Rename tab' }),
   ).not.toBeInTheDocument();
+});
+
+
+test('Add subtab creates a nested directory when the node has none', async () => {
+  const { props } = renderDirectory({ editMode: true });
+
+  const chapter1Row = screen
+    .getByText('Chapter 1')
+    .closest('[data-test="directory-tree-item"]') as HTMLElement;
+  await userEvent.click(
+    within(chapter1Row).getByRole('button', { name: 'Add subtab' }),
+  );
+
+  expect(props.createComponent).toHaveBeenCalledWith({
+    destination: { id: 'TAB-1', type: TAB_TYPE, index: 1 },
+    dragging: {
+      id: NEW_DIRECTORY_TABS_ID,
+      type: TABS_TYPE,
+      meta: { tabMode: 'directory' },
+    },
+  });
+  // adding a subtab must not navigate or trigger a plain tab add
+  expect(props.handleClickTab).not.toHaveBeenCalled();
+  expect(props.handleEdit).not.toHaveBeenCalled();
+});
+
+test('Add subtab adds a chapter to an existing nested directory', async () => {
+  // Give TAB-1 a real nested directory (tabMode directory) so the reuse path
+  // is exercised.
+  const layoutWithDirectoryNested = {
+    ...layout,
+    'TABS-NESTED': { ...layout['TABS-NESTED'], meta: { tabMode: 'directory' } },
+  };
+  const { props } = renderDirectory(
+    { editMode: true },
+    directPathToTab1,
+    layoutWithDirectoryNested,
+  );
+
+  const chapter1Row = screen
+    .getByText('Chapter 1')
+    .closest('[data-test="directory-tree-item"]') as HTMLElement;
+  await userEvent.click(
+    within(chapter1Row).getByRole('button', { name: 'Add subtab' }),
+  );
+
+  expect(props.createComponent).toHaveBeenCalledWith({
+    destination: { id: 'TABS-NESTED', type: TABS_TYPE, index: 2 },
+    dragging: { id: NEW_TAB_ID, type: TAB_TYPE },
+  });
+});
+
+test('renders a nested directory as a content pane only', () => {
+  renderDirectory({
+    tabsComponent: layout['TABS-NESTED'],
+    tabIds: ['TAB-1-1', 'TAB-1-2'],
+    activeKey: 'TAB-1-1',
+    tabItems: makeTabItems(['TAB-1-1', 'TAB-1-2']),
+  });
+
+  // No redundant tree/tab bar inside the content area
+  expect(screen.queryByTestId('directory-tree')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add tab' })).not.toBeInTheDocument();
+  expect(screen.getByText('content-of-TAB-1-1')).toBeInTheDocument();
 });

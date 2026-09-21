@@ -37,7 +37,9 @@ import DragHandle from '../../dnd/DragHandle';
 import HoverMenu from '../../menu/HoverMenu';
 import IconButton from '../../IconButton';
 import type { TabItem } from '../TabsRenderer';
-import { TAB_TYPE } from '../../../util/componentTypes';
+import { TAB_TYPE, TABS_TYPE } from '../../../util/componentTypes';
+import { NEW_DIRECTORY_TABS_ID, NEW_TAB_ID } from '../../../util/constants';
+import type { DropResult } from 'src/dashboard/components/dnd/dragDroppableConfig';
 import type { LayoutItem, RootState } from 'src/dashboard/types';
 import { DirectoryTreeNode, getDirectoryTree } from './getDirectoryTree';
 
@@ -52,6 +54,7 @@ interface DirectoryTabsRendererProps {
   tabIds: string[];
   handleClickTab: (index: number) => void;
   handleEdit: AntdTabsProps['onEdit'];
+  createComponent: (dropResult: DropResult) => void;
   onChangeTab: (params: { pathToTabIndex: string[] }) => void;
   updateComponents: (components: Record<string, LayoutItem>) => void;
 }
@@ -218,6 +221,26 @@ const DirectoryRenameButton = styled.button`
   `}
 `;
 
+const DirectoryAddSubtabButton = styled.button`
+  ${({ theme }) => css`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: ${theme.sizeUnit * 6}px;
+    height: ${theme.sizeUnit * 6}px;
+    border: 0;
+    background: transparent;
+    color: ${theme.colorTextTertiary};
+    cursor: pointer;
+    padding: 0;
+
+    &:hover {
+      color: ${theme.colorPrimary};
+    }
+  `}
+`;
+
 const DirectoryAddButton = styled.button`
   ${({ theme }) => css`
     width: 100%;
@@ -258,6 +281,7 @@ function DirectoryTabsRenderer({
   tabIds,
   handleClickTab,
   handleEdit,
+  createComponent,
   onChangeTab,
   updateComponents,
 }: DirectoryTabsRendererProps): ReactElement {
@@ -272,6 +296,18 @@ function DirectoryTabsRenderer({
     () => getDirectoryTree(tabsComponent, layout),
     [tabsComponent, layout],
   );
+
+  // A nested directory (a TABS with tabMode 'directory' whose ancestors include
+  // another directory) renders only its content pane: the hierarchy is already
+  // expressed by the outer tree, so showing another tree/tab bar would be
+  // redundant.
+  const isNested = useMemo(() => {
+    const parents = layout[tabsComponent.id]?.parents ?? [];
+    return parents.some(parentId => {
+      const parent = layout[parentId];
+      return parent?.type === TABS_TYPE && parent.meta?.tabMode === 'directory';
+    });
+  }, [layout, tabsComponent.id]);
 
   // The active node is the deepest tab in the direct path; the tabs between
   // this directory and it form the active (ancestor) path used for
@@ -353,6 +389,44 @@ function DirectoryTabsRenderer({
       });
     },
     [layout, updateComponents],
+  );
+
+  const handleAddSubtab = useCallback(
+    (nodeId: string) => {
+      const component = layout[nodeId];
+      if (!component) return;
+      // If the node already contains a nested directory (TABS with tabMode
+      // 'directory'), add a new chapter to it; otherwise create one.
+      const subtabsId = component.children.find(childId => {
+        const child = layout[childId];
+        return child?.type === TABS_TYPE && child.meta?.tabMode === 'directory';
+      });
+      if (subtabsId) {
+        const subtabs = layout[subtabsId];
+        createComponent({
+          destination: {
+            id: subtabsId,
+            type: TABS_TYPE,
+            index: subtabs.children.length,
+          },
+          dragging: { id: NEW_TAB_ID, type: TAB_TYPE },
+        } as unknown as DropResult);
+      } else {
+        createComponent({
+          destination: {
+            id: nodeId,
+            type: TAB_TYPE,
+            index: component.children.length,
+          },
+          dragging: {
+            id: NEW_DIRECTORY_TABS_ID,
+            type: TABS_TYPE,
+            meta: { tabMode: 'directory' },
+          },
+        } as unknown as DropResult);
+      }
+    },
+    [layout, createComponent],
   );
 
   const startRenaming = useCallback(
@@ -461,6 +535,18 @@ function DirectoryTabsRenderer({
               <Icons.EditOutlined iconSize="s" />
             </DirectoryRenameButton>
           )}
+          {editMode && (
+            <DirectoryAddSubtabButton
+              type="button"
+              aria-label={t('Add subtab')}
+              onClick={event => {
+                event.stopPropagation();
+                handleAddSubtab(node.id);
+              }}
+            >
+              <Icons.PlusOutlined iconSize="s" />
+            </DirectoryAddSubtabButton>
+          )}
         </DirectoryItemRow>
         {hasChildren && expanded && (
           <DirectoryTreeSub>{node.children.map(renderNode)}</DirectoryTreeSub>
@@ -468,6 +554,25 @@ function DirectoryTabsRenderer({
       </DirectoryItem>
     );
   };
+
+  if (isNested) {
+    return (
+      <DirectoryContainer
+        className="dashboard-component dashboard-component-tabs dashboard-component-directory"
+        data-test="dashboard-component-directory"
+      >
+        {editMode && renderHoverMenu && tabsDragSourceRef && (
+          <HoverMenu innerRef={tabsDragSourceRef} position="left">
+            <DragHandle position="left" />
+            <DeleteComponentButton onDelete={handleDeleteComponent} />
+          </HoverMenu>
+        )}
+        <DirectoryContent id={`${tabsComponent.id}-directory-content`}>
+          {activeItem?.children}
+        </DirectoryContent>
+      </DirectoryContainer>
+    );
+  }
 
   return (
     <DirectoryContainer

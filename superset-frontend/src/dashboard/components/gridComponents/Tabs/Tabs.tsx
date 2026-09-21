@@ -542,6 +542,7 @@ const Tabs = (props: TabsProps): ReactElement => {
           tabIds={tabIds}
           handleClickTab={handleClickTab}
           handleEdit={handleEdit}
+          createComponent={props.createComponent}
           onChangeTab={props.onChangeTab}
           updateComponents={props.updateComponents}
         />
