@@ -482,14 +482,14 @@ function DirectoryTabsRenderer({
     ? layout[activeItem.key]
     : undefined;
 
-  // Drop handler aligned with base Tabs: any non-tab component dropped on the
-  // content area is inserted as the first child of the active tab.
+  // Drop handler for the content-area drop target. Any palette component
+  // (including Tabs and Directory, which nest as children of the active tab)
+  // dropped on the content area is inserted as the first child of the active
+  // tab. Unlike the base Tabs tab-pane handler we do not exclude TABS_TYPE:
+  // directory chapters are meant to nest tabs/directories beneath them.
   const handleDropToTab = useCallback(
     (dropResult: DropResult) => {
-      if (
-        dropResult.dragging.type !== TABS_TYPE &&
-        dropResult.destination
-      ) {
+      if (dropResult.destination) {
         dispatch(
           handleComponentDrop({
             ...dropResult,
