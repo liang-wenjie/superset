@@ -537,6 +537,7 @@ const Tabs = (props: TabsProps): ReactElement => {
           renderHoverMenu={renderHoverMenu}
           tabsDragSourceRef={tabsDragSourceRef}
           handleDeleteComponent={handleDeleteComponent}
+          deleteComponent={props.deleteComponent}
           tabsComponent={tabsComponent}
           activeKey={activeKey}
           tabIds={tabIds}

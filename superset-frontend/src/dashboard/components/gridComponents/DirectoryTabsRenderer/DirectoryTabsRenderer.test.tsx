@@ -139,6 +139,7 @@ const createProps = (
   renderHoverMenu: true,
   tabsDragSourceRef: { current: null },
   handleDeleteComponent: jest.fn(),
+  deleteComponent: jest.fn(),
   tabsComponent,
   activeKey: 'TAB-1',
   tabIds: ['TAB-1', 'TAB-2'],
@@ -301,15 +302,10 @@ test('clicking a node in edit mode still navigates', async () => {
   expect(props.handleClickTab).toHaveBeenCalledWith(1);
 });
 
-test('renames a node through the rename button', async () => {
+test('renames a node by double-clicking its title', async () => {
   const { props } = renderDirectory({ editMode: true });
 
-  const chapter1Row = screen
-    .getByText('Chapter 1')
-    .closest('[data-test="directory-tree-item"]') as HTMLElement;
-  await userEvent.click(
-    within(chapter1Row).getByRole('button', { name: 'Rename tab' }),
-  );
+  await userEvent.dblClick(screen.getByRole('button', { name: 'Chapter 1' }));
 
   const titleInput = screen.getByDisplayValue('Chapter 1');
   await userEvent.clear(titleInput);
@@ -335,20 +331,17 @@ test('renders the active tab content so charts can be mounted', () => {
   );
 });
 
-test('edit mode shows toolbar, add and remove controls', async () => {
+test('edit mode shows toolbar and add control; nodes expose remove buttons', async () => {
   const { props } = renderDirectory({ editMode: true });
 
   expect(screen.getByTestId('directory-toolbar')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Add tab' })).toBeInTheDocument();
-  expect(
-    screen.getByRole('button', { name: 'Remove tab' }),
-  ).toBeInTheDocument();
+  // Each tree node carries its own remove (x) button; the toolbar no longer
+  // needs an extra remove control.
+  expect(screen.getAllByRole('button', { name: 'Remove tab' }).length).toBeGreaterThan(0);
 
   await userEvent.click(screen.getByRole('button', { name: 'Add tab' }));
   expect(props.handleEdit).toHaveBeenCalledWith(expect.anything(), 'add');
-
-  await userEvent.click(screen.getByRole('button', { name: 'Remove tab' }));
-  expect(props.handleEdit).toHaveBeenCalledWith('TAB-1', 'remove');
 });
 
 test('view mode hides editing controls', () => {
@@ -362,7 +355,7 @@ test('view mode hides editing controls', () => {
     screen.queryByRole('button', { name: 'Remove tab' }),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole('button', { name: 'Rename tab' }),
+    screen.queryByRole('button', { name: 'Remove tab' }),
   ).not.toBeInTheDocument();
 });
 
@@ -414,6 +407,32 @@ test('Add subtab adds a chapter to an existing nested directory', async () => {
     destination: { id: 'TABS-NESTED', type: TABS_TYPE, index: 2 },
     dragging: { id: NEW_TAB_ID, type: TAB_TYPE },
   });
+});
+
+test('deletes a direct node through its remove button', async () => {
+  const { props } = renderDirectory({ editMode: true });
+
+  const chapter2Row = screen
+    .getByText('Chapter 2')
+    .closest('[data-test="directory-tree-item"]') as HTMLElement;
+  await userEvent.click(
+    within(chapter2Row).getByRole('button', { name: 'Remove tab' }),
+  );
+
+  expect(props.deleteComponent).toHaveBeenCalledWith('TAB-2', 'TABS-DIR');
+});
+
+test('deletes a nested node with its nested parent', async () => {
+  const { props } = renderDirectory({ editMode: true });
+
+  const section11Row = screen
+    .getByText('Section 1.1')
+    .closest('[data-test="directory-tree-item"]') as HTMLElement;
+  await userEvent.click(
+    within(section11Row).getByRole('button', { name: 'Remove tab' }),
+  );
+
+  expect(props.deleteComponent).toHaveBeenCalledWith('TAB-1-1', 'TABS-NESTED');
 });
 
 test('renders a nested directory as a content pane only', () => {

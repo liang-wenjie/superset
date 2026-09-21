@@ -35,7 +35,6 @@ import type { TabsProps as AntdTabsProps } from '@superset-ui/core/components/Ta
 import DeleteComponentButton from '../../DeleteComponentButton';
 import DragHandle from '../../dnd/DragHandle';
 import HoverMenu from '../../menu/HoverMenu';
-import IconButton from '../../IconButton';
 import type { TabItem } from '../TabsRenderer';
 import { TAB_TYPE, TABS_TYPE } from '../../../util/componentTypes';
 import { NEW_DIRECTORY_TABS_ID, NEW_TAB_ID } from '../../../util/constants';
@@ -49,6 +48,7 @@ interface DirectoryTabsRendererProps {
   renderHoverMenu?: boolean;
   tabsDragSourceRef?: RefObject<HTMLDivElement>;
   handleDeleteComponent: () => void;
+  deleteComponent: (id: string, parentId: string | null) => void;
   tabsComponent: LayoutItem;
   activeKey: string;
   tabIds: string[];
@@ -201,7 +201,7 @@ const DirectoryItemButton = styled.button`
   `}
 `;
 
-const DirectoryRenameButton = styled.button`
+const DirectoryDeleteButton = styled.button`
   ${({ theme }) => css`
     display: inline-flex;
     align-items: center;
@@ -276,6 +276,7 @@ function DirectoryTabsRenderer({
   renderHoverMenu = true,
   tabsDragSourceRef,
   handleDeleteComponent,
+  deleteComponent,
   tabsComponent,
   activeKey,
   tabIds,
@@ -429,6 +430,16 @@ function DirectoryTabsRenderer({
     [layout, createComponent],
   );
 
+  const handleDeleteNode = useCallback(
+    (nodeId: string) => {
+      const component = layout[nodeId];
+      if (!component) return;
+      const parentId = component.parents?.[component.parents.length - 1] ?? null;
+      deleteComponent(nodeId, parentId);
+    },
+    [layout, deleteComponent],
+  );
+
   const startRenaming = useCallback(
     (event: MouseEvent<HTMLButtonElement>, nodeId: string) => {
       event.stopPropagation();
@@ -502,6 +513,7 @@ function DirectoryTabsRenderer({
           <DirectoryItemButton
             type="button"
             aria-current={isActive ? 'page' : undefined}
+            onDoubleClick={event => startRenaming(event, node.id)}
             onClick={() => {
               // While this node is being renamed, clicks land on its title
               // editor and should edit instead of navigating.
@@ -527,13 +539,16 @@ function DirectoryTabsRenderer({
             />
           </DirectoryItemButton>
           {editMode && (
-            <DirectoryRenameButton
+            <DirectoryDeleteButton
               type="button"
-              aria-label={t('Rename tab')}
-              onClick={event => startRenaming(event, node.id)}
+              aria-label={t('Remove tab')}
+              onClick={event => {
+                event.stopPropagation();
+                handleDeleteNode(node.id);
+              }}
             >
-              <Icons.EditOutlined iconSize="s" />
-            </DirectoryRenameButton>
+              <Icons.CloseOutlined iconSize="s" />
+            </DirectoryDeleteButton>
           )}
           {editMode && (
             <DirectoryAddSubtabButton
@@ -589,14 +604,6 @@ function DirectoryTabsRenderer({
         {editMode && (
           <DirectoryToolbar data-test="directory-toolbar">
             <DirectoryToolbarTitle>{t('Directory')}</DirectoryToolbarTitle>
-            {activeItem && (
-              <IconButton
-                label={t('Remove tab')}
-                hideVisibleLabel
-                icon={<Icons.CloseOutlined iconSize="s" />}
-                onClick={() => handleEdit?.(activeItem.key, 'remove')}
-              />
-            )}
           </DirectoryToolbar>
         )}
         <DirectoryTree data-test="directory-tree">
