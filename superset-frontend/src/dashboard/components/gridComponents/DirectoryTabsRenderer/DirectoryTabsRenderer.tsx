@@ -288,6 +288,10 @@ const DirectoryContent = styled.div`
   min-width: 0;
   position: relative;
   z-index: 1;
+  /* The content pane mirrors a normal tab content area (TabsRenderer paints
+     its container with the same background), so apart from the tree taking
+     its own width the pane looks exactly like a tab's content region. */
+  background-color: ${({ theme }) => theme.colorBgContainer};
 
   /* Row/Column widths are computed from the full dashboard grid width
      (widthMultiple x columnWidth); inside the narrower directory content
