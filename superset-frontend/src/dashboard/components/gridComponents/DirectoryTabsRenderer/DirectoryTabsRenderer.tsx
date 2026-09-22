@@ -535,12 +535,13 @@ function DirectoryTabsRenderer({
   );
   const activeItem = tabItems[activeIndex] ?? tabItems[0];
 
-  // The active tab's layout item; used as the drop target so palette
-  // components can be dragged anywhere into the content area (mirrors the
-  // base Tabs interaction where the tab pane accepts drops).
-  const activeTabComponent = activeItem?.key
-    ? layout[activeItem.key]
-    : undefined;
+  // The layout item of the tab whose pane is shown in the content area.
+  // This follows the deepest tab on the direct path (the tree node the user
+  // last opened), so palette drops land in the chapter/section that is
+  // actually visible. Dropping into the outermost direct tab instead would
+  // leave a nested directory pane showing its empty state while the new chart
+  // appears below it (the directory + chart coexist in one pane).
+  const activeTabComponent = activeTabId ? layout[activeTabId] : undefined;
 
   // Drop handler for the content-area drop target, aligned with the base
   // Tabs tab-pane handler: the destination computed during hover (index and
