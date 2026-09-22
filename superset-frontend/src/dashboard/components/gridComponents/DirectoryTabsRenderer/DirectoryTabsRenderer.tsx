@@ -571,7 +571,11 @@ function DirectoryTabsRenderer({
           onDrop={handleDropToTab}
           editMode
           dropToChild={isEmpty}
-          className={cx('empty-droptarget', {
+          // Only an empty tab is centered by the empty-droptarget styles;
+          // with content the drop target must stay a plain block so children
+          // render from the pane's left edge instead of being centered/compressed
+          // toward the right.
+          className={cx(isEmpty && 'empty-droptarget', {
             'empty-droptarget--full': isEmpty,
           })}
         >
