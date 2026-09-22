@@ -140,12 +140,14 @@ const DirectoryItemRow = styled.div<{
     display: flex;
     align-items: center;
     /* Let the row size to its own content (indent + label + actions) so deep
-       nodes are never squeezed/clipped, and at minimum fill the nav width so
-       the row background still spans the whole nav. */
+       nodes are never squeezed/clipped, and the nav (flex-basis auto) hugs
+       the widest row instead of being padded out to a fixed ratio. */
     width: max-content;
-    min-width: 100%;
     gap: ${theme.sizeUnit}px;
-    padding-left: ${depth * theme.sizeUnit * 2 + theme.sizeUnit}px;
+    /* Cap the indent so very deep hierarchies cannot blow up the nav width
+       and squeeze the content pane; the content pane stretches to fill the
+       remaining width as the nav hugs its widest row. */
+    padding-left: ${Math.min(depth, 6) * theme.sizeUnit * 2 + theme.sizeUnit}px;
     border-left: 3px solid ${active ? theme.colorPrimary : 'transparent'};
     background: ${
       active
