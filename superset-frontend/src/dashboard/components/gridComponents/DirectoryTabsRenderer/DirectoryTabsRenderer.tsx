@@ -329,14 +329,22 @@ const DirectoryContent = styled.div`
     flex-shrink: 1;
   }
 
-  /* The per-child drop strips in the content pane must stay thin (16px).
-     Global empty-droptarget rules can stretch a strip to the full chart
+  /* The drop strips in the content pane must stay thin (16px). Global
+     empty-droptarget rules can stretch a strip to the full chart width or
      height, which covers the charts while dragging and blocks their resize
-     handles. Pin the strips to 16px tall so they never overlap content. */
+     handles. Pin the direct per-child strips (vertical orientation) to
+     16px tall, and the strips inside non-empty rows to 16px wide; empty
+     rows keep their full-pane drop target so the first palette drop still
+     lands. */
   & [data-test='directory-content-dropzone'] > .empty-droptarget {
     height: ${({ theme }) => theme.sizeUnit * 4}px;
     min-height: ${({ theme }) => theme.sizeUnit * 4}px;
     flex: none;
+  }
+  & [data-test='directory-content-dropzone'] .dragdroppable-row:not(.grid-row--empty) .empty-droptarget {
+    width: ${({ theme }) => theme.sizeUnit * 2}px;
+    min-width: ${({ theme }) => theme.sizeUnit * 2}px;
+    max-width: ${({ theme }) => theme.sizeUnit * 2}px;
   }
 
   /* Match a normal tab content area: DashboardBuilder gives
