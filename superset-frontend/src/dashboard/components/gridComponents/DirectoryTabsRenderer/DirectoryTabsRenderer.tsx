@@ -202,7 +202,10 @@ const DirectoryItemIcon = styled.span`
 const DirectoryItemButton = styled.button`
   ${({ theme }) => css`
     flex: 1;
-    min-width: 0;
+    /* Never squeeze the label below its content width: the nav sizes to its
+       widest row, and a button narrower than its text would leave a gap
+       between the tree titles and the content pane in edit mode. */
+    min-width: max-content;
     overflow: hidden;
     border: 0;
     background: transparent;
