@@ -17,7 +17,9 @@
  * under the License.
  */
 import {
+  Children,
   CSSProperties,
+  Fragment,
   MouseEvent,
   ReactElement,
   ReactNode,
@@ -29,7 +31,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import cx from 'classnames';
 import { css, styled } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
 import { useDispatch, useSelector } from 'react-redux';
@@ -594,29 +595,58 @@ function DirectoryTabsRenderer({
     (children: ReactNode) => {
       if (!editMode || !activeTabComponent) return children;
       const isEmpty = !(activeTabComponent.children?.length > 0);
+      // An empty tab gets one full-pane drop target (the empty state is
+      // centered by the empty-droptarget styles).
+      if (isEmpty) {
+        return (
+          <Droppable
+            component={activeTabComponent}
+            orientation="column"
+            index={0}
+            depth={depth}
+            onDrop={handleDropToTab}
+            editMode
+            dropToChild
+            className="empty-droptarget empty-droptarget--full"
+          >
+            {() => (
+              <DirectoryContentDropzone data-test="directory-content-dropzone">
+                {children}
+              </DirectoryContentDropzone>
+            )}
+          </Droppable>
+        );
+      }
+      // With content, mirror the base Tab pane: a droppable strip after every
+      // child so a palette drop lands exactly where the pointer is and the
+      // per-child index is handed to handleComponentDrop (the same interaction
+      // a normal tab content area has).
+      const items = Children.toArray(children);
       return (
-        <Droppable
-          component={activeTabComponent}
-          orientation="column"
-          index={0}
-          depth={depth}
-          onDrop={handleDropToTab}
-          editMode
-          dropToChild={isEmpty}
-          // Only an empty tab is centered by the empty-droptarget styles;
-          // with content the drop target must stay a plain block so children
-          // render from the pane's left edge instead of being centered/compressed
-          // toward the right.
-          className={cx(isEmpty && 'empty-droptarget', {
-            'empty-droptarget--full': isEmpty,
-          })}
-        >
-          {() => (
-            <DirectoryContentDropzone data-test="directory-content-dropzone">
-              {children}
-            </DirectoryContentDropzone>
-          )}
-        </Droppable>
+        <DirectoryContentDropzone data-test="directory-content-dropzone">
+          {items.map((child, i) => (
+            <Fragment key={i}>
+              {child}
+              <Droppable
+                component={activeTabComponent}
+                orientation="column"
+                index={i + 1}
+                depth={depth}
+                onDrop={handleDropToTab}
+                editMode
+                className="empty-droptarget"
+              >
+                {({
+                  dropIndicatorProps,
+                }: {
+                  dropIndicatorProps?: { className: string } | null;
+                }) =>
+                  dropIndicatorProps && <div {...dropIndicatorProps} />
+                }
+              </Droppable>
+            </Fragment>
+          ))}
+        </DirectoryContentDropzone>
       );
     },
     [editMode, activeTabComponent, depth, handleDropToTab],
