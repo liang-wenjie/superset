@@ -323,6 +323,17 @@ const DirectoryContent = styled.div`
     min-width: 0;
     flex-shrink: 1;
   }
+
+  /* Match a normal tab content area: DashboardBuilder gives
+     .dashboard-component-tabs-content a 16px gutter between its children.
+     Do the same for the directory pane so stacked components (rows, charts)
+     keep the same spacing a normal tab content area has. Applies to the
+     direct children in view mode and to the children inside the edit-mode
+     dropzone. */
+  & > :not(:last-child):not(.empty-droptarget),
+  & [data-test='directory-content-dropzone'] > :not(:last-child) {
+    margin-bottom: ${({ theme }) => theme.sizeUnit * 4}px;
+  }
 `;
 
 const DirectoryContentDropzone = styled.div`
