@@ -17,12 +17,9 @@
  * under the License.
  */
 import {
-  Children,
   CSSProperties,
-  Fragment,
   MouseEvent,
   ReactElement,
-  ReactNode,
   RefObject,
   memo,
   useCallback,
@@ -33,7 +30,7 @@ import {
 } from 'react';
 import { css, styled } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { Icons } from '@superset-ui/core/components/Icons';
 import { EditableTitle } from '@superset-ui/core/components';
 import type { TabsProps as AntdTabsProps } from '@superset-ui/core/components/Tabs';
@@ -41,8 +38,6 @@ import type { TabsProps as AntdTabsProps } from '@superset-ui/core/components/Ta
 import DeleteComponentButton from '../../DeleteComponentButton';
 import DragHandle from '../../dnd/DragHandle';
 import HoverMenu from '../../menu/HoverMenu';
-import { Droppable } from 'src/dashboard/components/dnd/DragDroppable';
-import { handleComponentDrop } from 'src/dashboard/actions/dashboardLayout';
 import type { TabItem } from '../TabsRenderer';
 import { TAB_TYPE, TABS_TYPE } from '../../../util/componentTypes';
 import { NEW_DIRECTORY_TABS_ID, NEW_TAB_ID } from '../../../util/constants';
@@ -58,7 +53,6 @@ interface DirectoryTabsRendererProps {
   handleDeleteComponent: () => void;
   deleteComponent: (id: string, parentId: string | null) => void;
   tabsComponent: LayoutItem;
-  depth: number;
   activeKey: string;
   tabIds: string[];
   handleClickTab: (index: number) => void;
@@ -329,40 +323,10 @@ const DirectoryContent = styled.div`
     flex-shrink: 1;
   }
 
-  /* The drop strips in the content pane must stay thin (16px). Global
-     empty-droptarget rules can stretch a strip to the full chart width or
-     height, which covers the charts while dragging and blocks their resize
-     handles. Pin the direct per-child strips (vertical orientation) to
-     16px tall, and the strips inside non-empty rows to 16px wide; empty
-     rows keep their full-pane drop target so the first palette drop still
-     lands. */
-  & [data-test='directory-content-dropzone'] > .empty-droptarget {
-    height: ${({ theme }) => theme.sizeUnit * 4}px;
-    min-height: ${({ theme }) => theme.sizeUnit * 4}px;
-    flex: none;
-  }
-  & [data-test='directory-content-dropzone'] .dragdroppable-row:not(.grid-row--empty) .empty-droptarget {
-    width: ${({ theme }) => theme.sizeUnit * 2}px;
-    min-width: ${({ theme }) => theme.sizeUnit * 2}px;
-    max-width: ${({ theme }) => theme.sizeUnit * 2}px;
-  }
-
-  /* Match a normal tab content area: DashboardBuilder gives
-     .dashboard-component-tabs-content a 16px gutter between its children.
-     Do the same for the directory pane so stacked components (rows, charts)
-     keep the same spacing a normal tab content area has. Applies to the
-     direct children in view mode and to the children inside the edit-mode
-     dropzone. */
-  & > :not(:last-child):not(.empty-droptarget),
-  & [data-test='directory-content-dropzone'] > :not(:last-child) {
-    margin-bottom: ${({ theme }) => theme.sizeUnit * 4}px;
-  }
-`;
-
-const DirectoryContentDropzone = styled.div`
-  ${({ theme }) => css`
-    min-height: ${theme.sizeUnit * 8}px;
-  `}
+  /* The content pane reuses the base Tab pane component (tabItems[].children
+     renders the RENDER_TAB_CONTENT Tab), so the empty state, drop strips and
+     16px gutters are exactly those of a normal tab content area. Nothing
+     custom is needed for drop targets or spacing here. */
 `;
 
 function DirectoryTabsRenderer({
@@ -373,7 +337,6 @@ function DirectoryTabsRenderer({
   handleDeleteComponent,
   deleteComponent,
   tabsComponent,
-  depth,
   activeKey,
   tabIds,
   handleClickTab,
@@ -382,7 +345,6 @@ function DirectoryTabsRenderer({
   onChangeTab,
   updateComponents,
 }: DirectoryTabsRendererProps): ReactElement {
-  const dispatch = useDispatch();
   const layout = useSelector(
     (state: RootState) => state.dashboardLayout.present,
   );
@@ -585,90 +547,11 @@ function DirectoryTabsRenderer({
   );
   const activeItem = tabItems[activeIndex] ?? tabItems[0];
 
-  // The layout item of the tab whose pane is shown in the content area.
-  // This follows the deepest tab on the direct path (the tree node the user
-  // last opened), so palette drops land in the chapter/section that is
-  // actually visible. Dropping into the outermost direct tab instead would
-  // leave a nested directory pane showing its empty state while the new chart
-  // appears below it (the directory + chart coexist in one pane).
-  const activeTabComponent = activeTabId ? layout[activeTabId] : undefined;
-
-  // Drop handler for the content-area drop target, aligned with the base
-  // Tabs tab-pane handler: the destination computed during hover (index and
-  // whether to append) is passed straight through to handleComponentDrop. Any
-  // palette component is accepted, including Tabs and Directory which nest as
-  // children of the active tab - directory chapters are meant to nest further
-  // tabs/directories beneath them, so unlike other tab panes TABS_TYPE is not
-  // excluded here.
-  const handleDropToTab = useCallback(
-    (dropResult: DropResult) => {
-      if (dropResult.destination) {
-        dispatch(handleComponentDrop(dropResult));
-      }
-    },
-    [dispatch],
-  );
-
-  const renderContentDropzone = useCallback(
-    (children: ReactNode) => {
-      if (!editMode || !activeTabComponent) return children;
-      const isEmpty = !(activeTabComponent.children?.length > 0);
-      // An empty tab gets one full-pane drop target (the empty state is
-      // centered by the empty-droptarget styles).
-      if (isEmpty) {
-        return (
-          <Droppable
-            component={activeTabComponent}
-            orientation="column"
-            index={0}
-            depth={depth}
-            onDrop={handleDropToTab}
-            editMode
-            dropToChild
-            className="empty-droptarget empty-droptarget--full"
-          >
-            {() => (
-              <DirectoryContentDropzone data-test="directory-content-dropzone">
-                {children}
-              </DirectoryContentDropzone>
-            )}
-          </Droppable>
-        );
-      }
-      // With content, mirror the base Tab pane: a droppable strip after every
-      // child so a palette drop lands exactly where the pointer is and the
-      // per-child index is handed to handleComponentDrop (the same interaction
-      // a normal tab content area has).
-      const items = Children.toArray(children);
-      return (
-        <DirectoryContentDropzone data-test="directory-content-dropzone">
-          {items.map((child, i) => (
-            <Fragment key={i}>
-              {child}
-              <Droppable
-                component={activeTabComponent}
-                orientation="column"
-                index={i + 1}
-                depth={depth}
-                onDrop={handleDropToTab}
-                editMode
-                className="empty-droptarget"
-              >
-                {({
-                  dropIndicatorProps,
-                }: {
-                  dropIndicatorProps?: { className: string } | null;
-                }) =>
-                  dropIndicatorProps && <div {...dropIndicatorProps} />
-                }
-              </Droppable>
-            </Fragment>
-          ))}
-        </DirectoryContentDropzone>
-      );
-    },
-    [editMode, activeTabComponent, depth, handleDropToTab],
-  );
+  // The active pane reuses the base Tab content component: tabItems[].children
+  // is a RENDER_TAB_CONTENT DashboardComponent (the Tab component's pane), so
+  // the empty state, per-child drop strips and gutters are exactly those of a
+  // normal tab content area. The only difference from base Tabs is the tree
+  // navigation on the left.
 
   const renderNode = (node: DirectoryTreeNode): ReactElement => {
     const hasChildren = node.children.length > 0;
@@ -795,7 +678,7 @@ function DirectoryTabsRenderer({
           style={contentStyle}
           id={`${tabsComponent.id}-directory-content`}
         >
-          {renderContentDropzone(activeItem?.children)}
+          {activeItem?.children}
         </DirectoryContent>
       </DirectoryContainer>
     );
@@ -839,7 +722,7 @@ function DirectoryTabsRenderer({
         style={contentStyle}
         id={`${tabsComponent.id}-directory-content`}
       >
-        {renderContentDropzone(activeItem?.children)}
+        {activeItem?.children}
       </DirectoryContent>
     </DirectoryContainer>
   );
