@@ -316,7 +316,10 @@ const DirectoryContent = styled.div`
   & .dragdroppable-row {
     flex-wrap: nowrap;
   }
-  & .dragdroppable-row * {
+  /* Only content items shrink; empty-droptarget gaps (16px) between the
+     charts stay intact so the pane keeps the same spacing a normal row has
+     between its components. */
+  & .dragdroppable-row :not(.empty-droptarget) {
     min-width: 0;
     flex-shrink: 1;
   }
