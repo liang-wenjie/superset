@@ -81,8 +81,10 @@ const DirectoryContainer = styled.div`
 
 const DirectoryNav = styled.nav`
   ${({ theme }) => css`
-    flex: 0 0 ${theme.sizeUnit * 38}px;
-    max-width: 40%;
+    /* Size the nav to its content (widest node) so it stays as narrow as the
+       titles allow, and let the content pane hug its right edge. */
+    flex: 0 0 auto;
+    max-width: 45%;
     border-right: 1px solid ${theme.colorBorderSecondary};
     padding: ${theme.sizeUnit * 2}px;
     background-color: ${theme.colorBgContainer};
@@ -137,6 +139,11 @@ const DirectoryItemRow = styled.div<{
   ${({ active, inPath, depth, theme }) => css`
     display: flex;
     align-items: center;
+    /* Let the row size to its own content (indent + label + actions) so deep
+       nodes are never squeezed/clipped, and at minimum fill the nav width so
+       the row background still spans the whole nav. */
+    width: max-content;
+    min-width: 100%;
     gap: ${theme.sizeUnit}px;
     padding-left: ${depth * theme.sizeUnit * 2 + theme.sizeUnit}px;
     border-left: 3px solid ${active ? theme.colorPrimary : 'transparent'};
