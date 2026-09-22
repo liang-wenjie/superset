@@ -338,6 +338,19 @@ const DirectoryContent = styled.div`
     min-width: ${({ theme }) => theme.sizeUnit * 2}px;
     max-width: ${({ theme }) => theme.sizeUnit * 2}px;
   }
+  /* The row's trailing drop zone (the free columns to the right of the last
+     chart) uses width:100% from the global grid rules, which in a flex row
+     resolves to flex-basis:100% and squeezes the charts while the strip
+     itself starts inside the last chart, covering it. Make it grow from the
+     chart's right edge instead: flex 1 1 auto with width auto keeps charts
+     at their grid width and the strip fills exactly the remaining space -
+     the same behaviour a chart row has on the base grid. */
+  & .dashboard-component-tabs-content .dragdroppable-row:not(.grid-row--empty) .empty-droptarget:last-child {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: ${({ theme }) => theme.sizeUnit * 2}px;
+    max-width: none;
+  }
 `;
 
 function DirectoryTabsRenderer({
