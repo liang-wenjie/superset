@@ -325,14 +325,15 @@ const DirectoryContent = styled.div`
 
   /* The content pane reuses the base Tab pane component (tabItems[].children
      renders the RENDER_TAB_CONTENT Tab), so the empty state, drop strips and
-     16px gutters are exactly those of a normal tab content area. The one
-     exception is the Row component's own edit-mode drop strips: they are
-     sized against the full dashboard grid and can stretch to the whole pane
-     width inside this narrower area, covering the charts while dragging and
-     blocking their resize handles. Pin non-empty rows' strips to the normal
-     16px wide vertical strips (empty rows keep their full-pane drop target
-     so the first palette drop still lands). */
-  & .dashboard-component-tabs-content .dragdroppable-row:not(.grid-row--empty) .empty-droptarget {
+     16px gutters are exactly those of a normal tab content area. The Row
+     component's between-chart strips are natively 16px; pin them explicitly
+     so the full-dashboard-grid width rule cannot stretch them inside this
+     narrower pane. The row's trailing strip (:last-child) is intentionally
+     left alone: when a row has free columns it fills the remaining width to
+     the right of the charts, which is the normal drop area for adding
+     another chart (same behaviour as a chart row on the base grid). Empty
+     rows keep their full-pane drop target. */
+  & .dashboard-component-tabs-content .dragdroppable-row:not(.grid-row--empty) .empty-droptarget:not(:last-child) {
     width: ${({ theme }) => theme.sizeUnit * 2}px;
     min-width: ${({ theme }) => theme.sizeUnit * 2}px;
     max-width: ${({ theme }) => theme.sizeUnit * 2}px;
