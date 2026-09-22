@@ -329,6 +329,16 @@ const DirectoryContent = styled.div`
     flex-shrink: 1;
   }
 
+  /* The per-child drop strips in the content pane must stay thin (16px).
+     Global empty-droptarget rules can stretch a strip to the full chart
+     height, which covers the charts while dragging and blocks their resize
+     handles. Pin the strips to 16px tall so they never overlap content. */
+  & [data-test='directory-content-dropzone'] > .empty-droptarget {
+    height: ${({ theme }) => theme.sizeUnit * 4}px;
+    min-height: ${({ theme }) => theme.sizeUnit * 4}px;
+    flex: none;
+  }
+
   /* Match a normal tab content area: DashboardBuilder gives
      .dashboard-component-tabs-content a 16px gutter between its children.
      Do the same for the directory pane so stacked components (rows, charts)
