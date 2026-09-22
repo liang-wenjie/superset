@@ -309,11 +309,16 @@ const DirectoryContent = styled.div`
   }
   /* A row's width is computed from the full dashboard grid (12 columns of
      the dashboard width). Several charts side by side in one row inside this
-     narrower pane would overflow past the right edge of the dashboard. Wrap
-     the row items so the pane's right edge (which is the dashboard's right
-     edge) is the boundary and nothing can stick out. */
+     narrower pane would overflow past the right edge of the dashboard. Let
+     the row items shrink (like a normal full-width row) so they adapt to the
+     pane width; the pane's right edge (which is the dashboard's right edge)
+     is the boundary and nothing can stick out. */
   & .dragdroppable-row {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+  }
+  & .dragdroppable-row * {
+    min-width: 0;
+    flex-shrink: 1;
   }
 `;
 
