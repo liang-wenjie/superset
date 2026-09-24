@@ -307,20 +307,28 @@ const DirectoryContent = styled.div`
     max-width: min(var(--directory-content-width, 100%), 100%) !important;
   }
   /* A row's width is computed from the full dashboard grid (12 columns of
-     the dashboard width). Several charts side by side in one row inside this
-     narrower pane would overflow past the right edge of the dashboard. Let
-     the row items shrink (like a normal full-width row) so they adapt to the
-     pane width; the pane's right edge (which is the dashboard's right edge)
-     is the boundary and nothing can stick out. */
-  & .dragdroppable-row {
+     the dashboard width), so every chart keeps the grid width the user set
+     for it. Inside this narrower pane a row cannot hold as many charts as
+     the full dashboard would, so when a new chart is dropped and there is
+     no room left, only that last chart shrinks within its available space;
+     the charts already placed keep their shape. */
+  & .dragdroppable-row .grid-row {
     flex-wrap: nowrap;
   }
-  /* Only content items shrink; empty-droptarget gaps (16px) between the
-     charts stay intact so the pane keeps the same spacing a normal row has
-     between its components. */
+  /* Charts keep their configured grid width, so the 16px empty-droptarget
+     gaps between them stay the same spacing a normal row has between its
+     components. */
   & .dragdroppable-row :not(.empty-droptarget) {
-    min-width: 0;
+    flex-shrink: 0;
+  }
+  /* The last chart of the row (the one most recently dropped at the row's
+     end, where there is no room left) may shrink into whatever space remains,
+     without changing any of the previously placed charts. It never goes
+     below one grid column (the chart resizer's own minimum width) so it
+     keeps a usable drop/resize area. */
+  & .dragdroppable-row .grid-row > :not(.empty-droptarget):nth-last-child(2) {
     flex-shrink: 1;
+    min-width: 82px;
   }
 
   /* The content pane reuses the base Tab pane component (tabItems[].children
