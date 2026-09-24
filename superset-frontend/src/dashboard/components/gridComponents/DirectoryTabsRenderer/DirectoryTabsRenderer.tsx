@@ -304,7 +304,7 @@ const DirectoryContent = styled.div`
      aligns to the left edge of the pane. */
   & .resizable-container,
   & .dashboard-component-chart-holder {
-    max-width: var(--directory-content-width, 100%) !important;
+    max-width: min(var(--directory-content-width, 100%), 100%) !important;
   }
   /* A row's width is computed from the full dashboard grid (12 columns of
      the dashboard width). Several charts side by side in one row inside this
@@ -334,9 +334,9 @@ const DirectoryContent = styled.div`
      another chart (same behaviour as a chart row on the base grid). Empty
      rows keep their full-pane drop target. */
   & .dashboard-component-tabs-content .dragdroppable-row:not(.grid-row--empty) .empty-droptarget:not(:last-child) {
-    width: ${({ theme }) => theme.sizeUnit * 2}px;
-    min-width: ${({ theme }) => theme.sizeUnit * 2}px;
-    max-width: ${({ theme }) => theme.sizeUnit * 2}px;
+    width: ${({ theme }) => theme.sizeUnit * 4}px;
+    min-width: ${({ theme }) => theme.sizeUnit * 4}px;
+    max-width: ${({ theme }) => theme.sizeUnit * 4}px;
   }
   /* The row's trailing drop zone (the free columns to the right of the last
      chart) uses width:100% from the global grid rules, which in a flex row
@@ -348,7 +348,7 @@ const DirectoryContent = styled.div`
   & .dashboard-component-tabs-content .dragdroppable-row:not(.grid-row--empty) .empty-droptarget:last-child {
     flex: 1 1 auto;
     width: auto;
-    min-width: ${({ theme }) => theme.sizeUnit * 2}px;
+    min-width: ${({ theme }) => theme.sizeUnit * 4}px;
     max-width: none;
   }
 `;
