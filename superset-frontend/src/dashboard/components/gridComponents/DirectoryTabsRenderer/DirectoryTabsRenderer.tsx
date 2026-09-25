@@ -408,14 +408,6 @@ const DirectoryContent = styled.div<{ editMode: boolean }>`
     min-width: ${({ theme }) => theme.sizeUnit * 4}px;
     max-width: none;
   }
-  /* When dragging, rows that already hold charts do not show the drop
-     indicator (the blue highlight / insertion arrow): the indicator belongs
-     below a chart row (on the inter-row strip) or on an empty area, not on
-     top of the charts themselves. Empty rows keep their indicator so users
-     can still see where a new chart lands. */
-  & .dragdroppable-row .grid-row:not(.grid-row--empty) .drop-indicator {
-    display: none;
-  }
 `;
 
 function DirectoryTabsRenderer({
