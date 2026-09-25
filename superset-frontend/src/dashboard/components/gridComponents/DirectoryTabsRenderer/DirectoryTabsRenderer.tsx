@@ -21,6 +21,7 @@ import {
   MouseEvent,
   ReactElement,
   RefObject,
+  cloneElement,
   memo,
   useCallback,
   useEffect,
@@ -41,7 +42,11 @@ import DragHandle from '../../dnd/DragHandle';
 import HoverMenu from '../../menu/HoverMenu';
 import type { TabItem } from '../TabsRenderer';
 import { TAB_TYPE, TABS_TYPE } from '../../../util/componentTypes';
-import { NEW_DIRECTORY_TABS_ID, NEW_TAB_ID } from '../../../util/constants';
+import {
+  GRID_GUTTER_SIZE,
+  NEW_DIRECTORY_TABS_ID,
+  NEW_TAB_ID,
+} from '../../../util/constants';
 import type { DropResult } from 'src/dashboard/components/dnd/dragDroppableConfig';
 import type { LayoutItem, RootState } from 'src/dashboard/types';
 import { DirectoryTreeNode, getDirectoryTree } from './getDirectoryTree';
@@ -56,6 +61,7 @@ interface DirectoryTabsRendererProps {
   tabsComponent: LayoutItem;
   activeKey: string;
   tabIds: string[];
+  availableColumnCount: number;
   handleClickTab: (index: number) => void;
   handleEdit: AntdTabsProps['onEdit'];
   createComponent: (dropResult: DropResult) => void;
@@ -378,32 +384,6 @@ const DirectoryContent = styled.div<{ editMode: boolean }>`
   & .dashboard-component-chart-holder {
     max-width: min(var(--directory-content-width, 100%), 100%) !important;
   }
-  /* Edit mode adds drop targets between and after charts. Keep the chart
-     widths stable while those targets consume horizontal space, and allow
-     only the final chart to absorb any remaining compression. In view mode
-     there are no drop targets, so these rules must stay off: the
-     nth-last-child selector would otherwise target the middle chart and
-     change the saved width ratio after leaving edit mode. */
-  ${({ editMode }) =>
-    editMode &&
-    css`
-      & .dragdroppable-row .grid-row {
-        flex-wrap: nowrap;
-      }
-
-      & .dragdroppable-row :not(.empty-droptarget) {
-        flex-shrink: 0;
-      }
-
-      &
-        .dragdroppable-row
-        .grid-row
-        > :not(.empty-droptarget):nth-last-child(2) {
-        flex-shrink: 1;
-        min-width: 82px;
-      }
-    `}
-
   /* The content pane reuses the base Tab pane component (tabItems[].children
      renders the RENDER_TAB_CONTENT Tab), so the empty state, drop strips and
      16px gutters are exactly those of a normal tab content area. The Row
@@ -450,6 +430,7 @@ function DirectoryTabsRenderer({
   tabsComponent,
   activeKey,
   tabIds,
+  availableColumnCount,
   handleClickTab,
   handleEdit,
   createComponent,
@@ -571,6 +552,15 @@ function DirectoryTabsRenderer({
         : undefined,
     [contentWidth],
   );
+  const directoryColumnWidth = useMemo(() => {
+    if (!contentWidth || availableColumnCount <= 0) {
+      return undefined;
+    }
+    return (
+      (contentWidth + GRID_GUTTER_SIZE) / availableColumnCount -
+      GRID_GUTTER_SIZE
+    );
+  }, [availableColumnCount, contentWidth]);
   const isExpanded = useCallback(
     (nodeId: string) => !collapsedIds.has(nodeId) || activePathIds.has(nodeId),
     [collapsedIds, activePathIds],
@@ -697,6 +687,15 @@ function DirectoryTabsRenderer({
     tabIds.findIndex(tabId => tabId === activeKey),
   );
   const activeItem = tabItems[activeIndex] ?? tabItems[0];
+  const activeContent = useMemo(() => {
+    if (!activeItem?.children || directoryColumnWidth === undefined) {
+      return activeItem?.children;
+    }
+    return cloneElement(activeItem.children, {
+      availableColumnCount,
+      columnWidth: directoryColumnWidth,
+    });
+  }, [activeItem?.children, availableColumnCount, directoryColumnWidth]);
 
   // The active pane reuses the base Tab content component: tabItems[].children
   // is a RENDER_TAB_CONTENT DashboardComponent (the Tab component's pane), so
@@ -833,7 +832,7 @@ function DirectoryTabsRenderer({
           editMode={editMode}
           id={`${tabsComponent.id}-directory-content`}
         >
-          {activeItem?.children}
+          {activeContent}
         </DirectoryContent>
       </DirectoryContainer>
     );
@@ -878,7 +877,7 @@ function DirectoryTabsRenderer({
         editMode={editMode}
         id={`${tabsComponent.id}-directory-content`}
       >
-        {activeItem?.children}
+        {activeContent}
       </DirectoryContent>
     </DirectoryContainer>
   );

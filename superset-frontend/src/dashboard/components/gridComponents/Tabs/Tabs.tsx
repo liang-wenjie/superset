@@ -541,6 +541,7 @@ const Tabs = (props: TabsProps): ReactElement => {
           tabsComponent={tabsComponent}
           activeKey={activeKey}
           tabIds={tabIds}
+          availableColumnCount={availableColumnCount}
           handleClickTab={handleClickTab}
           handleEdit={handleEdit}
           createComponent={props.createComponent}

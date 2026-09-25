@@ -143,6 +143,7 @@ const createProps = (
   tabsComponent,
   activeKey: 'TAB-1',
   tabIds: ['TAB-1', 'TAB-2'],
+  availableColumnCount: 12,
   handleClickTab: jest.fn(),
   handleEdit: jest.fn(),
   createComponent: jest.fn() as DirectoryProps['createComponent'],
