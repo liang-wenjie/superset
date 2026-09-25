@@ -23,6 +23,7 @@ import {
   RefObject,
   memo,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -81,7 +82,10 @@ const DirectoryNav = styled.nav`
     flex: 0 0 auto;
     max-width: 45%;
     border-right: 1px solid ${theme.colorBorderSecondary};
-    padding: ${theme.sizeUnit * 2}px;
+    /* Keep the deepest tree-row actions clear of the content row's
+       left-side hover menu, which extends into the navigation area. */
+    padding: ${theme.sizeUnit * 2}px ${theme.sizeUnit * 6}px
+      ${theme.sizeUnit * 2}px ${theme.sizeUnit * 2}px;
     background-color: ${theme.colorBgContainer};
     overflow: auto;
   `}
@@ -278,8 +282,11 @@ const DirectoryAddButton = styled.button`
   `}
 `;
 
-const DirectoryContent = styled.div`
+const DirectoryContent = styled.div<{ editMode: boolean }>`
   flex: 1;
+  align-self: flex-start;
+  height: fit-content;
+  min-height: 0;
   min-width: 0;
   position: relative;
   z-index: 1;
@@ -287,6 +294,42 @@ const DirectoryContent = styled.div`
      its container with the same background), so apart from the tree taking
      its own width the pane looks exactly like a tab's content region. */
   background-color: ${({ theme }) => theme.colorBgContainer};
+
+  /* Directory content should follow the rendered rows instead of inheriting
+     the full-height tab-pane rule. This prevents empty space below the last
+     chart when the directory is shorter than its parent grid. */
+  & .dashboard-component-tabs-content {
+    height: auto;
+  }
+
+  /* A newly added nested directory owns an empty tab until the user drops a
+     chart into it. Keep its edit-mode drop target compact instead of letting
+     the global full-tab rule reserve the height of the whole dashboard. */
+  & .dashboard-component-tabs-content--directory-empty {
+    height: ${({ theme }) => theme.sizeUnit * 4}px !important;
+    min-height: 0 !important;
+  }
+
+  &
+    .dashboard-component-tabs-content--directory-empty
+    > .directory-empty-droptarget {
+    position: relative !important;
+    top: auto !important;
+    bottom: auto !important;
+    height: ${({ theme }) => theme.sizeUnit * 4}px !important;
+    min-height: ${({ theme }) => theme.sizeUnit * 4}px !important;
+  }
+
+  /* Keep an empty row as a usable edit-mode drop target without reserving a
+     full chart-sized block beneath the directory content. The important flag
+     wins over Row's default empty-row rule. */
+  ${({ editMode, theme }) =>
+    editMode &&
+    css`
+      & .dragdroppable-row .grid-row.grid-row--empty {
+        min-height: ${theme.sizeUnit * 8}px !important;
+      }
+    `}
 
   /* Row/Column widths are computed from the full dashboard grid width
      (widthMultiple x columnWidth); inside the narrower directory content
@@ -341,7 +384,10 @@ const DirectoryContent = styled.div`
      the right of the charts, which is the normal drop area for adding
      another chart (same behaviour as a chart row on the base grid). Empty
      rows keep their full-pane drop target. */
-  & .dashboard-component-tabs-content .dragdroppable-row:not(.grid-row--empty) .empty-droptarget:not(:last-child) {
+  &
+    .dashboard-component-tabs-content
+    .dragdroppable-row:not(.grid-row--empty)
+    .empty-droptarget:not(:last-child) {
     width: ${({ theme }) => theme.sizeUnit * 4}px;
     min-width: ${({ theme }) => theme.sizeUnit * 4}px;
     max-width: ${({ theme }) => theme.sizeUnit * 4}px;
@@ -353,11 +399,22 @@ const DirectoryContent = styled.div`
      chart's right edge instead: flex 1 1 auto with width auto keeps charts
      at their grid width and the strip fills exactly the remaining space -
      the same behaviour a chart row has on the base grid. */
-  & .dashboard-component-tabs-content .dragdroppable-row:not(.grid-row--empty) .empty-droptarget:last-child {
+  &
+    .dashboard-component-tabs-content
+    .dragdroppable-row:not(.grid-row--empty)
+    .empty-droptarget:last-child {
     flex: 1 1 auto;
     width: auto;
     min-width: ${({ theme }) => theme.sizeUnit * 4}px;
     max-width: none;
+  }
+  /* When dragging, rows that already hold charts do not show the drop
+     indicator (the blue highlight / insertion arrow): the indicator belongs
+     below a chart row (on the inter-row strip) or on an empty area, not on
+     top of the charts themselves. Empty rows keep their indicator so users
+     can still see where a new chart lands. */
+  & .dragdroppable-row .grid-row:not(.grid-row--empty) .drop-indicator {
+    display: none;
   }
 `;
 
@@ -430,6 +487,42 @@ function DirectoryTabsRenderer({
   // The tab currently being renamed in edit mode. While a tab is being
   // renamed, clicking its node edits the title instead of navigating.
   const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editMode) {
+      setRenamingId(null);
+    }
+  }, [editMode]);
+
+  useEffect(() => {
+    if (!editMode || !renamingId) {
+      return undefined;
+    }
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      const titleInput = document.querySelector<HTMLTextAreaElement>(
+        '[data-test="textarea-editable-title-input"]',
+      );
+      if (titleInput?.contains(target)) {
+        return;
+      }
+
+      titleInput?.blur();
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown, true);
+    return () =>
+      document.removeEventListener(
+        'pointerdown',
+        handleOutsidePointerDown,
+        true,
+      );
+  }, [editMode, renamingId]);
 
   // Measured width of the content pane. Charts are sized in grid columns
   // relative to the full dashboard width, which is wider than this pane when
@@ -551,7 +644,8 @@ function DirectoryTabsRenderer({
     (nodeId: string) => {
       const component = layout[nodeId];
       if (!component) return;
-      const parentId = component.parents?.[component.parents.length - 1] ?? null;
+      const parentId =
+        component.parents?.[component.parents.length - 1] ?? null;
       deleteComponent(nodeId, parentId);
     },
     [layout, deleteComponent],
@@ -559,10 +653,13 @@ function DirectoryTabsRenderer({
 
   const startRenaming = useCallback(
     (event: MouseEvent<HTMLButtonElement>, nodeId: string) => {
+      if (!editMode) {
+        return;
+      }
       event.stopPropagation();
       setRenamingId(nodeId);
     },
-    [],
+    [editMode],
   );
 
   const finishRenaming = useCallback(
@@ -636,7 +733,9 @@ function DirectoryTabsRenderer({
           <DirectoryItemButton
             type="button"
             aria-current={isActive ? 'page' : undefined}
-            onDoubleClick={event => startRenaming(event, node.id)}
+            onDoubleClick={
+              editMode ? event => startRenaming(event, node.id) : undefined
+            }
             onClick={() => {
               // While this node is being renamed, clicks land on its title
               // editor and should edit instead of navigating.
@@ -648,16 +747,23 @@ function DirectoryTabsRenderer({
           >
             <EditableTitle
               key={
-                renamingId === node.id
+                editMode && renamingId === node.id
                   ? `rename-${node.id}`
                   : `title-${node.id}`
               }
               title={component?.meta.text}
               defaultTitle={component?.meta.defaultText}
               placeholder={component?.meta.placeholder}
-              canEdit={renamingId === node.id}
+              canEdit={editMode && renamingId === node.id}
               showTooltip={false}
-              editing={renamingId === node.id}
+              editing={editMode && renamingId === node.id}
+              onEditingChange={isEditing => {
+                if (!isEditing) {
+                  setRenamingId(currentId =>
+                    currentId === node.id ? null : currentId,
+                  );
+                }
+              }}
               onSaveTitle={nextText => finishRenaming(node.id, nextText)}
             />
           </DirectoryItemButton>
@@ -699,15 +805,10 @@ function DirectoryTabsRenderer({
         className="dashboard-component dashboard-component-tabs dashboard-component-directory"
         data-test="dashboard-component-directory"
       >
-        {editMode && renderHoverMenu && tabsDragSourceRef && (
-          <HoverMenu innerRef={tabsDragSourceRef} position="left">
-            <DragHandle position="left" />
-            <DeleteComponentButton onDelete={handleDeleteComponent} />
-          </HoverMenu>
-        )}
         <DirectoryContent
           ref={contentRef}
           style={contentStyle}
+          editMode={editMode}
           id={`${tabsComponent.id}-directory-content`}
         >
           {activeItem?.children}
@@ -752,6 +853,7 @@ function DirectoryTabsRenderer({
       <DirectoryContent
         ref={contentRef}
         style={contentStyle}
+        editMode={editMode}
         id={`${tabsComponent.id}-directory-content`}
       >
         {activeItem?.children}

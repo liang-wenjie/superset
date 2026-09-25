@@ -45,7 +45,7 @@ import {
   DragDroppable,
   Droppable,
 } from 'src/dashboard/components/dnd/DragDroppable';
-import { TAB_TYPE } from 'src/dashboard/util/componentTypes';
+import { TAB_TYPE, TABS_TYPE } from 'src/dashboard/util/componentTypes';
 import { selectIsDashboardVersionPreviewActive } from 'src/features/versionHistory/reducer';
 import type { LayoutItem, RootState } from 'src/dashboard/types';
 import type {
@@ -295,8 +295,28 @@ const Tab = (props: TabProps): ReactElement => {
     } = props;
 
     const shouldDisplayEmptyState = tabComponent.children.length === 0;
+    const hasDirectoryContent = (tabComponent.parents ?? []).some(parentId => {
+      const parent = dashboardLayout[parentId];
+      return (
+        parent?.type === TABS_TYPE &&
+        parent.meta?.tabMode === 'directory' &&
+        getChartIdsFromComponent(parentId, dashboardLayout).length > 0
+      );
+    });
+    const isDirectoryEmptyTab = shouldDisplayEmptyState && hasDirectoryContent;
+    const shouldRenderEmptyState =
+      shouldDisplayEmptyState && !hasDirectoryContent;
     return (
-      <div className="dashboard-component-tabs-content">
+      <div
+        className={classNames(
+          'dashboard-component-tabs-content',
+          isDirectoryEmptyTab &&
+            'dashboard-component-tabs-content--directory-empty',
+        )}
+        data-test={
+          isDirectoryEmptyTab ? 'directory-empty-tab-content' : undefined
+        }
+      >
         {/* Make top of tab droppable */}
         {editMode && (
           <Droppable
@@ -312,14 +332,16 @@ const Tab = (props: TabProps): ReactElement => {
             editMode
             className={classNames({
               'empty-droptarget': true,
-              'empty-droptarget--full': tabComponent.children.length === 0,
+              'empty-droptarget--full':
+                tabComponent.children.length === 0 && !isDirectoryEmptyTab,
+              'directory-empty-droptarget': isDirectoryEmptyTab,
             })}
             dropToChild={tabComponent.children.length === 0}
           >
             {renderDraggableContent}
           </Droppable>
         )}
-        {shouldDisplayEmptyState && (
+        {shouldDisplayEmptyState && !isDirectoryEmptyTab && (
           <Droppable
             component={tabComponent}
             orientation="column"
@@ -329,55 +351,59 @@ const Tab = (props: TabProps): ReactElement => {
             editMode={editMode}
             dropToChild
           >
-            {() => (
-              <div data-test="emptystate-drop-indicator">
-                <EmptyState
-                  title={
-                    editMode
-                      ? t('Drag and drop components to this tab')
-                      : t('There are no components added to this tab')
-                  }
-                  description={
-                    canEnterEditMode &&
-                    (editMode ? (
-                      <span>
-                        {t('You can')}{' '}
-                        <Typography.Link
-                          href={ensureAppRoot(
-                            `/chart/add?dashboard_id=${dashboardId}`,
+            {() =>
+              shouldRenderEmptyState ? (
+                <div data-test="emptystate-drop-indicator">
+                  <EmptyState
+                    title={
+                      editMode
+                        ? t('Drag and drop components to this tab')
+                        : t('There are no components added to this tab')
+                    }
+                    description={
+                      canEnterEditMode &&
+                      (editMode ? (
+                        <span>
+                          {t('You can')}{' '}
+                          <Typography.Link
+                            href={ensureAppRoot(
+                              `/chart/add?dashboard_id=${dashboardId}`,
+                            )}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                          >
+                            {t('create a new chart')}
+                          </Typography.Link>{' '}
+                          {t(
+                            'or use existing ones from the panel on the right',
                           )}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                        >
-                          {t('create a new chart')}
-                        </Typography.Link>{' '}
-                        {t('or use existing ones from the panel on the right')}
-                      </span>
-                    ) : (
-                      <span>
-                        {t('You can add the components in the')}{' '}
-                        <button
-                          type="button"
-                          onClick={() => dispatch(setEditMode(true))}
-                          css={css`
-                            appearance: none;
-                            border: none;
-                            background: none;
-                            padding: 0;
-                            font: inherit;
-                            cursor: pointer;
-                            text-decoration: underline;
-                          `}
-                        >
-                          {t('edit mode')}
-                        </button>
-                      </span>
-                    ))
-                  }
-                  image="chart.svg"
-                />
-              </div>
-            )}
+                        </span>
+                      ) : (
+                        <span>
+                          {t('You can add the components in the')}{' '}
+                          <button
+                            type="button"
+                            onClick={() => dispatch(setEditMode(true))}
+                            css={css`
+                              appearance: none;
+                              border: none;
+                              background: none;
+                              padding: 0;
+                              font: inherit;
+                              cursor: pointer;
+                              text-decoration: underline;
+                            `}
+                          >
+                            {t('edit mode')}
+                          </button>
+                        </span>
+                      ))
+                    }
+                    image="chart.svg"
+                  />
+                </div>
+              ) : null
+            }
           </Droppable>
         )}
         {tabComponent.children.map((componentId, componentIndex) => (

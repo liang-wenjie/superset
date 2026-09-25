@@ -391,6 +391,46 @@ test('Render tab content with no children, canEdit: true', async () => {
   expect(setEditMode).toHaveBeenCalled();
 });
 
+test('hides the empty-state prompt when a directory already contains charts', () => {
+  const props = createProps();
+  props.editMode = true;
+  props.component.children = [];
+  props.component.parents = ['ROOT_ID', 'GRID_ID', 'TABS-directory'];
+  const getChartIdsFromComponent = require('src/dashboard/util/getChartIdsFromComponent');
+  getChartIdsFromComponent.mockReturnValue([101]);
+
+  render(<Tab {...props} />, {
+    useRedux: true,
+    useDnd: true,
+    initialState: {
+      dashboardLayout: {
+        past: [],
+        present: {
+          'TABS-directory': {
+            id: 'TABS-directory',
+            type: 'TABS',
+            children: [props.component.id],
+            meta: { tabMode: 'directory' },
+            parents: ['ROOT_ID', 'GRID_ID'],
+          },
+        },
+        future: [],
+      },
+    },
+  });
+
+  expect(
+    screen.queryByText('There are no components added to this tab'),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByTestId('emptystate-drop-indicator'),
+  ).not.toBeInTheDocument();
+  expect(screen.getByTestId('directory-empty-tab-content')).toHaveClass(
+    'dashboard-component-tabs-content--directory-empty',
+  );
+  expect(screen.getAllByTestId('MockDroppable')).toHaveLength(1);
+});
+
 test('Render tab (with content) editMode:true', () => {
   const props = createProps();
   props.isFocused = true;

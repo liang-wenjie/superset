@@ -320,6 +320,50 @@ test('renames a node by double-clicking its title', async () => {
   });
 });
 
+test('does not enter title editing on double-click in view mode', async () => {
+  const { props } = renderDirectory({ editMode: false });
+
+  await userEvent.dblClick(screen.getByRole('button', { name: 'Chapter 1' }));
+
+  expect(screen.queryByDisplayValue('Chapter 1')).not.toBeInTheDocument();
+  expect(props.updateComponents).not.toHaveBeenCalled();
+});
+
+test('exits title editing when the dashboard leaves edit mode', async () => {
+  const { rerender } = renderDirectory({ editMode: true });
+
+  await userEvent.dblClick(screen.getByRole('button', { name: 'Chapter 1' }));
+  expect(screen.getByDisplayValue('Chapter 1')).toBeInTheDocument();
+
+  rerender(<DirectoryTabsRenderer {...createProps({ editMode: false })} />);
+
+  expect(screen.queryByDisplayValue('Chapter 1')).not.toBeInTheDocument();
+  await userEvent.dblClick(screen.getByRole('button', { name: 'Chapter 1' }));
+  expect(screen.queryByDisplayValue('Chapter 1')).not.toBeInTheDocument();
+});
+
+test('exits title editing when another directory node is clicked', async () => {
+  renderDirectory({ editMode: true });
+
+  await userEvent.dblClick(screen.getByRole('button', { name: 'Chapter 1' }));
+  expect(screen.getByDisplayValue('Chapter 1')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Chapter 2' }));
+
+  expect(screen.queryByDisplayValue('Chapter 1')).not.toBeInTheDocument();
+});
+
+test('exits title editing when the content area is clicked', async () => {
+  renderDirectory({ editMode: true });
+
+  await userEvent.dblClick(screen.getByRole('button', { name: 'Chapter 1' }));
+  expect(screen.getByDisplayValue('Chapter 1')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByTestId('tab-content'));
+
+  expect(screen.queryByDisplayValue('Chapter 1')).not.toBeInTheDocument();
+});
+
 test('renders the active tab content so charts can be mounted', () => {
   const { rerender } = renderDirectory();
   expect(screen.getByTestId('tab-content')).toHaveTextContent(
@@ -343,7 +387,9 @@ test('edit mode shows toolbar and add control; nodes expose remove buttons', asy
   expect(screen.getByTestId('tab-content')).toBeInTheDocument();
   // Each tree node carries its own remove (x) button; the toolbar no longer
   // needs an extra remove control.
-  expect(screen.getAllByRole('button', { name: 'Remove tab' }).length).toBeGreaterThan(0);
+  expect(
+    screen.getAllByRole('button', { name: 'Remove tab' }).length,
+  ).toBeGreaterThan(0);
 
   await userEvent.click(screen.getByRole('button', { name: 'Add tab' }));
   expect(props.handleEdit).toHaveBeenCalledWith(expect.anything(), 'add');
@@ -363,7 +409,6 @@ test('view mode hides editing controls', () => {
     screen.queryByRole('button', { name: 'Remove tab' }),
   ).not.toBeInTheDocument();
 });
-
 
 test('Add subtab creates a nested directory when the node has none', async () => {
   const { props } = renderDirectory({ editMode: true });
@@ -450,6 +495,20 @@ test('renders a nested directory as a content pane only', () => {
 
   // No redundant tree/tab bar inside the content area
   expect(screen.queryByTestId('directory-tree')).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Add tab' })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Add tab' }),
+  ).not.toBeInTheDocument();
   expect(screen.getByText('content-of-TAB-1-1')).toBeInTheDocument();
+});
+
+test('does not render a duplicate hover menu for a nested directory', () => {
+  renderDirectory({
+    editMode: true,
+    tabsComponent: layout['TABS-NESTED'],
+    tabIds: ['TAB-1-1', 'TAB-1-2'],
+    activeKey: 'TAB-1-1',
+    tabItems: makeTabItems(['TAB-1-1', 'TAB-1-2']),
+  });
+
+  expect(screen.queryByTestId('hover-menu')).not.toBeInTheDocument();
 });

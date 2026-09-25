@@ -564,11 +564,13 @@ export function saveDashboardRequest(
     };
 
     const onCopySuccess = (response: JsonObject): JsonObject => {
-      const lastModifiedTime = (response.json as JsonObject).result
-        ?.last_modified_time as number;
-      if (lastModifiedTime) {
-        dispatch(saveDashboardRequestSuccess(lastModifiedTime));
-      }
+      const responseLastModifiedTime = (response.json as JsonObject).result
+        ?.last_modified_time as number | undefined;
+      const lastModifiedTime =
+        responseLastModifiedTime ??
+        getState().dashboardState.lastModifiedTime ??
+        0;
+      dispatch(saveDashboardRequestSuccess(lastModifiedTime));
       const { chartConfiguration, globalChartConfiguration } =
         handleChartConfiguration();
       dispatch(
@@ -586,8 +588,12 @@ export function saveDashboardRequest(
     const onUpdateSuccess = (response: JsonObject): JsonObject => {
       const updatedDashboard = (response.json as JsonObject)
         .result as JsonObject;
-      const lastModifiedTime = (response.json as JsonObject)
-        .last_modified_time as number;
+      const responseLastModifiedTime = (response.json as JsonObject)
+        .last_modified_time as number | undefined;
+      const lastModifiedTime =
+        responseLastModifiedTime ??
+        getState().dashboardState.lastModifiedTime ??
+        0;
       // syncing with the backend transformations of the metadata
       if (updatedDashboard.json_metadata) {
         const parsedMetadata: JsonObject = JSON.parse(
@@ -626,9 +632,7 @@ export function saveDashboardRequest(
             logging.error('Error fetching dashboard datasets:', error);
           });
       }
-      if (lastModifiedTime) {
-        dispatch(saveDashboardRequestSuccess(lastModifiedTime));
-      }
+      dispatch(saveDashboardRequestSuccess(lastModifiedTime));
       dispatch(saveDashboardFinished());
       // Redirect using the slug from the update response, not the raw
       // submitted slug. The backend sanitizes reserved URL characters out of
