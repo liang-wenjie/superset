@@ -329,6 +329,35 @@ const DirectoryContent = styled.div<{ editMode: boolean }>`
       & .dragdroppable-row .grid-row.grid-row--empty {
         min-height: ${theme.sizeUnit * 8}px !important;
       }
+
+      /* Keep the final vertical insertion target inside the directory pane.
+         The shared tab styles position it below the content with an absolute
+         offset, which leaves a short and easy-to-miss hit area when the pane
+         sizes itself to its charts. */
+      & .dashboard-component-tabs-content > .empty-droptarget:last-child {
+        position: relative;
+        inset: auto;
+        display: flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: ${theme.sizeUnit * 4}px;
+        min-height: ${theme.sizeUnit * 4}px;
+        margin-top: 0;
+      }
+
+      &
+        .dashboard-component-tabs-content
+        > :not(.empty-droptarget):nth-last-child(2) {
+        margin-bottom: 0 !important;
+      }
+
+      &
+        .dashboard-component-tabs-content
+        > .dragdroppable-row:has(+ .empty-droptarget:last-child) {
+        margin-bottom: 0 !important;
+      }
     `}
 
   /* Row/Column widths are computed from the full dashboard grid width
