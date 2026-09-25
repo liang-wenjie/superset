@@ -308,6 +308,14 @@ const DirectoryContent = styled.div<{ editMode: boolean }>`
     height: auto;
   }
 
+  /* DashboardBuilder adds a top hit area to every row, while Tab already
+     renders an explicit droppable between consecutive children. Keeping both
+     inside the directory pane produces two stacked insertion strips above
+     and below charts. Use the Tab droppable as the single insertion area. */
+  & .dashboard-component-tabs-content > .dragdroppable-row {
+    padding-top: 0;
+  }
+
   /* A newly added nested directory owns an empty tab until the user drops a
      chart into it. Keep its edit-mode drop target compact instead of letting
      the global full-tab rule reserve the height of the whole dashboard. */
