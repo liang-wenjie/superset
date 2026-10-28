@@ -29,8 +29,10 @@ import {
   JsonObject,
   getExtensionsRegistry,
 } from '@superset-ui/core';
+import { logging } from '@apache-superset/core/utils';
 import { URL_PARAMS } from 'src/constants';
 import { getUrlParam } from 'src/utils/urlUtils';
+import { ExploreStandaloneMode } from 'src/explore/constants';
 import { css, styled, useTheme } from '@apache-superset/core/theme';
 import ChartContainer from 'src/components/Chart/ChartContainer';
 import { updateExploreChartState } from 'src/explore/actions/exploreActions';
@@ -52,8 +54,18 @@ import LastQueriedLabel from 'src/components/LastQueriedLabel';
 import { DataTablesPane } from '../DataTablesPane';
 import { ChartPills } from '../ChartPills';
 import { ExploreAlert } from '../ExploreAlert';
+import { LegacyAggregationAlert } from '../LegacyAggregationAlert';
 import useResizeDetectorByObserver from './useResizeDetectorByObserver';
 import StandaloneDownloadControl from './StandaloneDownloadControl';
+import {
+  ChartInlineFilterBar,
+  INLINE_FILTER_BAR_HEIGHT,
+  injectInlineFilters,
+} from 'src/dashboard/components/InlineFilters';
+import type {
+  InlineFilterConfig,
+  InlineFilterSelection,
+} from 'src/dashboard/components/InlineFilters';
 
 const extensionsRegistry = getExtensionsRegistry();
 const DefaultHeader: React.FC<{ children?: React.ReactNode }> = ({
@@ -88,7 +100,7 @@ export interface ExploreChartPanelProps {
   vizType: string;
   form_data: QueryFormData;
   ownState?: JsonObject;
-  standalone?: boolean;
+  standalone?: number;
   force?: boolean;
   timeout?: number;
   chartIsStale?: boolean;
@@ -184,6 +196,56 @@ const ExploreChartPanel = ({
       state.explore?.chartStates?.[chart.id],
   );
 
+  // Per-chart inline quick filter selections (local to explore session).
+  const [inlineSelection, setInlineSelection] = useState<InlineFilterSelection>(
+    {},
+  );
+
+  const inlineConfig = useMemo<InlineFilterConfig[]>(() => {
+    const raw = (formData as JsonObject).inline_filters;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (g): g is InlineFilterConfig =>
+        !!g && typeof g === 'object' && 'column' in g && !!g.column,
+    );
+  }, [formData]);
+
+  const formDataWithInline = useMemo(
+    () => injectInlineFilters(formData, inlineConfig, inlineSelection),
+    [formData, inlineConfig, inlineSelection],
+  );
+
+  const handleInlineFilterChange = useCallback(
+    (filterId: string, value: string | number | boolean | undefined) => {
+      setInlineSelection(prev => {
+        const next = { ...prev };
+        if (value === undefined) {
+          delete next[filterId];
+        } else {
+          next[filterId] = value;
+        }
+        return next;
+      });
+      // immediately re-query with the new selection
+      requestAnimationFrame(() => {
+        actions.postChartFormData(
+          injectInlineFilters(formData, inlineConfig, {
+            ...inlineSelection,
+            ...(value === undefined ? {} : { [filterId]: value }),
+          }),
+          true,
+          timeout ?? 0,
+          chart.id,
+          undefined,
+          ownState,
+        );
+      });
+    },
+    [actions, chart.id, formData, inlineConfig, inlineSelection, ownState, timeout],
+  );
+
+  const showInlineBar = inlineConfig.length > 0;
+
   const handleChartStateChange = useCallback(
     (chartStateArg: JsonObject) => {
       if (hasChartStateConverter(vizType)) {
@@ -255,7 +317,16 @@ const ExploreChartPanel = ({
   );
 
   useEffect(() => {
-    updateQueryContext();
+    updateQueryContext().catch(error => {
+      // Best-effort backfill; the chart renders either way. A 403 is expected
+      // (no write access, or a managed chart), so it stays at debug.
+      const message = 'Skipped background query context backfill';
+      if (error?.status === 403) {
+        logging.debug(message, error);
+      } else {
+        logging.warn(message, error);
+      }
+    });
   }, [updateQueryContext]);
 
   useEffect(() => {
@@ -306,7 +377,7 @@ const ExploreChartPanel = ({
         {chartPanelWidth && chartPanelHeight && (
           <ChartContainer
             width={Math.floor(chartPanelWidth)}
-            height={chartPanelHeight}
+            height={chartPanelHeight - (showInlineBar ? INLINE_FILTER_BAR_HEIGHT : 0)}
             ownState={mergedOwnState}
             annotationData={chart.annotationData}
             chartId={chart.id}
@@ -314,7 +385,7 @@ const ExploreChartPanel = ({
             force={force}
             datasource={datasource}
             errorMessage={errorMessage}
-            formData={formData}
+            formData={formDataWithInline}
             latestQueryFormData={chart.latestQueryFormData}
             onQuery={onQuery}
             queriesResponse={chart.queriesResponse}
@@ -352,10 +423,11 @@ const ExploreChartPanel = ({
       datasource,
       errorMessage,
       force,
-      formData,
+      formDataWithInline,
       handleChartStateChange,
       onQuery,
       mergedOwnState,
+      showInlineBar,
       timeout,
       triggerRender,
       vizType,
@@ -372,6 +444,9 @@ const ExploreChartPanel = ({
           padding-top: ${theme.sizeUnit * 2}px;
         `}
       >
+        {vizType === 'pivot_table_v2' && (
+          <LegacyAggregationAlert sliceId={slice?.slice_id} />
+        )}
         {showAlertBanner && (
           <ExploreAlert
             title={
@@ -443,6 +518,15 @@ const ExploreChartPanel = ({
             formData={formData}
           />
         </ChartHeaderExtension>
+        {showInlineBar && (
+          <ChartInlineFilterBar
+            filters={inlineConfig}
+            selection={inlineSelection}
+            onSelect={handleInlineFilterChange}
+            datasourceId={datasource?.id}
+            datasourceType={datasource?.type}
+          />
+        )}
         {renderChart()}
         {!chart.chartStatus || chart.chartStatus !== 'loading' ? (
           <div
@@ -460,6 +544,8 @@ const ExploreChartPanel = ({
       </div>
     ),
     [
+      vizType,
+      slice?.slice_id,
       showAlertBanner,
       errorMessage,
       onQuery,
@@ -473,6 +559,10 @@ const ExploreChartPanel = ({
       formData?.matrixify_mode_columns,
       renderChart,
       theme.sizeUnit,
+      inlineConfig,
+      inlineSelection,
+      handleInlineFilterChange,
+      showInlineBar,
     ],
   );
 
@@ -503,7 +593,7 @@ const ExploreChartPanel = ({
     [gutterMargin],
   );
 
-  if (standalone) {
+  if (standalone === ExploreStandaloneMode.HideNav) {
     // dom manipulation hack to get rid of the bootstrap theme's body background
     const standaloneClass = 'background-transparent';
     const bodyClasses = document.body.className.split(' ');

@@ -62,6 +62,8 @@ import MatrixifyDimensionControl from './MatrixifyDimensionControl';
 import JSEditorControl from './JSEditorControl';
 import SwitchControl from './SwitchControl';
 import VerticalRadioControl from './VerticalRadioControl';
+import HeaderGroupsControl from './HeaderGroupsControl';
+import InlineFiltersControl from './InlineFiltersControl';
 
 const extensionsRegistry = getExtensionsRegistry();
 const DateFilterControlExtension = extensionsRegistry.get(
@@ -113,6 +115,8 @@ const controlMap = {
   MatrixifyDimensionControl,
   SwitchControl,
   VerticalRadioControl,
+  HeaderGroupsControl,
+  InlineFiltersControl,
   ...sharedControlComponents,
 };
 export default controlMap;

@@ -56,7 +56,11 @@
  * in tandem with `controlPanels/index.js` that defines how controls are composed into sections for
  * each and every visualization type.
  */
-import type { Column, SequentialScheme } from '@superset-ui/core';
+import type {
+  Column,
+  QueryFormData,
+  SequentialScheme,
+} from '@superset-ui/core';
 import {
   getCategoricalSchemeRegistry,
   getSequentialSchemeRegistry,
@@ -78,6 +82,7 @@ interface Datasource {
 }
 
 interface ControlState {
+  form_data?: QueryFormData;
   datasource?: Datasource;
   controls?: Record<string, { value?: unknown }>;
 }
@@ -485,6 +490,7 @@ export const controls = {
         : [],
       savedMetrics: state.datasource ? state.datasource.metrics : [],
       datasource: state.datasource,
+      semanticSelectionVersion: state.form_data?.semantic_selection_version,
     }),
   },
 
@@ -496,5 +502,19 @@ export const controls = {
     choices: () => categoricalSchemeRegistry.keys().map(s => [s, s]),
     description: t('The color scheme for rendering chart'),
     schemes: () => categoricalSchemeRegistry.getMap(),
+  },
+
+  inline_filters: {
+    type: 'InlineFiltersControl',
+    label: t('Chart inline filters'),
+    default: [],
+    description: t(
+      'Configure quick-filter buttons shown at the top-left of the chart. ' +
+        'Each group binds to a column; picking a button adds a WHERE clause ' +
+        'and re-queries the chart.',
+    ),
+    mapStateToProps: (state: ControlState) => ({
+      columns: state.datasource ? state.datasource.columns : [],
+    }),
   },
 };

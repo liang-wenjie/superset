@@ -24,11 +24,12 @@ import {
   useRef,
   useMemo,
   useState,
+  useContext,
   memo,
   RefObject,
 } from 'react';
 import type { ChartCustomization, JsonObject } from '@superset-ui/core';
-import { VizType } from '@superset-ui/core';
+import { DatasourceType, VizType } from '@superset-ui/core';
 import { styled } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
 import { debounce } from 'lodash-es';
@@ -53,14 +54,21 @@ import { DEFAULT_CSV_STREAMING_ROW_THRESHOLD } from 'src/constants';
 import { enforceSharedLabelsColorsArray } from 'src/utils/colorScheme';
 import exportPivotExcel from 'src/utils/downloadAsPivotExcel';
 import type { RootState, Datasource, Slice } from 'src/dashboard/types';
+import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabels';
 import {
   convertChartStateToOwnState,
   hasChartStateConverter,
 } from '../../../util/chartStateConverter';
-import { useIsAutoRefreshing } from 'src/dashboard/contexts/AutoRefreshContext';
+import { useIsChartAutoRefreshing } from 'src/dashboard/contexts/AutoRefreshContext';
 
 import SliceHeader from '../../SliceHeader';
 import MissingChart from '../../MissingChart';
+import {
+  DashboardInlineFilterBar,
+  INLINE_FILTER_BAR_HEIGHT,
+  injectInlineFilters,
+} from '../../InlineFilters';
+import type { InlineFilterConfig } from '../../InlineFilters';
 
 import {
   addDangerToast,
@@ -83,6 +91,7 @@ import {
 import getFormDataWithExtraFilters from '../../../util/charts/getFormDataWithExtraFilters';
 import { useChartCustomizationFromRedux } from '../../nativeFilters/state';
 import { PLACEHOLDER_DATASOURCE } from '../../../constants';
+import { DashboardDatasetsContext } from '../../../contexts/DashboardDatasetsContext';
 
 interface ChartProps {
   id: number;
@@ -170,6 +179,7 @@ const createOwnStateWithChartState = (
 };
 
 const Chart = (props: ChartProps) => {
+  const currentDashboardDatasets = useContext(DashboardDatasetsContext);
   const dispatch = useDispatch();
   const descriptionRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -248,13 +258,17 @@ const Chart = (props: ChartProps) => {
         state.datasources[chart.form_data.datasource]) ||
       PLACEHOLDER_DATASOURCE,
   );
+  const chartDatasource = useMemo(
+    () => withChartDisplayLabels(datasource, props.id),
+    [datasource, props.id],
+  );
   const dashboardInfo = useSelector((state: RootState) => state.dashboardInfo);
   const showChartTimestamps: boolean = useSelector(
     (state: RootState) =>
       (state.dashboardInfo?.metadata as JsonObject)?.show_chart_timestamps ??
       false,
   );
-  const suppressLoadingSpinner = useIsAutoRefreshing();
+  const suppressLoadingSpinner = useIsChartAutoRefreshing(props.id);
 
   const isCached: boolean[] = useMemo(
     () =>
@@ -392,12 +406,34 @@ const Chart = (props: ChartProps) => {
         ?.queried_dttm as string | null) ?? null)
     : null;
 
+  // Per-chart inline quick filter selections (button toggles in the header).
+  const inlineFilterSelection = useSelector(
+    (state: RootState) =>
+      state.dashboardState.chartInlineFilters?.[props.id] ?? {},
+  );
+
+  const inlineFilterConfig = useMemo<InlineFilterConfig[]>(() => {
+    const raw = (chart?.form_data as JsonObject | undefined)?.inline_filters;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (g): g is InlineFilterConfig =>
+        !!g && typeof g === 'object' && 'column' in g && !!g.column,
+    );
+  }, [chart?.form_data]);
+
+  const showInlineFilterBar = inlineFilterConfig.length > 0 && !editMode;
+
   const getChartHeight = useCallback((): number => {
     const headerHeight = getHeaderHeight();
     const queriedLabelHeight =
       showChartTimestamps && queriedDttm != null ? QUERIED_LABEL_HEIGHT : 0;
+    const inlineBarHeight = showInlineFilterBar ? INLINE_FILTER_BAR_HEIGHT : 0;
     return Math.max(
-      height - headerHeight - descriptionHeight - queriedLabelHeight,
+      height -
+        headerHeight -
+        descriptionHeight -
+        queriedLabelHeight -
+        inlineBarHeight,
       20,
     );
   }, [
@@ -406,6 +442,7 @@ const Chart = (props: ChartProps) => {
     descriptionHeight,
     queriedDttm,
     showChartTimestamps,
+    showInlineFilterBar,
   ]);
 
   const handleFilterMenuOpen = useCallback(
@@ -469,49 +506,86 @@ const Chart = (props: ChartProps) => {
     ),
   );
 
-  const formData = useMemo(
-    () =>
-      getFormDataWithExtraFilters({
-        chart: { id: chart?.id ?? props.id, form_data: chart?.form_data }, // avoid passing the whole chart object
-        chartConfiguration,
-        chartCustomizationItems:
-          chartCustomizationItems as ChartCustomization[],
-        filters: getAppliedFilterValues(props.id),
-        colorScheme,
-        colorNamespace,
-        sliceId: props.id,
-        nativeFilters,
-        allSliceIds,
-        dataMask,
-        extraControls: (props.extraControls || {}) as Record<
-          string,
-          string | boolean | null
-        >,
-        labelsColor,
-        labelsColorMap,
-        sharedLabelsColors,
-        ownColorScheme,
-      }),
-    [
-      chart?.id,
-      chart?.form_data,
+  const formData = useMemo(() => {
+    const filteredFormData = getFormDataWithExtraFilters({
+      chart: { id: chart?.id ?? props.id, form_data: chart?.form_data }, // avoid passing the whole chart object
       chartConfiguration,
-      chartCustomizationItems,
-      props.id,
-      props.extraControls,
+      chartCustomizationItems: chartCustomizationItems as ChartCustomization[],
+      filters: getAppliedFilterValues(props.id),
       colorScheme,
       colorNamespace,
+      sliceId: props.id,
       nativeFilters,
       allSliceIds,
       dataMask,
+      extraControls: (props.extraControls || {}) as Record<
+        string,
+        string | boolean | null
+      >,
       labelsColor,
       labelsColorMap,
       sharedLabelsColors,
       ownColorScheme,
-    ],
-  );
+    });
+    if (
+      chart?.form_data?.viz_type !== VizType.Table ||
+      !chart.form_data.datasource?.endsWith(`__${DatasourceType.SemanticView}`)
+    ) {
+      return filteredFormData;
+    }
+
+    // Saved dashboard form data may predate the current semantic view schema.
+    // Missing metadata is unknown, never proof that an axis is non-temporal.
+    const currentDatasource =
+      currentDashboardDatasets?.dashboardId === props.dashboardId
+        ? currentDashboardDatasets.datasets.find(
+            candidate =>
+              candidate.uid === chart.form_data.datasource &&
+              candidate.type === DatasourceType.SemanticView,
+          )
+        : undefined;
+    const temporalColumnsLookup = currentDatasource
+      ? Object.fromEntries(
+          (currentDatasource.columns ?? [])
+            .filter(column => typeof column.is_dttm === 'boolean')
+            .map(column => [column.column_name, column.is_dttm]),
+        )
+      : undefined;
+    return {
+      ...filteredFormData,
+      temporal_columns_lookup: temporalColumnsLookup,
+    };
+  }, [
+    chart?.id,
+    chart?.form_data,
+    chartConfiguration,
+    chartCustomizationItems,
+    props.id,
+    props.extraControls,
+    colorScheme,
+    colorNamespace,
+    nativeFilters,
+    allSliceIds,
+    dataMask,
+    labelsColor,
+    labelsColorMap,
+    sharedLabelsColors,
+    ownColorScheme,
+    currentDashboardDatasets,
+    props.dashboardId,
+  ]);
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;
+
+  const formDataWithInlineFilters = useMemo(
+    () =>
+      injectInlineFilters(
+        formData as unknown as import('@superset-ui/core').QueryFormData,
+        inlineFilterConfig,
+        inlineFilterSelection,
+      ),
+    [formData, inlineFilterConfig, inlineFilterSelection],
+  );
 
   // Memoize ownState so it keeps a stable reference across re-renders that
   // don't change its logical value. ViewQueryModal depends on ownState; a fresh
@@ -545,8 +619,8 @@ const Chart = (props: ChartProps) => {
       });
 
       const exportFormData = isFullCSV
-        ? { ...formData, row_limit: maxRows }
-        : formData;
+        ? { ...formDataWithInlineFilters, row_limit: maxRows }
+        : formDataWithInlineFilters;
       const resultType = isPivot ? 'post_processed' : 'full';
 
       let actualRowCount: number | undefined;
@@ -658,6 +732,7 @@ const Chart = (props: ChartProps) => {
       sliceVizType,
       isCached,
       formData,
+      formDataWithInlineFilters,
       maxRows,
       dataMaskOwnState,
       chartState,
@@ -770,6 +845,7 @@ const Chart = (props: ChartProps) => {
         filters={getActiveFilters() || EMPTY_OBJECT}
         addSuccessToast={boundActionCreators.addSuccessToast}
         addDangerToast={boundActionCreators.addDangerToast}
+        addWarningToast={boundActionCreators.addWarningToast}
         handleToggleFullSize={props.handleToggleFullSize}
         isFullSize={props.isFullSize}
         chartStatus={chartStatus || ''}
@@ -790,6 +866,15 @@ const Chart = (props: ChartProps) => {
         chartHolderRef={props.chartHolderRef}
         ownState={ownState}
       />
+
+      {showInlineFilterBar && (
+        <DashboardInlineFilterBar
+          chartId={props.id}
+          rawConfig={inlineFilterConfig}
+          datasourceId={datasource?.id}
+          datasourceType={datasource?.type}
+        />
+      )}
 
       {/*
           This usage of dangerouslySetInnerHTML is safe since it is being used to render
@@ -833,14 +918,12 @@ const Chart = (props: ChartProps) => {
           chartId={props.id}
           chartStatus={chartStatus ?? undefined}
           chartStackTrace={chart.chartStackTrace ?? undefined}
-          datasource={datasource}
+          datasource={chartDatasource}
           dashboardId={props.dashboardId}
           initialValues={EMPTY_OBJECT}
-          formData={
-            formData as unknown as import('@superset-ui/core').QueryFormData
-          }
           ownState={ownState}
           queriesResponse={chart.queriesResponse ?? null}
+          latestQueryFormData={chart.latestQueryFormData}
           timeout={timeout}
           triggerQuery={chart.triggerQuery}
           vizType={slice.viz_type}
@@ -853,6 +936,9 @@ const Chart = (props: ChartProps) => {
           onChartStateChange={handleChartStateChange}
           suppressLoadingSpinner={suppressLoadingSpinner}
           filterState={dataMask[props.id]?.filterState}
+          formData={
+            formDataWithInlineFilters as unknown as import('@superset-ui/core').QueryFormData
+          }
         />
       </ChartWrapper>
 

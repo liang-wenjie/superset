@@ -59,7 +59,7 @@ interface DirectoryTabsRendererProps {
   handleDeleteComponent: () => void;
   deleteComponent: (id: string, parentId: string | null) => void;
   tabsComponent: LayoutItem;
-  activeKey: string;
+  activeKey?: string;
   tabIds: string[];
   availableColumnCount: number;
   handleClickTab: (index: number) => void;
@@ -474,7 +474,7 @@ function DirectoryTabsRenderer({
   // highlighting and auto-expansion.
   const { activeTabId, activePathIds } = useMemo(() => {
     const path = directPathToChild ?? [];
-    const directIndex = tabIds.indexOf(activeKey);
+    const directIndex = activeKey ? tabIds.indexOf(activeKey) : -1;
     const directFallback = directIndex > -1 ? tabIds[directIndex] : tabIds[0];
     const directoryIndex = path.indexOf(tabsComponent.id);
     if (directoryIndex === -1) {
@@ -511,7 +511,7 @@ function DirectoryTabsRenderer({
     }
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
-      const {target} = event;
+      const { target } = event;
       if (!(target instanceof Node)) {
         return;
       }

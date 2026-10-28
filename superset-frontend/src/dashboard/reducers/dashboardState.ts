@@ -55,6 +55,7 @@ import {
   REMOVE_CHART_STATE,
   RESTORE_CHART_STATES,
   CLEAR_ALL_CHART_STATES,
+  SET_CHART_INLINE_FILTER,
 } from '../actions/dashboardState';
 import { HYDRATE_DASHBOARD } from '../actions/hydrate';
 import {
@@ -90,6 +91,7 @@ interface DashboardStateShape {
   hasUnsavedChanges?: boolean;
   dashboardIsSaving?: boolean;
   lastModifiedTime?: number;
+  versionHistoryRevision?: number;
   refreshFrequency?: number;
   shouldPersistRefreshFrequency?: boolean;
   isRefreshing?: boolean;
@@ -106,6 +108,8 @@ interface DashboardStateShape {
   overwriteConfirmMetadata?: JsonObject;
   nativeFiltersBarOpen?: boolean;
   chartStates?: Record<string, ChartStateEntry>;
+  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value. */
+  chartInlineFilters?: Record<number, Record<string, string | number | boolean | undefined>>;
   css?: string;
   preselectNativeFilters?: JsonObject;
   autoRefreshStatus?: AutoRefreshStatus;
@@ -148,6 +152,8 @@ interface DashboardStateAction {
   chartState?: JsonObject;
   lastModified?: number;
   chartStates?: Record<string, ChartStateEntry>;
+  filterId?: string;
+  inlineFilterValue?: string | number | boolean | undefined;
   status?: string;
   isPaused?: boolean;
   isPausedByTab?: boolean;
@@ -200,9 +206,13 @@ export default function dashboardStateReducer(
       const updatedSliceIds = new Set(state.sliceIds);
       updatedSliceIds.delete(sliceId!);
 
+      const updatedInlineFilters = { ...state.chartInlineFilters };
+      delete updatedInlineFilters[sliceId!];
+
       return {
         ...state,
         sliceIds: Array.from(updatedSliceIds),
+        chartInlineFilters: updatedInlineFilters,
       };
     },
     [TOGGLE_FAVE_STAR](): DashboardStateShape {
@@ -294,6 +304,7 @@ export default function dashboardStateReducer(
         updatedColorScheme: false,
         // server-side returns last_modified_time for latest change
         lastModifiedTime: action.lastModifiedTime,
+        versionHistoryRevision: (state.versionHistoryRevision ?? 0) + 1,
       };
     },
     [SET_UNSAVED_CHANGES](): DashboardStateShape {
@@ -462,6 +473,27 @@ export default function dashboardStateReducer(
       return {
         ...state,
         chartStates: {},
+      };
+    },
+    [SET_CHART_INLINE_FILTER](): DashboardStateShape {
+      const { chartId, filterId, value } = action as unknown as {
+        chartId: number;
+        filterId: string;
+        value: string | number | boolean | undefined;
+      };
+      const existing = state.chartInlineFilters?.[chartId] || {};
+      const next = { ...existing };
+      if (value === undefined) {
+        delete next[filterId];
+      } else {
+        next[filterId] = value;
+      }
+      return {
+        ...state,
+        chartInlineFilters: {
+          ...state.chartInlineFilters,
+          [chartId]: next,
+        },
       };
     },
     // Auto-refresh status indicator handlers
