@@ -511,7 +511,7 @@ function DirectoryTabsRenderer({
     }
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
-      const target = event.target;
+      const {target} = event;
       if (!(target instanceof Node)) {
         return;
       }
