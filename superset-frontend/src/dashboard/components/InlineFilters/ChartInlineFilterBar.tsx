@@ -41,12 +41,8 @@ const FilterLabel = styled.span`
 `;
 
 const StyledSelect = styled(Select)`
-  width: 160px;
+  width: 100px;
   flex-shrink: 0;
-  & .ant-select-selector {
-    height: 32px !important;
-    min-height: 32px;
-  }
 `;
 
 interface DistinctCache {
@@ -78,29 +74,46 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
 }) => {
   const [distinctCache, setDistinctCache] = useState<DistinctCache>({});
 
-  // Fetch distinct values for each configured column
+  // Build extra filters from sibling selections (excluding the current column)
+  const buildExtraFilters = (excludeCol: string) => {
+    return filters
+      .filter(f => f.column !== excludeCol && selection[f.id] !== undefined)
+      .map(f => ({ col: f.column, val: selection[f.id] }));
+  };
+
+  // Fetch distinct values for each configured column, re-fetching when
+  // sibling selections change so options cascade.
   useEffect(() => {
     if (!datasourceId || !datasourceType) return;
     const columns = filters.map(f => f.column).filter(Boolean);
-    const missing = columns.filter(c => !(c in distinctCache));
-    if (missing.length === 0) return;
+    if (columns.length === 0) return;
 
     let cancelled = false;
     Promise.all(
-      missing.map(async col => {
+      columns.map(async col => {
         try {
+          const extraFilters = buildExtraFilters(col);
+          const params = new URLSearchParams();
+          if (extraFilters.length > 0) {
+            params.set('extra_filters', JSON.stringify(extraFilters));
+          }
+          const query = params.toString();
           const { json } = await SupersetClient.get({
             endpoint:
               `/api/v1/datasource/${datasourceType}/${datasourceId}` +
-              `/column/${encodeURIComponent(col)}/values/`,
+              `/column/${encodeURIComponent(col)}/values/${query ? `?${query}` : ''}`,
           });
           const values: unknown[] = json?.result ?? [];
-          return [
-            col,
-            values
-              .filter(v => v !== null && v !== undefined)
-              .map(v => ({ label: String(v), value: String(v) })),
-          ] as const;
+          const seen = new Set<string>();
+          const options = values
+            .filter(v => v !== null && v !== undefined)
+            .map(v => ({ label: String(v), value: String(v) }))
+            .filter(opt => {
+              if (seen.has(opt.value)) return false;
+              seen.add(opt.value);
+              return true;
+            });
+          return [col, options] as const;
         } catch {
           return [col, []] as const;
         }
@@ -110,7 +123,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
       setDistinctCache(prev => {
         const next = { ...prev };
         entries.forEach(([col, opts]) => {
-          next[col] = [...(next[col] ?? []), ...opts];
+          next[col] = opts;
         });
         return next;
       });
@@ -119,7 +132,8 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [filters, datasourceId, datasourceType, distinctCache]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, datasourceId, datasourceType, JSON.stringify(selection)]);
 
   if (!filters || filters.length === 0) return null;
 
@@ -132,6 +146,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
           <React.Fragment key={f.id}>
             {f.label ? <FilterLabel>{f.label}:</FilterLabel> : null}
             <StyledSelect
+              size="small"
               allowClear
               showSearch
               placeholder={t('All')}

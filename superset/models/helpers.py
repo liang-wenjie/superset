@@ -5548,6 +5548,7 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         denormalize_column: bool = False,
         array_elements: bool = False,
         search: str | None = None,
+        extra_filters: list[dict] | None = None,
     ) -> list[Any]:
         # denormalize column name before querying for values
         # unless disabled in the dataset configuration
@@ -5587,6 +5588,16 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         )
         if search:
             qry = qry.where(build_like_predicate(value_expr, search))
+
+        # Apply cascading inline filters: each extra filter narrows the
+        # distinct values by equality on a sibling column.
+        for ef in extra_filters or []:
+            ef_col = ef.get("col")
+            ef_val = ef.get("val")
+            if not ef_col or ef_col not in cols:
+                continue
+            ef_expr = cols[ef_col].get_sqla_col(template_processor=tp)
+            qry = qry.where(ef_expr == ef_val)
 
         if limit:
             qry = qry.limit(limit)
