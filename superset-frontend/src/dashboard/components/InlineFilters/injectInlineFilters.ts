@@ -17,16 +17,18 @@
  * under the License.
  */
 import { ensureIsArray, JsonObject, QueryFormData } from '@superset-ui/core';
-import type {
-  InlineFilterConfig,
-  InlineFilterSelection,
-} from './types';
+import type { InlineFilterConfig, InlineFilterSelection } from './types';
 import { buildInlineAdhocFilter } from './types';
 
 /**
  * Returns a new formData with the selected inline-filter values injected as
  * extra adhoc WHERE clauses. Existing adhoc_filters are preserved; inline
  * filters are keyed by `inline_<id>` so re-injection is idempotent.
+ *
+ * Inline filters target the underlying dataset, so the same selection is
+ * injected into every query section the chart declares. Single-query charts
+ * only have `adhoc_filters`; mixed charts also declare `adhoc_filters_b`
+ * (Query B), so picking a value filters both series.
  */
 export function injectInlineFilters(
   formData: QueryFormData,
@@ -35,13 +37,10 @@ export function injectInlineFilters(
 ): QueryFormData {
   if (!Array.isArray(config) || config.length === 0) return formData;
 
-  const existing = ensureIsArray(formData.adhoc_filters) as unknown as JsonObject[];
-  // strip any previously-injected inline filters so toggling is clean
-  const withoutInline = existing.filter(
-    f =>
-      typeof f?.filterOptionName !== 'string' ||
-      !f.filterOptionName.startsWith('inline_'),
+  const adhocKeys = Object.keys(formData).filter(
+    key => key === 'adhoc_filters' || key.startsWith('adhoc_filters_'),
   );
+  if (adhocKeys.length === 0) return formData;
 
   const injected = config
     .map(cfg => {
@@ -52,19 +51,48 @@ export function injectInlineFilters(
     })
     .filter(Boolean);
 
+  const stripInjected = (existing: JsonObject[]) =>
+    existing.filter(
+      f =>
+        typeof f?.filterOptionName !== 'string' ||
+        !f.filterOptionName.startsWith('inline_'),
+    );
+
+  const entries = adhocKeys.map(key => {
+    const existing = ensureIsArray(
+      (formData as unknown as Record<string, unknown>)[key] as
+        | JsonObject[]
+        | undefined,
+    );
+    return [key, stripInjected(existing)] as const;
+  });
+
   if (injected.length === 0) {
-    if (withoutInline.length === existing.length) return formData;
+    // Nothing selected: keep the original object unless previously injected
+    // filters must be stripped (the config was cleared).
+    const unchanged = entries.every(
+      ([key, withoutInline]) =>
+        withoutInline.length ===
+        ensureIsArray(
+          (formData as unknown as Record<string, unknown>)[key] as
+            | JsonObject[]
+            | undefined,
+        ).length,
+    );
+    if (unchanged) return formData;
     return {
       ...formData,
-      adhoc_filters: withoutInline as QueryFormData['adhoc_filters'],
-    };
+      ...Object.fromEntries(entries),
+    } as QueryFormData;
   }
 
   return {
     ...formData,
-    adhoc_filters: [
-      ...withoutInline,
-      ...injected,
-    ] as QueryFormData['adhoc_filters'],
-  };
+    ...Object.fromEntries(
+      entries.map(([key, withoutInline]) => [
+        key,
+        [...withoutInline, ...injected],
+      ]),
+    ),
+  } as QueryFormData;
 }

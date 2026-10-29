@@ -60,6 +60,7 @@ const getMemoizedSectionsToRender = memoizeOne(
 
     const {
       datasourceAndVizType,
+      inlineFilters,
       matrixifyRows = null,
       matrixifyColumns = null,
       matrixifyCells = null,
@@ -76,33 +77,40 @@ const getMemoizedSectionsToRender = memoizeOne(
       ? ['granularity']
       : ['granularity_sqla', 'time_grain_sqla'];
 
-    return [
-      datasourceAndVizType as ControlPanelSectionConfig,
-      matrixifyEnableSection as ControlPanelSectionConfig,
-      matrixifyColumns as ControlPanelSectionConfig,
-      matrixifyRows as ControlPanelSectionConfig,
-      matrixifyCells as ControlPanelSectionConfig,
-    ]
-      .filter(Boolean) // Filter out null/undefined sections
-      .concat(controlPanelSections.filter(isControlPanelSectionConfig))
-      .map(section => {
-        if (!section) return null;
-        const { controlSetRows } = section;
-        return {
-          ...section,
-          controlSetRows:
-            controlSetRows?.map(row =>
-              row
-                .filter(
-                  control =>
-                    typeof control !== 'string' ||
-                    !invalidControls.includes(control),
-                )
-                .map(item => expandControlConfig(item, controlOverrides)),
-            ) || [],
-        };
-      })
-      .filter(Boolean); // Filter out any null results
+    return (
+      [
+        datasourceAndVizType as ControlPanelSectionConfig,
+        matrixifyEnableSection as ControlPanelSectionConfig,
+        matrixifyColumns as ControlPanelSectionConfig,
+        matrixifyRows as ControlPanelSectionConfig,
+        matrixifyCells as ControlPanelSectionConfig,
+      ]
+        .filter(Boolean) // Filter out null/undefined sections
+        .concat(controlPanelSections.filter(isControlPanelSectionConfig))
+        // Inline filters target the underlying dataset, so the configuration is
+        // available to every chart type instead of being opt-in per control panel.
+        .concat(
+          inlineFilters ? [inlineFilters as ControlPanelSectionConfig] : [],
+        )
+        .map(section => {
+          if (!section) return null;
+          const { controlSetRows } = section;
+          return {
+            ...section,
+            controlSetRows:
+              controlSetRows?.map(row =>
+                row
+                  .filter(
+                    control =>
+                      typeof control !== 'string' ||
+                      !invalidControls.includes(control),
+                  )
+                  .map(item => expandControlConfig(item, controlOverrides)),
+              ) || [],
+          };
+        })
+        .filter(Boolean)
+    ); // Filter out any null results
   },
 );
 

@@ -360,7 +360,6 @@ const config: ControlPanelConfig = {
           },
         ],
         ['adhoc_filters'],
-        ['inline_filters'],
         [
           {
             name: 'timeseries_limit_metric',

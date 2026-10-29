@@ -101,7 +101,7 @@ export const annotations: ControlPanelSectionConfig = {
 export const inlineFilters: ControlPanelSectionConfig = {
   label: t('Chart inline filters'),
   description: t(
-    'Quick-filter buttons rendered at the top-left of the chart. Picking a button re-queries this chart only.',
+    'Quick-filter dropdowns rendered at the top-left of the chart. Picking a value re-queries this chart only.',
   ),
   expanded: true,
   controlSetRows: [['inline_filters']],
