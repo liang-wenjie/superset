@@ -506,11 +506,13 @@ export const controls = {
 
   inline_filters: {
     type: 'InlineFiltersControl',
-    label: t('Chart inline filters'),
+    // The enclosing control panel section already renders a "Chart inline
+    // filters" header, so the control itself must not repeat it.
+    label: '',
     default: [],
     description: t(
-      'Configure quick-filter buttons shown at the top-left of the chart. ' +
-        'Each group binds to a column; picking a button adds a WHERE clause ' +
+      'Configure quick-filter dropdowns at the top-left of the chart. ' +
+        'Each group binds to a column; picking a value adds a WHERE clause ' +
         'and re-queries the chart.',
     ),
     mapStateToProps: (state: ControlState) => ({

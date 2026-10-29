@@ -554,7 +554,9 @@ const echart_options: SharedControlConfig<'JSEditorControl'> = {
 
 const inline_filters: SharedControlConfig<'InlineFiltersControl'> = {
   type: 'InlineFiltersControl',
-  label: t('Chart inline filters'),
+  // The enclosing control panel section already renders a "Chart inline
+  // filters" header, so the control itself must not repeat it.
+  label: '',
   default: [],
   description: t(
     'Configure quick-filter dropdowns at the top-left of the chart. ' +
