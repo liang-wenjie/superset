@@ -92,10 +92,12 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[0].style.fontSize).toBe(45);
     expect(graphic[0].style.fill).toBe('rgb(102, 102, 102)');
     expect(graphic[0].left).toBe(20);
-    expect(graphic[0].top).toBe(24);
+    // The big number "1,234,567" would overflow a 400px tile at the default
+    // 120px font, so it is auto-shrunk to fit and the whole stack re-centers.
+    expect(graphic[0].top).toBeCloseTo(64.8);
 
     expect(graphic[1].style.text).toBe('$1,234,567');
-    expect(graphic[1].style.fontSize).toBe(120);
+    expect(graphic[1].style.fontSize).toBe(52);
     expect(graphic[1].style.fontWeight).toBe('bold');
     expect(graphic[1].style.fill).toBe('rgb(51, 51, 51)');
 
@@ -103,7 +105,7 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
     expect(graphic[2].left).toBe(20);
     // The whole stack is centered when it fits the tile.
-    expect(graphic[2].top).toBe(222);
+    expect(graphic[2].top).toBeCloseTo(181.2);
 
     expect(graphic[3].style.text).toBe('YoY ↓17.70%');
     expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
@@ -183,8 +185,48 @@ describe('BigNumberYoyMom transformProps', () => {
     });
     const graphic = result.echartOptions.graphic as Record<string, any>[];
 
-    // The title, number and comparison rows stay centered as one stack.
-    expect(graphic[2].top).toBe(370);
+    // The title, number and comparison rows stay centered as one stack. The
+    // big number is auto-shrunk to fit the 400px tile, so the stack is
+    // shorter and sits higher than it would at the requested 200px font.
+    expect(graphic[2].top).toBeCloseTo(329.2);
+  });
+
+  test('does not shrink the big number when it already fits the tile width', () => {
+    const result = transformProps({
+      ...buildChartProps([
+        {
+          'SUM(sales)': 100,
+          'SUM(sales)__1 month ago': 90,
+        },
+      ]),
+      // Wide tile: "$100" at the default 0.4*300 = 120px font fits easily.
+      width: 800,
+    });
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic[1].style.text).toBe('$100');
+    expect(graphic[1].style.fontSize).toBe(120);
+  });
+
+  test('shrinks the big number to fit a narrow tile and stays readable', () => {
+    const result = transformProps({
+      ...buildChartProps([
+        {
+          'SUM(sales)': 15145470,
+          'SUM(sales)__1 month ago': 14000000,
+        },
+      ]),
+      // Narrow tile like a dashboard KPI card; the long number used to be
+      // clipped on the right.
+      width: 240,
+    });
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    const bigNumber = graphic[1];
+    // Font is reduced below the requested 120px, but not below the 12px floor.
+    expect(bigNumber.style.fontSize).toBeLessThan(120);
+    expect(bigNumber.style.fontSize).toBeGreaterThanOrEqual(12);
+    // The whole formatted value is still rendered (not truncated).
+    expect(bigNumber.style.text).toBeDefined();
+    expect(String(bigNumber.style.text).length).toBeGreaterThan(0);
   });
 
   test('reads comparison values from configured result columns', () => {
@@ -590,5 +632,48 @@ describe('BigNumberYoyMom transformProps', () => {
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     expect(graphic[2].style.text).toBe('MoM ↑11.11%');
+  });
+
+  test('hides the trend arrow when show arrow is disabled', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 100,
+            'SUM(sales)__1 month ago': 90,
+            'SUM(sales)__1 year ago': 110,
+          },
+        ],
+        { comparisonShowArrow: false },
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    // Still colored by direction, but no ↑/↓ prefix.
+    expect(graphic[2].style.text).toBe('MoM 11.11%');
+    expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
+    expect(graphic[3].style.text).toBe('YoY 9.09%');
+    expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
+  });
+
+  test('treats small changes as no-change when a threshold is set', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 100,
+            'SUM(sales)__1 month ago': 99.9, // +0.1%
+            'SUM(sales)__1 year ago': 110, // +10%
+          },
+        ],
+        { comparisonThreshold: 0.05 }, // 5%
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    // 0.1% is below the 5% threshold → no-change color, no arrow.
+    expect(graphic[2].style.text).toBe('MoM 0.10%');
+    expect(graphic[2].style.fill).toBe('rgb(102, 102, 102)');
+    // 10% is above the threshold → normal increase styling.
+    expect(graphic[3].style.text).toBe('YoY ↓9.09%');
+    expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
   });
 });

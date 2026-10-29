@@ -41,6 +41,8 @@ import {
   DEFAULT_COMPARISON2_OFFSET,
   DEFAULT_COMPARISON_NEGATIVE_COLOR,
   DEFAULT_COMPARISON_POSITIVE_COLOR,
+  DEFAULT_COMPARISON_SHOW_ARROW,
+  DEFAULT_COMPARISON_THRESHOLD,
   DEFAULT_COMPARISON_TOP,
   DEFAULT_COMPARISON_ZERO_COLOR,
   DEFAULT_TITLE_COLOR,
@@ -480,6 +482,36 @@ const config: ControlPanelConfig = {
               label: t('No change color'),
               renderTrigger: true,
               default: DEFAULT_COMPARISON_ZERO_COLOR,
+            },
+          },
+        ],
+        [
+          {
+            name: 'comparison_show_arrow',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Show trend arrow'),
+              renderTrigger: true,
+              default: DEFAULT_COMPARISON_SHOW_ARROW,
+              description: t(
+                'Display the up/down arrow (↑/↓) before the comparison value.',
+              ),
+            },
+          },
+        ],
+        [
+          {
+            name: 'comparison_threshold',
+            config: {
+              type: 'NumberControl',
+              label: t('No-change threshold'),
+              min: 0,
+              step: 0.01,
+              renderTrigger: true,
+              default: DEFAULT_COMPARISON_THRESHOLD,
+              description: t(
+                'When the absolute change is below this value, the comparison is shown in the no-change color with no arrow. In time-comparison mode this is a fraction (0.01 = 1%); in comparison-metric mode it is an absolute value.',
+              ),
             },
           },
         ],

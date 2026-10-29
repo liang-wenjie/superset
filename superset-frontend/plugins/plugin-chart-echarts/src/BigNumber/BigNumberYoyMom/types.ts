@@ -66,6 +66,8 @@ export type BigNumberYoyMomFormData = QueryFormData & {
   comparisonPositiveColor?: RGBColor;
   comparisonNegativeColor?: RGBColor;
   comparisonZeroColor?: RGBColor;
+  comparisonShowArrow?: boolean;
+  comparisonThreshold?: number;
   percentDifferenceFormat?: string;
 };
 
