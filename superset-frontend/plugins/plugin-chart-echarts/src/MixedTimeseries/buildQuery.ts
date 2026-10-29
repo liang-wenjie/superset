@@ -161,7 +161,7 @@ export default function buildQuery(formData: QueryFormData) {
   // metric truncation and empty-column handling, regardless of B's own saved
   // values. Otherwise B can run its own sort/limit and pick a disjoint set of
   // categories, leaving B empty on A's x-axis.
-  const formData2 =
+  let formData2 =
     baseFormData.share_query_settings === true
       ? {
           ...formData2Raw,
@@ -170,17 +170,23 @@ export default function buildQuery(formData: QueryFormData) {
           row_limit: formData1.row_limit,
           truncate_metric: formData1.truncate_metric,
           show_empty_columns: formData1.show_empty_columns,
-          // Query B filters itself independently in a mixed chart; when
-          // sharing settings, B must be filtered the same way as A so B
-          // cannot surface categories A's filters excluded (e.g. fee rows A
-          // filtered away otherwise appear as empty columns on the shared
-          // x-axis). B's own filters, when it defines any, take precedence.
-          adhoc_filters:
-            ensureIsArray(formData2Raw.adhoc_filters).length > 0
-              ? formData2Raw.adhoc_filters
-              : formData1.adhoc_filters,
         }
       : formData2Raw;
+  // Filter sharing is a separate choice from the settings sharing above: a
+  // mixed chart runs A and B as independent queries, so a filter applied to A
+  // (e.g. 分类1 IN ('账号毛利')) does not reach B by itself, and B's
+  // unfiltered result can pull in categories A excluded that then appear as
+  // empty columns on the shared x-axis. When "Share filters with Query A" is
+  // on and B defines no filters of its own, inherit A's filters.
+  if (
+    baseFormData.share_query_filters === true &&
+    ensureIsArray(formData2Raw.adhoc_filters).length === 0
+  ) {
+    formData2 = {
+      ...formData2,
+      adhoc_filters: formData1.adhoc_filters,
+    };
+  }
 
   const queryContexts = [formData1, formData2].map(fd =>
     buildQueryContext(fd, baseQueryObject => {

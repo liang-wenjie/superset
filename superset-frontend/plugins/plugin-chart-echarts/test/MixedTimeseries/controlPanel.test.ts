@@ -169,3 +169,37 @@ test('Query B query controls hide when settings are shared with Query A', () => 
     } as unknown as ControlPanelsContainerProps),
   ).toBe(true);
 });
+
+test('should expose the share filters control with Query A enabled by default', () => {
+  const shareFilters = getControl('share_query_filters') as {
+    config: { type: string; default: boolean };
+  } | null;
+  expect(shareFilters).toBeDefined();
+  expect(shareFilters?.config.type).toBe('CheckboxControl');
+  expect(shareFilters?.config.default).toBe(true);
+});
+
+test('Query B filter control hides when filters are shared with Query A', () => {
+  // Filter sharing is its own switch, independent of the settings sharing one.
+  const filterCtrl = getControl(
+    'adhoc_filters_b',
+  ) as unknown as VisibilityControl;
+  expect(filterCtrl).toBeDefined();
+  expect(filterCtrl.config.visibility).toBeDefined();
+  expect(
+    filterCtrl.config.visibility({
+      controls: { share_query_filters: { value: true } },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(false);
+  expect(
+    filterCtrl.config.visibility({
+      controls: { share_query_filters: { value: false } },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(true);
+  // Sharing the settings alone must not hide Query B's filter control.
+  expect(
+    filterCtrl.config.visibility({
+      controls: { share_query_settings: { value: true } },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(true);
+});

@@ -85,8 +85,24 @@ function createQuerySection(
                   default: true,
                   description: t(
                     'Apply Query A\u2019s sort metric, sort direction, row ' +
-                      'limit, filters and empty-column handling to Query B as ' +
-                      'well, so both queries select the same categories.',
+                      'limit and empty-column handling to Query B as well, so ' +
+                      'both queries select the same categories.',
+                  ),
+                },
+              },
+            ],
+            [
+              {
+                name: 'share_query_filters',
+                config: {
+                  type: 'CheckboxControl',
+                  label: t('Share filters with Query A'),
+                  default: true,
+                  description: t(
+                    'Apply Query A\u2019s filters to Query B as well, so ' +
+                      'categories Query A filtered out do not appear on the ' +
+                      'shared x-axis. Query B\u2019s own filters, when it ' +
+                      'defines any, take precedence.',
                   ),
                 },
               },
@@ -112,7 +128,7 @@ function createQuerySection(
             ...sharedControls.adhoc_filters,
             visibility: ({ controls }: ControlPanelsContainerProps) =>
               controlSuffix === '' ||
-              controls?.share_query_settings?.value !== true,
+              controls?.share_query_filters?.value !== true,
           },
         },
       ],
