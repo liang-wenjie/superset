@@ -177,10 +177,23 @@ export default function buildQuery(formData: QueryFormData) {
   // (e.g. 分类1 IN ('账号毛利')) does not reach B by itself, and B's
   // unfiltered result can pull in categories A excluded that then appear as
   // empty columns on the shared x-axis. When "Share filters with Query A" is
-  // on and B defines no filters of its own, inherit A's filters.
+  // on and B defines no meaningful filters of its own, inherit A's filters.
+  // The default `created_at (No filter)` temporal range does not constrain the
+  // query, so it must not block the inheritance either.
+  const hasMeaningfulFilters = (filters: QueryFormData['adhoc_filters']) =>
+    ensureIsArray(filters).some(filter => {
+      const comparator = filter.comparator;
+      const operator = filter.operator;
+      return !(
+        operator === 'TEMPORAL_RANGE' &&
+        (comparator === 'No filter' ||
+          comparator == null ||
+          comparator === '')
+      );
+    });
   if (
     baseFormData.share_query_filters === true &&
-    ensureIsArray(formData2Raw.adhoc_filters).length === 0
+    !hasMeaningfulFilters(formData2Raw.adhoc_filters)
   ) {
     formData2 = {
       ...formData2,

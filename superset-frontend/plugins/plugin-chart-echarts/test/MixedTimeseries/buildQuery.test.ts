@@ -645,6 +645,29 @@ test('Query B inherits Query A filters when filter sharing is enabled and B has 
   expect(queryB.extras?.where).toContain("foo in ('a', 'b')");
 });
 
+test('Query B inherits Query A filters even when B only has a no-op temporal filter', () => {
+  // A default `created_at (No filter)` temporal range in Query B does not
+  // constrain the query, so filter sharing must still inherit A's filters.
+  // Without this, B's unfiltered result keeps fee rows (e.g. 头程运费) on the
+  // shared x-axis even though Query A filtered them out.
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_filters: true,
+    adhoc_filters_b: [
+      {
+        clause: 'WHERE',
+        expressionType: 'SIMPLE',
+        operator: 'TEMPORAL_RANGE',
+        subject: 'created_at',
+        comparator: 'No filter',
+      } as BinaryAdhocFilter,
+    ],
+  };
+  const { queries } = buildQuery(formData);
+  const [, queryB] = queries;
+  expect(queryB.extras?.where).toContain("foo in ('a', 'b')");
+});
+
 test('Query B does not inherit Query A filters without filter sharing', () => {
   // Filter sharing is its own switch: settings sharing alone must not leak
   // A's filters into B.
