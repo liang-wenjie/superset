@@ -18,12 +18,16 @@
  */
 import {
   buildQueryContext,
+  DTTM_ALIAS,
   ensureIsArray,
+  getMetricLabel,
+  getXAxisLabel,
+  isXAxisSet,
   normalizeOrderBy,
   PostProcessingPivot,
+  PostProcessingSort,
   QueryFormData,
   QueryObject,
-  isXAxisSet,
   getXAxisColumn,
 } from '@superset-ui/core';
 import {
@@ -40,6 +44,72 @@ import {
   retainFormDataSuffix,
   removeFormDataSuffix,
 } from '../utils/formDataSuffix';
+
+/**
+ * Emits a `sort` post-processing step that reorders a categorical x-axis by
+ * the query's own sort controls (`timeseries_limit_metric` +
+ * `order_desc`), mirroring the `sortOperator` used by other categorical
+ * charts. The backend `pivot` step runs `pivot_table` with its default
+ * `sort=True`, which re-sorts the index lexicographically and silently
+ * discards the SQL `ORDER BY` that `normalizeOrderBy` derives — so without
+ * this step "Sort query by" / "Sort Descending" have no visible effect on a
+ * mixed chart.
+ *
+ * Skipped when:
+ * - the x-axis is temporal (legacy `__timestamp` or a generic-axes column
+ *   marked temporal in `temporal_columns_lookup`): those must stay
+ *   chronological, not metric-ordered;
+ * - the query pivots over a series (groupby) dimension: with multiple series
+ *   there is no single metric to order the rows by;
+ * - a time comparison is active: its pivot output is shaped differently.
+ *
+ * The `by` label resolves to the query's sort metric when it is one of the
+ * pivot's aggregate columns (the displayed metrics), falling back to the
+ * first displayed metric — matching the SQL `ORDER BY` fallback that
+ * `normalizeOrderBy` applies.
+ */
+function getCategoricalXAxisSortOperator(
+  fd: QueryFormData,
+  queryObject: QueryObject,
+): PostProcessingSort | undefined {
+  const xAxisLabel = getXAxisLabel(fd);
+  const temporalColumnsLookup = fd.temporal_columns_lookup as
+    | Record<string, boolean>
+    | undefined;
+  if (
+    !isXAxisSet(fd) ||
+    !xAxisLabel ||
+    xAxisLabel === DTTM_ALIAS ||
+    temporalColumnsLookup?.[xAxisLabel] === true ||
+    ensureIsArray(fd.groupby).length > 0 ||
+    isTimeComparison(fd, queryObject)
+  ) {
+    return undefined;
+  }
+
+  const pivotMetricLabels = ensureIsArray(queryObject.metrics).map(
+    getMetricLabel,
+  );
+  const sortByLabel = ensureIsArray(
+    fd.timeseries_limit_metric ?? fd.series_limit_metric,
+  )
+    .concat(ensureIsArray(queryObject.metrics))
+    .map(getMetricLabel)
+    .find(label => pivotMetricLabels.includes(label));
+  if (!sortByLabel) {
+    return undefined;
+  }
+
+  return {
+    operation: 'sort',
+    options: {
+      by: sortByLabel,
+      // `order_desc` defaults to true (descending); only an explicit
+      // `false` flips the sort to ascending.
+      ascending: fd.order_desc === false,
+    },
+  };
+}
 
 export default function buildQuery(formData: QueryFormData) {
   const baseFormData = {
@@ -79,6 +149,7 @@ export default function buildQuery(formData: QueryFormData) {
           rollingWindowOperator(fd, queryObject),
           timeCompareOperator(fd, queryObject),
           renameOperator(fd, queryObject),
+          getCategoricalXAxisSortOperator(fd, queryObject),
           flattenOperator(fd, queryObject),
         ],
       } as QueryObject;

@@ -20,6 +20,7 @@ import {
   BinaryAdhocFilter,
   ComparisonType,
   FreeFormAdhocFilter,
+  QueryFormMetric,
   RollingType,
   TimeGranularity,
 } from '@superset-ui/core';
@@ -428,4 +429,125 @@ test('preserves order_desc and series_limit_metric for both queries', () => {
       orderby: [['count', true]],
     }),
   );
+});
+
+const sortMetric: QueryFormMetric = {
+  expressionType: 'SIMPLE',
+  column: { column_name: 'category1' },
+  aggregate: 'COUNT',
+  label: 'COUNT(category1)',
+};
+
+// A mixed chart on a categorical (non-temporal) generic-axes x-axis — the
+// configuration where the backend `pivot` step re-sorts the index
+// lexicographically and would otherwise discard the SQL ORDER BY.
+const categoricalXAxisFormData = {
+  ...formDataMixedChart,
+  x_axis: 'category1',
+  granularity_sqla: undefined,
+  groupby: [],
+  metrics: ['count'],
+  timeseries_limit_metric: sortMetric,
+  order_desc: false,
+  temporal_columns_lookup: { created_at: true },
+  groupby_b: [],
+  metrics_b: ['count'],
+  timeseries_limit_metric_b: sortMetric,
+  order_desc_b: true,
+  limit: undefined,
+};
+
+const sortOperations = (queries: ReturnType<typeof buildQuery>['queries']) =>
+  queries.map(query =>
+    query.post_processing?.filter(
+      (op): op is { operation: 'sort'; options: Record<string, unknown> } =>
+        op?.operation === 'sort',
+    ),
+  );
+
+test('a categorical x-axis orders rows by the query sort controls', () => {
+  const { queries } = buildQuery(categoricalXAxisFormData);
+  const [sortsA, sortsB] = sortOperations(queries);
+
+  // Query A: Sort Descending off -> ascending, by the displayed metric. The
+  // sort metric COUNT(category1) is not one of the pivot columns, so the
+  // ordering falls back to the first displayed metric, matching
+  // normalizeOrderBy's SQL fallback.
+  expect(sortsA).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: true } },
+  ]);
+  expect(queries[0].orderby).toEqual([[sortMetric, true]]);
+
+  // Query B: Sort Descending on -> descending.
+  expect(sortsB).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: false } },
+  ]);
+  expect(queries[1].orderby).toEqual([[sortMetric, false]]);
+});
+
+test('the sort metric is used directly when it is one of the displayed metrics', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    timeseries_limit_metric: 'count',
+    timeseries_limit_metric_b: 'count',
+  };
+  const [sortsA, sortsB] = sortOperations(buildQuery(formData).queries);
+  expect(sortsA).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: true } },
+  ]);
+  expect(sortsB).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: false } },
+  ]);
+});
+
+test('no sort step is emitted for a legacy temporal x-axis', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    x_axis: undefined,
+    granularity_sqla: 'created_at',
+    temporal_columns_lookup: undefined,
+  };
+  const { queries } = buildQuery(formData);
+  expect(sortOperations(queries)).toEqual([[], []]);
+});
+
+test('no sort step is emitted when the generic-axes x-axis column is temporal', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    x_axis: 'created_at',
+    temporal_columns_lookup: { created_at: true },
+  };
+  const { queries } = buildQuery(formData);
+  expect(sortOperations(queries)).toEqual([[], []]);
+});
+
+test('no sort step is emitted when the query pivots over a groupby series dimension', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    groupby: ['category2'],
+    groupby_b: ['category2'],
+  };
+  const [sortsA, sortsB] = sortOperations(buildQuery(formData).queries);
+  expect(sortsA).toEqual([]);
+  expect(sortsB).toEqual([]);
+});
+
+test('without an explicit sort metric the sort step falls back to the first displayed metric', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    timeseries_limit_metric: undefined,
+    timeseries_limit_metric_b: undefined,
+  };
+  const { queries } = buildQuery(formData);
+  // Mirror `normalizeOrderBy`: the SQL still orders by the first displayed
+  // metric, so the sort step must as well.
+  expect(queries[0].orderby).toEqual([['count', true]]);
+  expect(queries[1].orderby).toEqual([['count', false]]);
+  const [sortsA, sortsB] = sortOperations(queries);
+  expect(sortsA).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: true } },
+  ]);
+  expect(sortsB).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: false } },
+  ]);
 });
