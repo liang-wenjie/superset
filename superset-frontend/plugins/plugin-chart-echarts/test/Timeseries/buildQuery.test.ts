@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { SqlaFormData, VizType } from '@superset-ui/core';
+import { QueryFormMetric, SqlaFormData, VizType } from '@superset-ui/core';
 import buildQuery from '../../src/Timeseries/buildQuery';
 
 describe('Timeseries buildQuery', () => {
@@ -98,6 +98,120 @@ describe('Timeseries buildQuery', () => {
     expect(query.series_limit_metric).toEqual('bar');
     expect(query.order_desc).toEqual(true);
     expect(query.orderby).toEqual([['foo', true]]);
+  });
+
+  test('should sort a categorical x-axis by the timeseries limit metric', () => {
+    // Regression for chart 35: `sortOperator` only responds to
+    // `x_axis_sort`, which most timeseries control panels do not expose, so
+    // a categorical axis with "Sort query by" + "Sort Descending" never got
+    // a post-processing sort and rendered in lexicographic pivot order.
+    const queryContext = buildQuery({
+      ...formData,
+      metrics: ['bar', 'baz'],
+      x_axis: 'category',
+      timeseries_limit_metric: 'bar',
+      order_desc: false,
+    });
+    const [query] = queryContext.queries;
+    expect(query.orderby).toEqual([['bar', true]]);
+    const sorts = (query.post_processing || []).filter(
+      operator => operator?.operation === 'sort',
+    );
+    expect(sorts).toEqual([
+      { operation: 'sort', options: { by: 'bar', ascending: true } },
+    ]);
+  });
+
+  test('should not emit the categorical sort step for a temporal x-axis', () => {
+    const queryContext = buildQuery({
+      ...formData,
+      metrics: ['bar'],
+      x_axis: 'ds',
+      temporal_columns_lookup: { ds: true },
+      timeseries_limit_metric: 'bar',
+      order_desc: true,
+    });
+    const [query] = queryContext.queries;
+    const sorts = (query.post_processing || []).filter(
+      operator => operator?.operation === 'sort',
+    );
+    expect(sorts).toHaveLength(0);
+  });
+
+  test('should not emit the categorical sort step for a groupby series', () => {
+    const queryContext = buildQuery({
+      ...formData,
+      metrics: ['bar'],
+      x_axis: 'category',
+      groupby: ['col1'],
+      timeseries_limit_metric: 'bar',
+      order_desc: true,
+    });
+    const [query] = queryContext.queries;
+    const sorts = (query.post_processing || []).filter(
+      operator => operator?.operation === 'sort',
+    );
+    expect(sorts).toHaveLength(0);
+  });
+
+  test('should match the sort metric to a custom-labeled metric by identity', () => {
+    // The sort control SUM(利润（人民币）) is the same column+aggregate as the
+    // displayed metric labelled 毛利, but their labels differ. Sorting must
+    // follow 毛利, not fall back to the first displayed metric.
+    const sortMetric: QueryFormMetric = {
+      expressionType: 'SIMPLE',
+      column: { column_name: '利润（人民币）' },
+      aggregate: 'SUM',
+      label: 'SUM(利润（人民币）)',
+    };
+    const queryContext = buildQuery({
+      ...formData,
+      metrics: [
+        {
+          expressionType: 'SIMPLE',
+          column: { column_name: '销售收入（人民币）' },
+          aggregate: 'SUM',
+          hasCustomLabel: true,
+          label: '营业额',
+        },
+        {
+          expressionType: 'SIMPLE',
+          column: { column_name: '利润（人民币）' },
+          aggregate: 'SUM',
+          hasCustomLabel: true,
+          label: '毛利',
+        },
+      ],
+      x_axis: 'category',
+      timeseries_limit_metric: sortMetric,
+      order_desc: true,
+    });
+    const [query] = queryContext.queries;
+    const sorts = (query.post_processing || []).filter(
+      operator => operator?.operation === 'sort',
+    );
+    expect(sorts).toEqual([
+      { operation: 'sort', options: { by: '毛利', ascending: false } },
+    ]);
+  });
+
+  test('should keep the x_axis_sort sortOperator path when configured', () => {
+    const queryContext = buildQuery({
+      ...formData,
+      metrics: ['bar', 'baz'],
+      x_axis: 'category',
+      x_axis_sort: 'baz',
+      x_axis_sort_asc: true,
+      timeseries_limit_metric: 'bar',
+      order_desc: true,
+    });
+    const [query] = queryContext.queries;
+    const sorts = (query.post_processing || []).filter(
+      operator => operator?.operation === 'sort',
+    );
+    expect(sorts).toEqual([
+      { operation: 'sort', options: { by: 'baz', ascending: true } },
+    ]);
   });
 });
 
