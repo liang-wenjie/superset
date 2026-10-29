@@ -74,6 +74,25 @@ function createQuerySection(
     label,
     expanded: true,
     controlSetRows: [
+      ...(controlSuffix === '_b'
+        ? [
+            [
+              {
+                name: 'share_query_settings',
+                config: {
+                  type: 'CheckboxControl',
+                  label: t('Share settings with Query A'),
+                  default: true,
+                  description: t(
+                    'Apply Query A\u2019s sort metric, sort direction, row ' +
+                      'limit and empty-column handling to Query B as well, so ' +
+                      'both queries select the same categories.',
+                  ),
+                },
+              },
+            ],
+          ]
+        : []),
       [
         {
           name: `metrics${controlSuffix}`,
@@ -101,7 +120,12 @@ function createQuerySection(
       [
         {
           name: `timeseries_limit_metric${controlSuffix}`,
-          config: sharedControls.timeseries_limit_metric,
+          config: {
+            ...sharedControls.timeseries_limit_metric,
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controlSuffix === '' ||
+              controls?.share_query_settings?.value !== true,
+          },
         },
       ],
       [
@@ -112,6 +136,9 @@ function createQuerySection(
             label: t('Sort Descending'),
             default: orderDesc,
             description: t('Whether to sort descending or ascending'),
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controlSuffix === '' ||
+              controls?.share_query_settings?.value !== true,
           },
         },
       ],
@@ -125,6 +152,9 @@ function createQuerySection(
               'Keep rows whose aggregate values are all empty, so the x-axis ' +
                 'still lists every category (values stay blank).',
             ),
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controlSuffix === '' ||
+              controls?.share_query_settings?.value !== true,
           },
         },
       ],
@@ -134,6 +164,9 @@ function createQuerySection(
           config: {
             ...sharedControls.row_limit,
             default: rowLimit,
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controlSuffix === '' ||
+              controls?.share_query_settings?.value !== true,
           },
         },
       ],
@@ -143,6 +176,9 @@ function createQuerySection(
           config: {
             ...sharedControls.truncate_metric,
             default: sharedControls.truncate_metric.default,
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controlSuffix === '' ||
+              controls?.share_query_settings?.value !== true,
           },
         },
       ],

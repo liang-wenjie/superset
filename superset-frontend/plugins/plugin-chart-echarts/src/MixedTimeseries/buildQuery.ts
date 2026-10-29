@@ -155,7 +155,23 @@ export default function buildQuery(formData: QueryFormData) {
   };
 
   const formData1 = removeFormDataSuffix(baseFormData, '_b');
-  const formData2 = retainFormDataSuffix(baseFormData, '_b');
+  const formData2Raw = retainFormDataSuffix(baseFormData, '_b');
+  // When "Share settings with Query A" is on, Query B must select the same
+  // categories as Query A: inherit A's sort metric, sort direction, row limit,
+  // metric truncation and empty-column handling, regardless of B's own saved
+  // values. Otherwise B can run its own sort/limit and pick a disjoint set of
+  // categories, leaving B empty on A's x-axis.
+  const formData2 =
+    baseFormData.share_query_settings === true
+      ? {
+          ...formData2Raw,
+          timeseries_limit_metric: formData1.timeseries_limit_metric,
+          order_desc: formData1.order_desc,
+          row_limit: formData1.row_limit,
+          truncate_metric: formData1.truncate_metric,
+          show_empty_columns: formData1.show_empty_columns,
+        }
+      : formData2Raw;
 
   const queryContexts = [formData1, formData2].map(fd =>
     buildQueryContext(fd, baseQueryObject => {

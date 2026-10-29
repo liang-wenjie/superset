@@ -591,3 +591,70 @@ test('a sort metric with a custom-labeled display metric sorts by that metric', 
     { operation: 'sort', options: { by: '毛利', ascending: false } },
   ]);
 });
+
+test('Query B inherits Query A settings when sharing is enabled', () => {
+  // "Share settings with Query A": Query B must select the same categories as
+  // Query A even if B has its own saved direction/limit/empty-column values.
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_settings: true,
+    order_desc: false,
+    order_desc_b: true,
+    row_limit: 10,
+    row_limit_b: 100,
+    show_empty_columns: false,
+    show_empty_columns_b: true,
+  };
+  const { queries } = buildQuery(formData);
+  const [, queryB] = queries;
+  const [sortsA, sortsB] = sortOperations(queries);
+
+  // Query A keeps its own settings.
+  expect(queries[0].order_desc).toBe(false);
+  expect(queries[0].row_limit).toBe(10);
+  expect(sortsA).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: true } },
+  ]);
+
+  // Query B follows A: direction, row limit, sort metric and empty-column
+  // handling all come from Query A, ignoring B's saved values.
+  expect(queryB.order_desc).toBe(false);
+  expect(queryB.row_limit).toBe(10);
+  expect(queryB.orderby).toEqual([[sortMetric, true]]);
+  expect(queryB.post_processing?.find(op => op?.operation === 'pivot')).toEqual(
+    expect.objectContaining({
+      options: expect.objectContaining({ drop_missing_columns: true }),
+    }),
+  );
+  expect(sortsB).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: true } },
+  ]);
+});
+
+test('Query B settings stay independent when sharing is disabled', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_settings: false,
+    order_desc: false,
+    order_desc_b: true,
+    row_limit: 10,
+    row_limit_b: 100,
+    show_empty_columns: false,
+    show_empty_columns_b: true,
+  };
+  const { queries } = buildQuery(formData);
+  const [, queryB] = queries;
+  const [, sortsB] = sortOperations(queries);
+
+  expect(queryB.order_desc).toBe(true);
+  expect(queryB.row_limit).toBe(100);
+  expect(queryB.orderby).toEqual([[sortMetric, false]]);
+  expect(queryB.post_processing?.find(op => op?.operation === 'pivot')).toEqual(
+    expect.objectContaining({
+      options: expect.objectContaining({ drop_missing_columns: false }),
+    }),
+  );
+  expect(sortsB).toEqual([
+    { operation: 'sort', options: { by: 'count', ascending: false } },
+  ]);
+});

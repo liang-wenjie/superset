@@ -123,3 +123,49 @@ test('should expose show empty columns for both query A and query B', () => {
   expect(showEmptyColumnsB?.config.type).toBe('CheckboxControl');
   expect(showEmptyColumnsB?.config.default).toBe(true);
 });
+
+test('should expose the share settings control with Query A enabled by default', () => {
+  const shareSettings = getControl('share_query_settings') as {
+    config: { type: string; default: boolean };
+  } | null;
+  expect(shareSettings).toBeDefined();
+  expect(shareSettings?.config.type).toBe('CheckboxControl');
+  expect(shareSettings?.config.default).toBe(true);
+});
+
+test('Query B query controls hide when settings are shared with Query A', () => {
+  // Query B's sort metric, direction, row limit, empty columns and metric
+  // truncation follow Query A while sharing is on; its own controls are hidden.
+  const hiddenWhileSharing = [
+    'timeseries_limit_metric_b',
+    'order_desc_b',
+    'show_empty_columns_b',
+    'row_limit_b',
+    'truncate_metric_b',
+  ];
+  for (const name of hiddenWhileSharing) {
+    const ctrl = getControl(name) as unknown as VisibilityControl;
+    expect(ctrl).toBeDefined();
+    expect(ctrl.config.visibility).toBeDefined();
+    expect(
+      ctrl.config.visibility({
+        controls: { share_query_settings: { value: true } },
+      } as unknown as ControlPanelsContainerProps),
+    ).toBe(false);
+    expect(
+      ctrl.config.visibility({
+        controls: { share_query_settings: { value: false } },
+      } as unknown as ControlPanelsContainerProps),
+    ).toBe(true);
+  }
+
+  // Query A's own controls are never hidden.
+  const queryAOrderDesc = getControl(
+    'order_desc',
+  ) as unknown as VisibilityControl;
+  expect(
+    queryAOrderDesc.config.visibility({
+      controls: { share_query_settings: { value: true } },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(true);
+});
