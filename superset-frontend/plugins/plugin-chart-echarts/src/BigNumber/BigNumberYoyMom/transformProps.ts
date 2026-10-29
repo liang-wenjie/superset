@@ -83,6 +83,27 @@ const normalizePosition = (value: unknown): number => {
 };
 
 /**
+ * Estimate the rendered width of a string at a given font size. Full-width
+ * characters (labels, arrows) are wider than ASCII digits and separators.
+ * The big number renders bold, which is a touch wider than regular weight,
+ * so callers can pass `bold` to use a slightly larger per-character factor.
+ * Used both to lay comparison slots out side by side and to auto-shrink the
+ * big number when it would overflow the tile.
+ */
+const estimateTextWidth = (
+  text: string,
+  fontSizePx: number,
+  bold = false,
+): number =>
+  Math.ceil(
+    Array.from(text).reduce(
+      (width, char) =>
+        width + (char.charCodeAt(0) > 255 ? 1.1 : bold ? 0.68 : 0.62),
+      0,
+    ) * fontSizePx,
+  );
+
+/**
  * Read a comparison value column from a result row. Saved metrics are plain
  * column names; adhoc metrics are named by their label, or by the SQL
  * expression itself when no label is set. The backend may normalize
@@ -329,6 +350,16 @@ export default function transformProps(
   const rawBigNumber = hasData ? row[metricName] : null;
   const current = toNumber(rawBigNumber);
 
+  // Resolve the formatted big number up front so its rendered width can drive
+  // the auto font-size shrink below.
+  let bigNumberText = t('No data');
+  if (hasData && rawBigNumber !== null && rawBigNumber !== undefined) {
+    bigNumberText =
+      typeof rawBigNumber === 'number'
+        ? numberFormatter(rawBigNumber)
+        : String(rawBigNumber);
+  }
+
   const graphic: GraphicComponentOption[] = [];
 
   // Auto-positioning keeps the text stack compact and centered, matching the
@@ -349,10 +380,39 @@ export default function transformProps(
     typeof bigNumberFontSize === 'number'
       ? bigNumberFontSize
       : Number(bigNumberFontSize) || DEFAULT_BIG_NUMBER_FONT_SIZE;
-  const bigNumberFontSizePx =
+  const requestedBigNumberFontSizePx =
     bigNumberFontSizeValue <= 1
       ? Math.ceil(bigNumberFontSizeValue * height)
       : Math.ceil(bigNumberFontSizeValue);
+  // ECharts graphic text does not wrap or auto-scale, so a long formatted
+  // value (e.g. "15,145,470") gets clipped on the right when the tile is
+  // narrow. Shrink the font size proportionally so the whole number fits,
+  // while keeping a floor so it stays readable. The configured left offset
+  // and a symmetric right padding bound the available width.
+  const bigNumberAvailableWidth = Math.max(
+    0,
+    width - bigNumberLeft - DEFAULT_BIG_NUMBER_LEFT,
+  );
+  const estimatedBigNumberWidth = estimateTextWidth(
+    bigNumberText,
+    requestedBigNumberFontSizePx,
+    true,
+  );
+  const minBigNumberFontSizePx = Math.max(
+    12,
+    Math.floor(requestedBigNumberFontSizePx * 0.3),
+  );
+  const bigNumberFontSizePx =
+    bigNumberAvailableWidth > 0 &&
+    estimatedBigNumberWidth > bigNumberAvailableWidth
+      ? Math.max(
+          minBigNumberFontSizePx,
+          Math.floor(
+            (requestedBigNumberFontSizePx * bigNumberAvailableWidth) /
+              estimatedBigNumberWidth,
+          ),
+        )
+      : requestedBigNumberFontSizePx;
   const comparisonFontSizeValue =
     typeof comparisonFontSize === 'number'
       ? comparisonFontSize
@@ -396,14 +456,6 @@ export default function transformProps(
         fill: toCssColor(titleColor, defaultTitleColor),
       },
     });
-  }
-
-  let bigNumberText = t('No data');
-  if (hasData && rawBigNumber !== null && rawBigNumber !== undefined) {
-    bigNumberText =
-      typeof rawBigNumber === 'number'
-        ? numberFormatter(rawBigNumber)
-        : String(rawBigNumber);
   }
 
   graphic.push({
@@ -514,17 +566,6 @@ export default function transformProps(
           : negativeColor;
     return { text, fill };
   };
-
-  // Estimate the rendered width of a comparison line so the second slot is
-  // pushed past the first one even when no extra gap is configured. Full-width
-  // characters (labels, arrows) are wider than ASCII digits and separators.
-  const estimateTextWidth = (text: string, fontSizePx: number): number =>
-    Math.ceil(
-      Array.from(text).reduce(
-        (width, char) => width + (char.charCodeAt(0) > 255 ? 1.1 : 0.62),
-        0,
-      ) * fontSizePx,
-    );
 
   const comparison1Content = buildComparisonContent({
     show: showComparison1,
