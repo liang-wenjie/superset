@@ -170,6 +170,15 @@ export default function buildQuery(formData: QueryFormData) {
           row_limit: formData1.row_limit,
           truncate_metric: formData1.truncate_metric,
           show_empty_columns: formData1.show_empty_columns,
+          // Query B filters itself independently in a mixed chart; when
+          // sharing settings, B must be filtered the same way as A so B
+          // cannot surface categories A's filters excluded (e.g. fee rows A
+          // filtered away otherwise appear as empty columns on the shared
+          // x-axis). B's own filters, when it defines any, take precedence.
+          adhoc_filters:
+            ensureIsArray(formData2Raw.adhoc_filters).length > 0
+              ? formData2Raw.adhoc_filters
+              : formData1.adhoc_filters,
         }
       : formData2Raw;
 

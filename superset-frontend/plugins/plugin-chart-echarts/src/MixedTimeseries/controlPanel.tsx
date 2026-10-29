@@ -85,8 +85,8 @@ function createQuerySection(
                   default: true,
                   description: t(
                     'Apply Query A\u2019s sort metric, sort direction, row ' +
-                      'limit and empty-column handling to Query B as well, so ' +
-                      'both queries select the same categories.',
+                      'limit, filters and empty-column handling to Query B as ' +
+                      'well, so both queries select the same categories.',
                   ),
                 },
               },
@@ -108,7 +108,12 @@ function createQuerySection(
       [
         {
           name: `adhoc_filters${controlSuffix}`,
-          config: sharedControls.adhoc_filters,
+          config: {
+            ...sharedControls.adhoc_filters,
+            visibility: ({ controls }: ControlPanelsContainerProps) =>
+              controlSuffix === '' ||
+              controls?.share_query_settings?.value !== true,
+          },
         },
       ],
       [

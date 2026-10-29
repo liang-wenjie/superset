@@ -631,6 +631,31 @@ test('Query B inherits Query A settings when sharing is enabled', () => {
   ]);
 });
 
+test('Query B inherits Query A filters when sharing is enabled and B has none', () => {
+  // A's filters must reach B too, or B's result can include categories A has
+  // filtered out (e.g. fee rows) that then show up as empty columns on the
+  // shared x-axis.
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_settings: true,
+    adhoc_filters_b: undefined,
+  };
+  const { queries } = buildQuery(formData);
+  const [, queryB] = queries;
+  expect(queryB.extras?.where).toContain("foo in ('a', 'b')");
+});
+
+test('Query B keeps its own filters when sharing is enabled', () => {
+  // B's explicitly configured filters take precedence over A's.
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_settings: true,
+  };
+  const { queries } = buildQuery(formData);
+  const [, queryB] = queries;
+  expect(queryB.extras?.where).toContain("name in ('c', 'd')");
+});
+
 test('Query B settings stay independent when sharing is disabled', () => {
   const formData = {
     ...categoricalXAxisFormData,
