@@ -633,4 +633,47 @@ describe('BigNumberYoyMom transformProps', () => {
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     expect(graphic[2].style.text).toBe('MoM ↑11.11%');
   });
+
+  test('hides the trend arrow when show arrow is disabled', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 100,
+            'SUM(sales)__1 month ago': 90,
+            'SUM(sales)__1 year ago': 110,
+          },
+        ],
+        { comparisonShowArrow: false },
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    // Still colored by direction, but no ↑/↓ prefix.
+    expect(graphic[2].style.text).toBe('MoM 11.11%');
+    expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
+    expect(graphic[3].style.text).toBe('YoY 9.09%');
+    expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
+  });
+
+  test('treats small changes as no-change when a threshold is set', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 100,
+            'SUM(sales)__1 month ago': 99.9, // +0.1%
+            'SUM(sales)__1 year ago': 110, // +10%
+          },
+        ],
+        { comparisonThreshold: 0.05 }, // 5%
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    // 0.1% is below the 5% threshold → no-change color, no arrow.
+    expect(graphic[2].style.text).toBe('MoM 0.10%');
+    expect(graphic[2].style.fill).toBe('rgb(102, 102, 102)');
+    // 10% is above the threshold → normal increase styling.
+    expect(graphic[3].style.text).toBe('YoY ↓9.09%');
+    expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
+  });
 });

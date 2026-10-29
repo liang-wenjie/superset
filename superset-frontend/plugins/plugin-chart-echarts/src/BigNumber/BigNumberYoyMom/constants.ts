@@ -43,6 +43,11 @@ export const DEFAULT_COMPARISON_GAP = 24;
 
 export const DEFAULT_COMPARISON_FONT_SIZE = 0.15;
 export const DEFAULT_COMPARISON_TOP = 0;
+export const DEFAULT_COMPARISON_SHOW_ARROW = true;
+// Absolute delta below which a comparison is treated as "no change" (gray,
+// no arrow). In time-shift mode this is a fraction (0.01 = 1%); in metric
+// mode it is an absolute value.
+export const DEFAULT_COMPARISON_THRESHOLD = 0;
 
 export const DEFAULT_COMPARISON_POSITIVE_COLOR = { r: 0, g: 180, b: 42 }; // #00b42a
 export const DEFAULT_COMPARISON_NEGATIVE_COLOR = { r: 245, g: 63, b: 63 }; // #f53f3f

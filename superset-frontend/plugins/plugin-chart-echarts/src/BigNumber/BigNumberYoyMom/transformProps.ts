@@ -39,6 +39,8 @@ import {
   DEFAULT_COMPARISON_FONT_SIZE,
   DEFAULT_COMPARISON_NEGATIVE_COLOR,
   DEFAULT_COMPARISON_POSITIVE_COLOR,
+  DEFAULT_COMPARISON_SHOW_ARROW,
+  DEFAULT_COMPARISON_THRESHOLD,
   DEFAULT_COMPARISON_ZERO_COLOR,
   DEFAULT_TITLE_COLOR,
   DEFAULT_TITLE_FONT_SIZE,
@@ -243,6 +245,15 @@ export default function transformProps(
   const comparisonPositiveColor = pick<RGBColor>('comparisonPositiveColor');
   const comparisonNegativeColor = pick<RGBColor>('comparisonNegativeColor');
   const comparisonZeroColor = pick<RGBColor>('comparisonZeroColor');
+  const comparisonShowArrow =
+    pick<boolean>('comparisonShowArrow') ?? DEFAULT_COMPARISON_SHOW_ARROW;
+  const comparisonThresholdValue = pick<number>('comparisonThreshold');
+  const comparisonThreshold =
+    typeof comparisonThresholdValue === 'number' &&
+    !Number.isNaN(comparisonThresholdValue) &&
+    comparisonThresholdValue > 0
+      ? comparisonThresholdValue
+      : DEFAULT_COMPARISON_THRESHOLD;
   const percentDifferenceFormat =
     pick<string>('percentDifferenceFormat') ?? NumberFormats.PERCENT_2_POINT;
   const timeGrainSqla = pick<string>('timeGrainSqla');
@@ -523,48 +534,55 @@ export default function transformProps(
     if (!offset && !column) return null;
     const comparison = toNumber(comparisonValue);
     const missing = comparison === null;
+    const labelPrefix = label ? `${label} ` : '';
 
     // A comparison value metric (dataset column or custom SQL) supplies the
     // value itself, so render it like the big number instead of computing a
     // percentage change. Time shifts keep the percentage-difference display.
     if (isMetricMode(mode, column)) {
       if (missing) {
-        return {
-          text: `${label ? `${label} ` : ''}—`,
-          fill: zeroColor,
-        };
+        return { text: `${labelPrefix}—`, fill: zeroColor };
       }
-      const arrow = comparison > 0 ? '↑' : comparison < 0 ? '↓' : '';
+      // At or below the no-change threshold (or exactly zero) the value is
+      // rendered in the no-change color with no trend arrow.
+      const withinThreshold = Math.abs(comparison) <= comparisonThreshold;
+      const arrow =
+        !comparisonShowArrow || withinThreshold
+          ? ''
+          : comparison > 0
+            ? '↑'
+            : '↓';
       return {
-        text: `${label ? `${label} ` : ''}${arrow}${valueFormatter(
-          comparison,
-        )}`,
-        fill:
-          comparison > 0
+        text: `${labelPrefix}${arrow}${valueFormatter(comparison)}`,
+        fill: withinThreshold
+          ? zeroColor
+          : comparison > 0
             ? positiveColor
-            : comparison < 0
-              ? negativeColor
-              : zeroColor,
+            : negativeColor,
       };
     }
 
     const percent = computePercent(slotCurrent, comparison);
-    let text: string;
     if (missing || percent === null) {
-      text = `${label ? `${label} ` : ''}—`;
-    } else {
-      const arrow = percent > 0 ? '↑' : percent < 0 ? '↓' : '';
-      text = `${label ? `${label} ` : ''}${arrow}${formatter(
-        Math.abs(percent),
-      )}`;
+      return { text: `${labelPrefix}—`, fill: zeroColor };
     }
-    const fill =
-      missing || percent === null || percent === 0
+    // At or below the no-change threshold (or exactly zero) the percent is
+    // rendered in the no-change color with no trend arrow.
+    const withinThreshold = Math.abs(percent) <= comparisonThreshold;
+    const arrow =
+      !comparisonShowArrow || withinThreshold
+        ? ''
+        : percent > 0
+          ? '↑'
+          : '↓';
+    return {
+      text: `${labelPrefix}${arrow}${formatter(Math.abs(percent))}`,
+      fill: withinThreshold
         ? zeroColor
         : percent > 0
           ? positiveColor
-          : negativeColor;
-    return { text, fill };
+          : negativeColor,
+    };
   };
 
   const comparison1Content = buildComparisonContent({
