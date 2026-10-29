@@ -117,6 +117,19 @@ function createQuerySection(
       ],
       [
         {
+          name: `show_empty_columns${controlSuffix}`,
+          config: {
+            ...sharedControls.show_empty_columns,
+            default: true,
+            description: t(
+              'Keep rows whose aggregate values are all empty, so the x-axis ' +
+                'still lists every category (values stay blank).',
+            ),
+          },
+        },
+      ],
+      [
+        {
           name: `row_limit${controlSuffix}`,
           config: {
             ...sharedControls.row_limit,

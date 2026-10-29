@@ -107,3 +107,19 @@ test('should have correct visibility for label_positionB', () => {
     } as unknown as ControlPanelsContainerProps),
   ).toBe(false);
 });
+
+test('should expose show empty columns for both query A and query B', () => {
+  const showEmptyColumnsA = getControl('show_empty_columns') as {
+    config: { type: string; default: boolean; label: string };
+  } | null;
+  expect(showEmptyColumnsA).toBeDefined();
+  expect(showEmptyColumnsA?.config.type).toBe('CheckboxControl');
+  expect(showEmptyColumnsA?.config.default).toBe(true);
+
+  const showEmptyColumnsB = getControl('show_empty_columns_b') as {
+    config: { type: string; default: boolean; label: string };
+  } | null;
+  expect(showEmptyColumnsB).toBeDefined();
+  expect(showEmptyColumnsB?.config.type).toBe('CheckboxControl');
+  expect(showEmptyColumnsB?.config.default).toBe(true);
+});
