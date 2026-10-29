@@ -98,6 +98,15 @@ export const annotations: ControlPanelSectionConfig = {
   ],
 };
 
+export const inlineFilters: ControlPanelSectionConfig = {
+  label: t('Chart inline filters'),
+  description: t(
+    'Quick-filter dropdowns rendered at the top-left of the chart. Picking a value re-queries this chart only.',
+  ),
+  expanded: true,
+  controlSetRows: [['inline_filters']],
+};
+
 export const NVD3TimeSeries: ControlPanelSectionConfig[] = [
   {
     label: t('Query'),

@@ -503,4 +503,20 @@ export const controls = {
     description: t('The color scheme for rendering chart'),
     schemes: () => categoricalSchemeRegistry.getMap(),
   },
+
+  inline_filters: {
+    type: 'InlineFiltersControl',
+    // The enclosing control panel section already renders a "Chart inline
+    // filters" header, so the control itself must not repeat it.
+    label: '',
+    default: [],
+    description: t(
+      'Configure quick-filter dropdowns at the top-left of the chart. ' +
+        'Each group binds to a column; picking a value adds a WHERE clause ' +
+        'and re-queries the chart.',
+    ),
+    mapStateToProps: (state: ControlState) => ({
+      columns: state.datasource ? state.datasource.columns : [],
+    }),
+  },
 };

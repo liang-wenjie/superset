@@ -63,6 +63,12 @@ import { useIsChartAutoRefreshing } from 'src/dashboard/contexts/AutoRefreshCont
 
 import SliceHeader from '../../SliceHeader';
 import MissingChart from '../../MissingChart';
+import {
+  DashboardInlineFilterBar,
+  INLINE_FILTER_BAR_HEIGHT,
+  injectInlineFilters,
+} from '../../InlineFilters';
+import type { InlineFilterConfig } from '../../InlineFilters';
 
 import {
   addDangerToast,
@@ -400,12 +406,34 @@ const Chart = (props: ChartProps) => {
         ?.queried_dttm as string | null) ?? null)
     : null;
 
+  // Per-chart inline quick filter selections (button toggles in the header).
+  const inlineFilterSelection = useSelector(
+    (state: RootState) =>
+      state.dashboardState.chartInlineFilters?.[props.id] ?? {},
+  );
+
+  const inlineFilterConfig = useMemo<InlineFilterConfig[]>(() => {
+    const raw = (chart?.form_data as JsonObject | undefined)?.inline_filters;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (g): g is InlineFilterConfig =>
+        !!g && typeof g === 'object' && 'column' in g && !!g.column,
+    );
+  }, [chart?.form_data]);
+
+  const showInlineFilterBar = inlineFilterConfig.length > 0 && !editMode;
+
   const getChartHeight = useCallback((): number => {
     const headerHeight = getHeaderHeight();
     const queriedLabelHeight =
       showChartTimestamps && queriedDttm != null ? QUERIED_LABEL_HEIGHT : 0;
+    const inlineBarHeight = showInlineFilterBar ? INLINE_FILTER_BAR_HEIGHT : 0;
     return Math.max(
-      height - headerHeight - descriptionHeight - queriedLabelHeight,
+      height -
+        headerHeight -
+        descriptionHeight -
+        queriedLabelHeight -
+        inlineBarHeight,
       20,
     );
   }, [
@@ -414,6 +442,7 @@ const Chart = (props: ChartProps) => {
     descriptionHeight,
     queriedDttm,
     showChartTimestamps,
+    showInlineFilterBar,
   ]);
 
   const handleFilterMenuOpen = useCallback(
@@ -548,6 +577,16 @@ const Chart = (props: ChartProps) => {
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;
 
+  const formDataWithInlineFilters = useMemo(
+    () =>
+      injectInlineFilters(
+        formData as unknown as import('@superset-ui/core').QueryFormData,
+        inlineFilterConfig,
+        inlineFilterSelection,
+      ),
+    [formData, inlineFilterConfig, inlineFilterSelection],
+  );
+
   // Memoize ownState so it keeps a stable reference across re-renders that
   // don't change its logical value. ViewQueryModal depends on ownState; a fresh
   // object on every render would refetch the query unnecessarily.
@@ -580,8 +619,8 @@ const Chart = (props: ChartProps) => {
       });
 
       const exportFormData = isFullCSV
-        ? { ...formData, row_limit: maxRows }
-        : formData;
+        ? { ...formDataWithInlineFilters, row_limit: maxRows }
+        : formDataWithInlineFilters;
       const resultType = isPivot ? 'post_processed' : 'full';
 
       let actualRowCount: number | undefined;
@@ -693,6 +732,7 @@ const Chart = (props: ChartProps) => {
       sliceVizType,
       isCached,
       formData,
+      formDataWithInlineFilters,
       maxRows,
       dataMaskOwnState,
       chartState,
@@ -827,6 +867,15 @@ const Chart = (props: ChartProps) => {
         ownState={ownState}
       />
 
+      {showInlineFilterBar && (
+        <DashboardInlineFilterBar
+          chartId={props.id}
+          rawConfig={inlineFilterConfig}
+          datasourceId={datasource?.id}
+          datasourceType={datasource?.type}
+        />
+      )}
+
       {/*
           This usage of dangerouslySetInnerHTML is safe since it is being used to render
           markdown that is sanitized with nh3. See:
@@ -872,9 +921,6 @@ const Chart = (props: ChartProps) => {
           datasource={chartDatasource}
           dashboardId={props.dashboardId}
           initialValues={EMPTY_OBJECT}
-          formData={
-            formData as unknown as import('@superset-ui/core').QueryFormData
-          }
           ownState={ownState}
           queriesResponse={chart.queriesResponse ?? null}
           latestQueryFormData={chart.latestQueryFormData}
@@ -890,6 +936,9 @@ const Chart = (props: ChartProps) => {
           onChartStateChange={handleChartStateChange}
           suppressLoadingSpinner={suppressLoadingSpinner}
           filterState={dataMask[props.id]?.filterState}
+          formData={
+            formDataWithInlineFilters as unknown as import('@superset-ui/core').QueryFormData
+          }
         />
       </ChartWrapper>
 

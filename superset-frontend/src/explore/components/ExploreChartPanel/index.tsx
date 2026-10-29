@@ -57,6 +57,15 @@ import { ExploreAlert } from '../ExploreAlert';
 import { LegacyAggregationAlert } from '../LegacyAggregationAlert';
 import useResizeDetectorByObserver from './useResizeDetectorByObserver';
 import StandaloneDownloadControl from './StandaloneDownloadControl';
+import {
+  ChartInlineFilterBar,
+  INLINE_FILTER_BAR_HEIGHT,
+  injectInlineFilters,
+} from 'src/dashboard/components/InlineFilters';
+import type {
+  InlineFilterConfig,
+  InlineFilterSelection,
+} from 'src/dashboard/components/InlineFilters';
 
 const extensionsRegistry = getExtensionsRegistry();
 const DefaultHeader: React.FC<{ children?: React.ReactNode }> = ({
@@ -186,6 +195,56 @@ const ExploreChartPanel = ({
     (state: { explore?: ExploreState }) =>
       state.explore?.chartStates?.[chart.id],
   );
+
+  // Per-chart inline quick filter selections (local to explore session).
+  const [inlineSelection, setInlineSelection] = useState<InlineFilterSelection>(
+    {},
+  );
+
+  const inlineConfig = useMemo<InlineFilterConfig[]>(() => {
+    const raw = (formData as JsonObject).inline_filters;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (g): g is InlineFilterConfig =>
+        !!g && typeof g === 'object' && 'column' in g && !!g.column,
+    );
+  }, [formData]);
+
+  const formDataWithInline = useMemo(
+    () => injectInlineFilters(formData, inlineConfig, inlineSelection),
+    [formData, inlineConfig, inlineSelection],
+  );
+
+  const handleInlineFilterChange = useCallback(
+    (filterId: string, value: string | number | boolean | undefined) => {
+      setInlineSelection(prev => {
+        const next = { ...prev };
+        if (value === undefined) {
+          delete next[filterId];
+        } else {
+          next[filterId] = value;
+        }
+        return next;
+      });
+      // immediately re-query with the new selection
+      requestAnimationFrame(() => {
+        actions.postChartFormData(
+          injectInlineFilters(formData, inlineConfig, {
+            ...inlineSelection,
+            ...(value === undefined ? {} : { [filterId]: value }),
+          }),
+          true,
+          timeout ?? 0,
+          chart.id,
+          undefined,
+          ownState,
+        );
+      });
+    },
+    [actions, chart.id, formData, inlineConfig, inlineSelection, ownState, timeout],
+  );
+
+  const showInlineBar = inlineConfig.length > 0;
 
   const handleChartStateChange = useCallback(
     (chartStateArg: JsonObject) => {
@@ -318,7 +377,7 @@ const ExploreChartPanel = ({
         {chartPanelWidth && chartPanelHeight && (
           <ChartContainer
             width={Math.floor(chartPanelWidth)}
-            height={chartPanelHeight}
+            height={chartPanelHeight - (showInlineBar ? INLINE_FILTER_BAR_HEIGHT : 0)}
             ownState={mergedOwnState}
             annotationData={chart.annotationData}
             chartId={chart.id}
@@ -326,7 +385,7 @@ const ExploreChartPanel = ({
             force={force}
             datasource={datasource}
             errorMessage={errorMessage}
-            formData={formData}
+            formData={formDataWithInline}
             latestQueryFormData={chart.latestQueryFormData}
             onQuery={onQuery}
             queriesResponse={chart.queriesResponse}
@@ -364,10 +423,11 @@ const ExploreChartPanel = ({
       datasource,
       errorMessage,
       force,
-      formData,
+      formDataWithInline,
       handleChartStateChange,
       onQuery,
       mergedOwnState,
+      showInlineBar,
       timeout,
       triggerRender,
       vizType,
@@ -458,6 +518,15 @@ const ExploreChartPanel = ({
             formData={formData}
           />
         </ChartHeaderExtension>
+        {showInlineBar && (
+          <ChartInlineFilterBar
+            filters={inlineConfig}
+            selection={inlineSelection}
+            onSelect={handleInlineFilterChange}
+            datasourceId={datasource?.id}
+            datasourceType={datasource?.type}
+          />
+        )}
         {renderChart()}
         {!chart.chartStatus || chart.chartStatus !== 'loading' ? (
           <div
@@ -490,6 +559,10 @@ const ExploreChartPanel = ({
       formData?.matrixify_mode_columns,
       renderChart,
       theme.sizeUnit,
+      inlineConfig,
+      inlineSelection,
+      handleInlineFilterChange,
+      showInlineBar,
     ],
   );
 

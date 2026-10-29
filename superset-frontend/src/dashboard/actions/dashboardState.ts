@@ -1134,6 +1134,27 @@ export function unsetFocusedFilterField(
 }
 
 // ---------------------------------------------------------------------------
+// Chart inline quick filters (per-chart button filters rendered in the header)
+// ---------------------------------------------------------------------------
+
+export const SET_CHART_INLINE_FILTER = 'SET_CHART_INLINE_FILTER';
+
+interface SetChartInlineFilterAction {
+  type: typeof SET_CHART_INLINE_FILTER;
+  chartId: number;
+  filterId: string;
+  value: string | number | boolean | undefined;
+}
+
+export function setChartInlineFilter(
+  chartId: number,
+  filterId: string,
+  value: string | number | boolean | undefined,
+): SetChartInlineFilterAction {
+  return { type: SET_CHART_INLINE_FILTER, chartId, filterId, value };
+}
+
+// ---------------------------------------------------------------------------
 // Full-size chart
 // ---------------------------------------------------------------------------
 

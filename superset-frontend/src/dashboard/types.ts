@@ -146,6 +146,11 @@ export type DashboardState = {
     data: JsonObject;
   };
   chartStates?: Record<string, JsonObject>;
+  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value. */
+  chartInlineFilters?: Record<
+    number,
+    Record<string, string | number | boolean | undefined>
+  >;
   autoRefreshStatus?: AutoRefreshStatus;
   autoRefreshPaused?: boolean;
   autoRefreshPausedByTab?: boolean;

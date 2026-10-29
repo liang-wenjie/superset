@@ -241,6 +241,7 @@ export type InternalControlType =
   | 'Select'
   | 'Slider'
   | 'Input'
+  | 'InlineFiltersControl'
   | keyof SharedControlComponents; // expanded in `expandControlConfig`
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

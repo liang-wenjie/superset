@@ -552,6 +552,22 @@ const echart_options: SharedControlConfig<'JSEditorControl'> = {
   validators: [],
 };
 
+const inline_filters: SharedControlConfig<'InlineFiltersControl'> = {
+  type: 'InlineFiltersControl',
+  // The enclosing control panel section already renders a "Chart inline
+  // filters" header, so the control itself must not repeat it.
+  label: '',
+  default: [],
+  description: t(
+    'Configure quick-filter dropdowns at the top-left of the chart. ' +
+      'Pick a column; selecting a value adds a WHERE clause and re-queries the chart.',
+  ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mapStateToProps: ({ datasource }: any) => ({
+    columns: datasource?.columns || [],
+  }),
+};
+
 const controlConfigs = {
   metrics: dndAdhocMetricsControl,
   metric: dndAdhocMetricControl,
@@ -601,6 +617,7 @@ const controlConfigs = {
   sort_by_metric,
   order_by_cols,
   echart_options,
+  inline_filters,
 
   // Add all Matrixify controls
   ...matrixifyControls,

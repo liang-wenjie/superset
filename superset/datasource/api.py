@@ -118,6 +118,7 @@ def get_cached_column_values(
     search: str | None = None,
     selection_version: str | None = None,
     force: bool = False,
+    extra_filters: list[dict] | None = None,
 ) -> tuple[list[Any], bool]:
     """Return a column's distinct values through the shared ``data_cache`` entry.
 
@@ -134,6 +135,14 @@ def get_cached_column_values(
     Returns ``(values, cache_hit)``. ``force`` skips the read and refreshes
     the entry.
     """
+    # Normalize extra_filters into a deterministic string for the cache key.
+    normalized_ef: list[dict] = sorted(
+        (
+            {"col": ef.get("col"), "val": ef.get("val")}
+            for ef in (extra_filters or [])
+        ),
+        key=lambda item: str(item.get("col", "")),
+    )
     cache_key: str = _column_values_cache_key(
         datasource,
         {
@@ -147,6 +156,7 @@ def get_cached_column_values(
             "denorm": denormalize_column,
             "elements": array_elements,
             "q": search,
+            "ef": normalized_ef,
         },
     )
     timeout: int = datasource.cache_timeout or app.config.get(
@@ -168,6 +178,7 @@ def get_cached_column_values(
         denormalize_column=denormalize_column,
         array_elements=array_elements,
         search=search,
+        extra_filters=extra_filters,
     )
 
     # Warn before caching very large payloads (high-cardinality columns)
@@ -356,6 +367,21 @@ class DatasourceRestApi(BaseSupersetApi):
         # unfindable on a high-cardinality column.
         search: str | None = (request.args.get("q") or "").strip() or None
 
+        # Cascading inline filters: client passes sibling column selections as
+        # a JSON array of {"col": name, "val": value} objects.
+        extra_filters: list[dict] = []
+        raw_extra = request.args.get("extra_filters")
+        if raw_extra:
+            try:
+                parsed = json.loads(raw_extra)
+                if isinstance(parsed, list):
+                    extra_filters = [
+                        item for item in parsed
+                        if isinstance(item, dict) and item.get("col")
+                    ]
+            except (json.JSONDecodeError, TypeError):
+                extra_filters = []
+
         # Cache distinct column-value results so a dashboard with many filters
         # backed by the same (often heavy) virtual dataset doesn't re-execute
         # the wrapping query per filter (#39342).
@@ -390,6 +416,7 @@ class DatasourceRestApi(BaseSupersetApi):
                 search=search,
                 selection_version=selection_version,
                 force=force,
+                extra_filters=extra_filters,
             )
         except (SemanticLayerQueryRejectedError, SemanticLayerExecutionError) as ex:
             return self.response(ex.status, message=ex.message)
