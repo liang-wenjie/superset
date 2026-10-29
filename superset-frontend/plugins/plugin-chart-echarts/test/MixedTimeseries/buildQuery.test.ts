@@ -551,3 +551,43 @@ test('without an explicit sort metric the sort step falls back to the first disp
     { operation: 'sort', options: { by: 'count', ascending: false } },
   ]);
 });
+
+const turnoverMetric: QueryFormMetric = {
+  expressionType: 'SIMPLE',
+  column: { column_name: '销售收入（人民币）' },
+  aggregate: 'SUM',
+  hasCustomLabel: true,
+  label: '营业额',
+};
+
+const grossProfitMetric: QueryFormMetric = {
+  expressionType: 'SIMPLE',
+  column: { column_name: '利润（人民币）' },
+  aggregate: 'SUM',
+  hasCustomLabel: true,
+  label: '毛利',
+};
+
+const profitSortMetric: QueryFormMetric = {
+  expressionType: 'SIMPLE',
+  column: { column_name: '利润（人民币）' },
+  aggregate: 'SUM',
+  label: 'SUM(利润（人民币）)',
+};
+
+test('a sort metric with a custom-labeled display metric sorts by that metric', () => {
+  // Regression for chart 28: the sort control SUM(利润（人民币）) is the same
+  // column+aggregate as the displayed metric labelled 毛利, but their labels
+  // differ. Sorting must follow 毛利, not fall back to the first displayed
+  // metric (营业额).
+  const formData = {
+    ...categoricalXAxisFormData,
+    metrics: [turnoverMetric, grossProfitMetric],
+    timeseries_limit_metric: profitSortMetric,
+    order_desc: true,
+  };
+  const [sortsA] = sortOperations(buildQuery(formData).queries);
+  expect(sortsA).toEqual([
+    { operation: 'sort', options: { by: '毛利', ascending: false } },
+  ]);
+});

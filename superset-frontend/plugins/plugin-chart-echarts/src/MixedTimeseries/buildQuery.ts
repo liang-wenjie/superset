@@ -27,6 +27,7 @@ import {
   PostProcessingPivot,
   PostProcessingSort,
   QueryFormData,
+  QueryFormMetric,
   QueryObject,
   getXAxisColumn,
 } from '@superset-ui/core';
@@ -44,6 +45,30 @@ import {
   retainFormDataSuffix,
   removeFormDataSuffix,
 } from '../utils/formDataSuffix';
+
+/**
+ * Identity of a SIMPLE adhoc metric: the physical column it aggregates plus
+ * the aggregate function. Custom labels on a displayed metric (e.g. "毛利")
+ * differ from the sort metric's auto label ("SUM(利润（人民币）)") even though
+ * they describe the same column + aggregate, so matching by label alone would
+ * silently fall back to the first displayed metric and sort by the wrong
+ * column. Matching by identity maps the sort metric onto the displayed metric
+ * that aggregates the same column.
+ */
+const getMetricIdentity = (metric: QueryFormMetric | undefined) => {
+  if (
+    typeof metric === 'string' ||
+    !metric ||
+    metric.expressionType !== 'SIMPLE'
+  ) {
+    return undefined;
+  }
+  const columnName = metric.column?.column_name ?? metric.column?.columnName;
+  if (!columnName || !metric.aggregate) {
+    return undefined;
+  }
+  return `${columnName}::${metric.aggregate}`;
+};
 
 /**
  * Emits a `sort` post-processing step that reorders a categorical x-axis by
@@ -64,9 +89,10 @@ import {
  * - a time comparison is active: its pivot output is shaped differently.
  *
  * The `by` label resolves to the query's sort metric when it is one of the
- * pivot's aggregate columns (the displayed metrics), falling back to the
- * first displayed metric — matching the SQL `ORDER BY` fallback that
- * `normalizeOrderBy` applies.
+ * pivot's aggregate columns (the displayed metrics) — by label first, then by
+ * column+aggregate identity for SIMPLE metrics with custom display labels —
+ * falling back to the first displayed metric, matching the SQL `ORDER BY`
+ * fallback that `normalizeOrderBy` applies.
  */
 function getCategoricalXAxisSortOperator(
   fd: QueryFormData,
@@ -87,15 +113,27 @@ function getCategoricalXAxisSortOperator(
     return undefined;
   }
 
-  const pivotMetricLabels = ensureIsArray(queryObject.metrics).map(
-    getMetricLabel,
-  );
-  const sortByLabel = ensureIsArray(
+  const pivotMetrics = ensureIsArray(queryObject.metrics);
+  const pivotMetricLabels = pivotMetrics.map(getMetricLabel);
+  const sortMetrics = ensureIsArray(
     fd.timeseries_limit_metric ?? fd.series_limit_metric,
-  )
-    .concat(ensureIsArray(queryObject.metrics))
-    .map(getMetricLabel)
-    .find(label => pivotMetricLabels.includes(label));
+  );
+  const sortByLabel =
+    sortMetrics
+      .map(getMetricLabel)
+      .find(label => pivotMetricLabels.includes(label)) ??
+    (() => {
+      const sortIdentity = sortMetrics.map(getMetricIdentity).find(Boolean);
+      if (!sortIdentity) {
+        return undefined;
+      }
+      return pivotMetrics
+        .filter(metric => getMetricIdentity(metric) === sortIdentity)
+        .map(getMetricLabel)[0];
+    })() ??
+    // Mirror `normalizeOrderBy`: without a resolvable sort metric the SQL
+    // still orders by the first displayed metric.
+    pivotMetricLabels[0];
   if (!sortByLabel) {
     return undefined;
   }
