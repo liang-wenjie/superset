@@ -363,6 +363,44 @@ export default function transformProps(
     xAxisType,
   });
 
+  // Query A owns the x-axis order: the categorical sort step orders A's
+  // pivot rows by the user's sort metric, and ECharts derives the category
+  // list from the first series' data array. ECharts places every point at
+  // its category position, but draws a line in the order the points appear
+  // in the series data array — so when Query B's rows come back ordered by
+  // B's own metric (or lexicographically), the polyline zig-zags back and
+  // forth across categories and looks disconnected. Reorder B's data
+  // points to follow A's category order so the line stays contiguous.
+  if (xAxisType === AxisType.Category && rawSeriesA.length > 0) {
+    const firstSeriesData = ensureIsArray(rawSeriesA[0].data);
+    const categoryOrder = firstSeriesData
+      .map(datum => (Array.isArray(datum) ? datum[0] : datum))
+      .filter(
+        (value): value is string | number =>
+          typeof value === 'string' || typeof value === 'number',
+      );
+    if (categoryOrder.length > 0) {
+      const categoryIndex = new Map<string, number>();
+      categoryOrder.forEach((category, idx) =>
+        categoryIndex.set(String(category), idx),
+      );
+      rawSeriesB.forEach(series => {
+        if (Array.isArray(series.data) && series.data.length > 0) {
+          series.data = [...series.data].sort((a, b) => {
+            const aKey = Array.isArray(a) ? String(a[0]) : '';
+            const bKey = Array.isArray(b) ? String(b[0]) : '';
+            const ia = categoryIndex.get(aKey);
+            const ib = categoryIndex.get(bKey);
+            if (ia === undefined && ib === undefined) return 0;
+            if (ia === undefined) return 1;
+            if (ib === undefined) return -1;
+            return ia - ib;
+          });
+        }
+      });
+    }
+  }
+
   const series: SeriesOption[] = [];
 
   const resolvedCurrency = resolveAutoCurrency(
@@ -589,6 +627,7 @@ export default function transformProps(
       colorScaleKey,
       {
         area,
+        connectNulls: seriesType !== EchartsTimeseriesSeriesType.Bar,
         markerEnabled,
         markerSize,
         areaOpacity: opacity,
@@ -697,6 +736,7 @@ export default function transformProps(
       colorScaleKey,
       {
         area: areaB,
+        connectNulls: seriesTypeB !== EchartsTimeseriesSeriesType.Bar,
         markerEnabled: markerEnabledB,
         markerSize: markerSizeB,
         areaOpacity: opacityB,

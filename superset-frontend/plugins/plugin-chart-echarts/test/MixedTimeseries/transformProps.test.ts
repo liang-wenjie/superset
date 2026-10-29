@@ -256,6 +256,98 @@ test('negative bar values retain their legacy outside position', () => {
   });
 });
 
+test('line series connect nulls while bar series do not', () => {
+  const chartProps = createEchartsTimeseriesTestChartProps<
+    EchartsMixedTimeseriesFormData,
+    EchartsMixedTimeseriesProps
+  >({
+    ...MIXED_TIMESERIES_CHART_PROPS_DEFAULTS,
+    defaultQueriesData: queriesData,
+    formData: {
+      ...formData,
+      seriesType: EchartsTimeseriesSeriesType.Bar,
+      seriesTypeB: EchartsTimeseriesSeriesType.Line,
+    },
+    queriesData,
+  });
+
+  const transformed = transformProps(chartProps);
+  const series = transformed.echartOptions.series as SeriesOption[];
+  const barSeries = series.filter(s => s.type === 'bar');
+  const lineSeries = series.filter(s => s.type === 'line');
+  const getConnectNulls = (s: SeriesOption) =>
+    (s as { connectNulls?: boolean }).connectNulls;
+
+  expect(barSeries.length).toBeGreaterThan(0);
+  expect(lineSeries.length).toBeGreaterThan(0);
+  // A line with a null point must stay continuous; a bar with nulls keeps
+  // its gaps (connectNulls on a bar only adds a dotted border).
+  barSeries.forEach(s => expect(getConnectNulls(s)).toBeFalsy());
+  lineSeries.forEach(s => expect(getConnectNulls(s)).toBe(true));
+});
+
+test('Query B data points follow Query A x-axis order on a categorical axis', () => {
+  const rowsA = [
+    { category_col: 'a', v1: 1, v2: 2 },
+    { category_col: 'b', v1: 3, v2: 4 },
+    { category_col: 'c', v1: 5, v2: 6 },
+  ];
+  const rowsB = [
+    { category_col: 'c', vb: 30 },
+    { category_col: 'a', vb: 10 },
+    { category_col: 'b', vb: 20 },
+  ];
+  const labelMap = {
+    category_col: ['category_col'],
+    v1: ['v1'],
+    v2: ['v2'],
+    vb: ['vb'],
+  };
+  const queries = [
+    createTestQueryData(rowsA, { label_map: labelMap }),
+    createTestQueryData(rowsB, { label_map: labelMap }),
+  ];
+  const chartProps = createEchartsTimeseriesTestChartProps<
+    EchartsMixedTimeseriesFormData,
+    EchartsMixedTimeseriesProps
+  >({
+    ...MIXED_TIMESERIES_CHART_PROPS_DEFAULTS,
+    defaultQueriesData: queries,
+    formData: {
+      ...formData,
+      x_axis: 'category_col',
+      groupby: [],
+      groupbyB: [],
+      metrics: ['v1'],
+      metricsB: ['vb'],
+      seriesType: EchartsTimeseriesSeriesType.Bar,
+      seriesTypeB: EchartsTimeseriesSeriesType.Line,
+    },
+    queriesData: queries,
+  });
+
+  const transformed = transformProps(chartProps);
+  const series = transformed.echartOptions.series as SeriesOption[];
+  const barSeries = series.filter(s => s.type === 'bar');
+  const lineSeries = series.filter(s => s.type === 'line');
+  const toPairs = (s: SeriesOption) =>
+    (s as { data?: unknown }).data as [string, number][];
+
+  expect(lineSeries.length).toBeGreaterThan(0);
+  expect(barSeries.length).toBeGreaterThan(0);
+  // The bar (Query A) series keeps the pivot row order a,b,c — the category
+  // order ECharts derives the x-axis from.
+  barSeries.forEach(s => {
+    expect(toPairs(s).map(d => d[0])).toEqual(['a', 'b', 'c']);
+  });
+  // The line (Query B) points arrive ordered c,a,b by B's own ordering, but
+  // must be drawn in the x-axis order: a,b,c with their matching values.
+  lineSeries.forEach(s => {
+    expect(toPairs(s).map(d => d[0])).toEqual(['a', 'b', 'c']);
+    expect(toPairs(s).map(d => d[1])).toEqual([10, 20, 30]);
+  });
+});
+
 test('should transform chart props for viz with showQueryIdentifiers=false', () => {
   const chartProps = createEchartsTimeseriesTestChartProps<
     EchartsMixedTimeseriesFormData,
