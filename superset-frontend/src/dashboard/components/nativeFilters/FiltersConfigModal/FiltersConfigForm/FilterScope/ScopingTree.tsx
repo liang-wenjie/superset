@@ -17,7 +17,16 @@
  * under the License.
  */
 
-import { FC, ReactNode, useMemo, useState, memo, useCallback } from 'react';
+import {
+  FC,
+  ReactNode,
+  useMemo,
+  useState,
+  memo,
+  useCallback,
+  useEffect,
+} from 'react';
+import rison from 'rison';
 import {
   DatasourceType,
   Filter,
@@ -37,7 +46,12 @@ import { useSelector } from 'react-redux';
 import { useFilterScopeTree } from './state';
 import { useDashboardLayout } from 'src/dashboard/components/nativeFilters/state';
 import { findFilterScope, getTreeCheckedItems } from './utils';
+import { cachedSupersetGet } from 'src/utils/cachedSupersetGet';
 import { CHART_TYPE } from 'src/dashboard/util/componentTypes';
+import {
+  fetchSemanticViewStructure,
+  semanticViewDimensionsToColumns,
+} from '../utils';
 import FilterTargetSettings from '../../../FilterBar/FilterControls/FilterTargetSettings';
 
 const StyledTree = styled(Tree)`
@@ -204,16 +218,27 @@ const ScopingTree: FC<ScopingTreeProps> = ({
   );
 
   // Reports to flag with a red warning badge: checked (in the filter scope),
-  // their datasource does not match the filter's datasource (the grey
-  // "datasets don't match" info icon), and no explicit per-report mapping is
-  // configured — the filter value would not apply, so the grey hint turns
-  // into a red warning.
-  const warningChartIds = useMemo(() => {
-    const warnings = new Set<number>();
+  // their datasource does not match the filter's (the grey "datasets don't
+  // match" info icon), no explicit per-report mapping is configured, and the
+  // datasource actually has no field matching the filter's default column —
+  // the filter value cannot apply, so the grey hint turns into a red warning.
+  // Reports whose datasource carries a same-named field are left clean (the
+  // default same-name mapping works), and reports whose datasource shares the
+  // filter's own dataset id (e.g. a same-id SQL table beside a semantic view)
+  // skip the column check to avoid cross-type dataset loads.
+  const defaultTarget = filterTargets?.[0];
+  const defaultColumn = defaultTarget?.column?.name ?? '';
+
+  // Datasources that need a column-level check: uid -> chartId.
+  const candidateDatasources = useMemo(() => {
     const explicitChartIds = new Set<number>();
     (filterTargets ?? []).forEach(target =>
       (target.chartIds ?? []).forEach(id => explicitChartIds.add(id)),
     );
+    const candidates = new Map<string, number>();
+    if (!defaultColumn) {
+      return candidates;
+    }
     Object.entries(layout).forEach(([layoutKey, item]) => {
       if (item?.type !== CHART_TYPE || item.meta?.chartId == null) {
         return;
@@ -225,12 +250,123 @@ const ScopingTree: FC<ScopingTreeProps> = ({
       if (!checkedKeys.includes(layoutKey)) {
         return;
       }
-      if (initiallyExcludedCharts.includes(chartId)) {
+      if (!initiallyExcludedCharts.includes(chartId)) {
+        return;
+      }
+      const datasource = charts[chartId]?.form_data?.datasource;
+      const parsed = datasource ? parseDatasource(String(datasource)) : null;
+      if (!parsed) {
+        return;
+      }
+      if (parsed.datasetId === defaultTarget?.datasetId) {
+        return;
+      }
+      candidates.set(`${parsed.datasetId}__${parsed.datasourceType}`, chartId);
+    });
+    return candidates;
+  }, [
+    filterTargets,
+    defaultColumn,
+    defaultTarget,
+    layout,
+    charts,
+    checkedKeys,
+    initiallyExcludedCharts,
+  ]);
+
+  // Table columns of the candidate datasources, loaded lazily from the dataset
+  // API (the dashboard redux store does not carry column metadata). Semantic
+  // views use their own structure endpoint.
+  const [datasourceColumns, setDatasourceColumns] = useState<
+    Record<string, string[]>
+  >({});
+
+  useEffect(() => {
+    const unloaded = [...candidateDatasources.entries()].filter(
+      ([uid]) => !datasourceColumns[uid],
+    );
+    if (unloaded.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      unloaded.map(([uid]) => {
+        const [id, type] = uid.split('__');
+        const datasetId = Number(id);
+        if (type === DatasourceType.SemanticView) {
+          return fetchSemanticViewStructure(datasetId).then(
+            ({ dimensions }) =>
+              [
+                uid,
+                semanticViewDimensionsToColumns(dimensions).map(
+                  col => col.column_name,
+                ),
+              ] as const,
+            () => [uid, null] as const,
+          );
+        }
+        return cachedSupersetGet({
+          endpoint: `/api/v1/dataset/${datasetId}?q=${rison.encode({
+            columns: ['columns.column_name'],
+          })}`,
+        }).then(
+          ({ json: { result } }) =>
+            [
+              uid,
+              (result?.columns ?? []).map(
+                (col: { column_name?: string }) => col.column_name,
+              ),
+            ] as const,
+          () => [uid, null] as const,
+        );
+      }),
+    ).then(entries => {
+      if (!cancelled) {
+        setDatasourceColumns(prev => {
+          const next = { ...prev };
+          entries.forEach(([uid, cols]) => {
+            if (cols !== null) {
+              next[uid] = cols;
+            }
+          });
+          return next;
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateDatasources, datasourceColumns]);
+
+  // Report ids flagged with a red warning badge: candidates whose loaded
+  // columns do not include the filter's default column.
+  const warningChartIds = useMemo(() => {
+    const warnings = new Set<number>();
+    candidateDatasources.forEach((chartId, uid) => {
+      const cols = datasourceColumns[uid];
+      if (cols && !cols.includes(defaultColumn)) {
         warnings.add(chartId);
       }
     });
     return warnings;
-  }, [filterTargets, layout, checkedKeys, initiallyExcludedCharts]);
+  }, [candidateDatasources, datasourceColumns, defaultColumn]);
+
+  // Chart ids with an explicit per-report mapping: they are fully configured,
+  // so neither the grey "datasets don't match" hint nor the red warning shows.
+  const explicitChartIds = useMemo(() => {
+    const ids = new Set<number>();
+    (filterTargets ?? []).forEach(target =>
+      (target.chartIds ?? []).forEach(id => ids.add(id)),
+    );
+    return ids;
+  }, [filterTargets]);
+
+  // Reverse lookup: chart id -> candidate datasource uid.
+  const chartIdToDatasourceUid = useMemo(() => {
+    const m = new Map<number, string>();
+    candidateDatasources.forEach((chartId, uid) => m.set(chartId, uid));
+    return m;
+  }, [candidateDatasources]);
 
   const buildTreeLeafTitle = useCallback<
     (
@@ -272,6 +408,22 @@ const ScopingTree: FC<ScopingTreeProps> = ({
       }
 
       const isWarning = chartId != null && warningChartIds.has(chartId);
+      // A candidate whose loaded columns include the filter's default column
+      // works through the default same-name mapping: no hint at all.
+      const hasDefaultColumnMatch = chartId != null && defaultColumn !== '';
+      const defaultColumnMatch =
+        hasDefaultColumnMatch &&
+        (() => {
+          const uid = chartIdToDatasourceUid.get(chartId);
+          if (!uid) {
+            return false;
+          }
+          const cols = datasourceColumns[uid];
+          return !!cols && cols.includes(defaultColumn);
+        })();
+      const isExplicit = chartId != null && explicitChartIds.has(chartId);
+      const effectiveHasTooltip =
+        hasTooltip && !isWarning && !defaultColumnMatch && !isExplicit;
       if (isWarning) {
         title = (
           <>
@@ -286,7 +438,7 @@ const ScopingTree: FC<ScopingTreeProps> = ({
             </Tooltip>
           </>
         );
-      } else if (hasTooltip) {
+      } else if (effectiveHasTooltip) {
         title = (
           <>
             {title}&nbsp;
@@ -333,7 +485,13 @@ const ScopingTree: FC<ScopingTreeProps> = ({
       }
       return title;
     },
-    [warningChartIds],
+    [
+      warningChartIds,
+      defaultColumn,
+      chartIdToDatasourceUid,
+      datasourceColumns,
+      explicitChartIds,
+    ],
   );
 
   const { treeData } = useFilterScopeTree(
