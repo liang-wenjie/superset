@@ -17,13 +17,13 @@
  * under the License.
  */
 
-import { FC, useMemo, useState, memo, useCallback } from 'react';
+import { FC, ReactNode, useMemo, useState, memo, useCallback } from 'react';
 import {
+  DatasourceType,
+  Filter,
   NativeFilterScope,
   NativeFilterTarget,
   NativeFilterType,
-  DatasourceType,
-  Filter,
 } from '@superset-ui/core';
 import { styled, css } from '@apache-superset/core/theme';
 import { Theme } from '@emotion/react';
@@ -35,7 +35,9 @@ import { Icons } from '@superset-ui/core/components/Icons';
 import { Layout, RootState } from 'src/dashboard/types';
 import { useSelector } from 'react-redux';
 import { useFilterScopeTree } from './state';
+import { useDashboardLayout } from 'src/dashboard/components/nativeFilters/state';
 import { findFilterScope, getTreeCheckedItems } from './utils';
+import { CHART_TYPE } from 'src/dashboard/util/componentTypes';
 import FilterTargetSettings from '../../../FilterBar/FilterControls/FilterTargetSettings';
 
 const StyledTree = styled(Tree)`
@@ -44,6 +46,13 @@ const StyledTree = styled(Tree)`
     align-items: center;
     gap: ${({ theme }) => theme.sizeUnit}px;
   }
+`;
+
+/** Red warning badge shown on reports that are in the filter scope but whose
+ * datasource does not match the filter's (and no per-report mapping is
+ * configured), replacing the grey "datasets don't match" info icon. */
+const StyledWarningIcon = styled(Icons.ExclamationCircleOutlined)`
+  color: ${({ theme }) => theme.colorError};
 `;
 
 const parseDatasource = (
@@ -76,83 +85,6 @@ type SettingsChart = {
   label: string;
   datasetId: number;
   datasourceType: DatasourceType;
-};
-
-const buildTreeLeafTitle = (
-  label: string,
-  hasTooltip: boolean,
-  tooltipTitle?: string,
-  isDeckMultiChart?: boolean,
-  chartId?: number,
-  onChartSettings?: (chartId: number, label?: string) => void,
-) => {
-  let title = <span>{label}</span>;
-
-  if (isDeckMultiChart) {
-    title = (
-      <span
-        css={css`
-          display: inline-flex;
-          align-items: center;
-        `}
-      >
-        <Icons.CheckSquareOutlined
-          iconSize="l"
-          css={css`
-            margin-right: 4px;
-          `}
-        />
-        {label}
-      </span>
-    );
-  }
-
-  if (hasTooltip) {
-    title = (
-      <>
-        {title}&nbsp;
-        <Tooltip title={tooltipTitle}>
-          <Icons.InfoCircleOutlined iconSize="m" />
-        </Tooltip>
-      </>
-    );
-  }
-
-  if (chartId != null && onChartSettings) {
-    title = (
-      <>
-        {title}&nbsp;
-        <Tooltip
-          placement="top"
-          title={t('Filter target mapping and value transform')}
-        >
-          <button
-            type="button"
-            data-test="chart-filter-target-settings-button"
-            aria-label={t('Filter target mapping and value transform')}
-            css={(theme: Theme) => css`
-              border: none;
-              background: transparent;
-              padding: 0;
-              cursor: pointer;
-              color: ${theme.colorTextTertiary};
-              line-height: 1;
-              &:hover {
-                color: ${theme.colorPrimary};
-              }
-            `}
-            onClick={e => {
-              e.stopPropagation();
-              onChartSettings(chartId, label);
-            }}
-          >
-            <Icons.SettingOutlined iconSize="m" />
-          </button>
-        </Tooltip>
-      </>
-    );
-  }
-  return title;
 };
 
 const separateKeys = (
@@ -238,6 +170,11 @@ const ScopingTree: FC<ScopingTreeProps> = ({
 
   const charts = useSelector((state: RootState) => state.charts);
 
+  // Dashboard layout (independent of the tree builder, which itself depends on
+  // the warning set below) — used both by the scope tree and by the warning
+  // badge computation.
+  const layout = useDashboardLayout();
+
   const handleChartSettings = useCallback(
     (targetChartId: number, targetLabel?: string) => {
       const chart = charts[targetChartId];
@@ -256,7 +193,150 @@ const ScopingTree: FC<ScopingTreeProps> = ({
     [charts],
   );
 
-  const { treeData, layout } = useFilterScopeTree(
+  const checkedKeys = useMemo(
+    () =>
+      getTreeCheckedItems(
+        { ...(formScope || initialScope) },
+        layout,
+        ((formScope || initialScope) as any)?.selectedLayers,
+      ),
+    [formScope, initialScope, layout],
+  );
+
+  // Reports to flag with a red warning badge: checked (in the filter scope),
+  // their datasource does not match the filter's datasource (the grey
+  // "datasets don't match" info icon), and no explicit per-report mapping is
+  // configured — the filter value would not apply, so the grey hint turns
+  // into a red warning.
+  const warningChartIds = useMemo(() => {
+    const warnings = new Set<number>();
+    const explicitChartIds = new Set<number>();
+    (filterTargets ?? []).forEach(target =>
+      (target.chartIds ?? []).forEach(id => explicitChartIds.add(id)),
+    );
+    Object.entries(layout).forEach(([layoutKey, item]) => {
+      if (item?.type !== CHART_TYPE || item.meta?.chartId == null) {
+        return;
+      }
+      const chartId = item.meta.chartId;
+      if (explicitChartIds.has(chartId)) {
+        return;
+      }
+      if (!checkedKeys.includes(layoutKey)) {
+        return;
+      }
+      if (initiallyExcludedCharts.includes(chartId)) {
+        warnings.add(chartId);
+      }
+    });
+    return warnings;
+  }, [filterTargets, layout, checkedKeys, initiallyExcludedCharts]);
+
+  const buildTreeLeafTitle = useCallback<
+    (
+      label: string,
+      hasTooltip: boolean,
+      tooltipTitle?: string,
+      isDeckMultiChart?: boolean,
+      chartId?: number,
+      onChartSettings?: (chartId: number, label?: string) => void,
+    ) => ReactNode
+  >(
+    (
+      label,
+      hasTooltip,
+      tooltipTitle,
+      isDeckMultiChart,
+      chartId,
+      onChartSettings,
+    ) => {
+      let title = <span>{label}</span>;
+
+      if (isDeckMultiChart) {
+        title = (
+          <span
+            css={css`
+              display: inline-flex;
+              align-items: center;
+            `}
+          >
+            <Icons.CheckSquareOutlined
+              iconSize="l"
+              css={css`
+                margin-right: 4px;
+              `}
+            />
+            {label}
+          </span>
+        );
+      }
+
+      const isWarning = chartId != null && warningChartIds.has(chartId);
+      if (isWarning) {
+        title = (
+          <>
+            {title}&nbsp;
+            <Tooltip
+              placement="top"
+              title={t(
+                'This report is in the filter scope, but its dataset has no field matching the filter value and no mapping is configured. Click the settings button to map a column or write a value transform SQL.',
+              )}
+            >
+              <StyledWarningIcon iconSize="m" />
+            </Tooltip>
+          </>
+        );
+      } else if (hasTooltip) {
+        title = (
+          <>
+            {title}&nbsp;
+            <Tooltip title={tooltipTitle}>
+              <Icons.InfoCircleOutlined iconSize="m" />
+            </Tooltip>
+          </>
+        );
+      }
+
+      if (chartId != null && onChartSettings) {
+        title = (
+          <>
+            {title}&nbsp;
+            <Tooltip
+              placement="top"
+              title={t('Filter target mapping and value transform')}
+            >
+              <button
+                type="button"
+                data-test="chart-filter-target-settings-button"
+                aria-label={t('Filter target mapping and value transform')}
+                css={(theme: Theme) => css`
+                  border: none;
+                  background: transparent;
+                  padding: 0;
+                  cursor: pointer;
+                  color: ${theme.colorTextTertiary};
+                  line-height: 1;
+                  &:hover {
+                    color: ${theme.colorPrimary};
+                  }
+                `}
+                onClick={e => {
+                  e.stopPropagation();
+                  onChartSettings(chartId, label);
+                }}
+              >
+                <Icons.SettingOutlined iconSize="m" />
+              </button>
+            </Tooltip>
+          </>
+        );
+      }
+      return title;
+    },
+    [warningChartIds],
+  );
+
+  const { treeData } = useFilterScopeTree(
     chartId,
     initiallyExcludedCharts,
     buildTreeLeafTitle,
@@ -284,16 +364,6 @@ const ScopingTree: FC<ScopingTreeProps> = ({
     );
     updateFormValues(createFormValues(updatedScope, layerKeys, chartId));
   };
-
-  const checkedKeys = useMemo(
-    () =>
-      getTreeCheckedItems(
-        { ...(formScope || initialScope) },
-        layout,
-        ((formScope || initialScope) as any)?.selectedLayers,
-      ),
-    [formScope, initialScope, layout],
-  );
 
   const settingsFilter = useMemo(
     () =>
