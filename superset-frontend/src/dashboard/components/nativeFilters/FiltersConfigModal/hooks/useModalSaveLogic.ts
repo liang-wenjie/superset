@@ -237,6 +237,23 @@ export function useModalSaveLogic({
     if (values) {
       const mergedFilters: MergedFilterMap = { ...values.filters };
 
+      // `targets` is written to the form store via setFields (the scope-tree
+      // settings dialog) without a backing Form.Item, so validateFields()
+      // omits it. Re-attach it from the store before transforming for save,
+      // otherwise the per-report mapping would be dropped on save.
+      const formFilters = form.getFieldValue('filters') ?? {};
+      Object.keys(formFilters).forEach(itemId => {
+        const formTargets = (
+          formFilters[itemId] as { targets?: unknown } | undefined
+        )?.targets;
+        if (Array.isArray(formTargets) && mergedFilters[itemId]) {
+          mergedFilters[itemId] = {
+            ...(mergedFilters[itemId] as Record<string, unknown>),
+            targets: formTargets,
+          } as MergedFilterItem;
+        }
+      });
+
       filterIds.forEach(filterId => {
         if (!mergedFilters[filterId] && filterConfigMap[filterId]) {
           mergedFilters[filterId] = filterConfigMap[filterId];
@@ -310,6 +327,9 @@ export function useModalSaveLogic({
             transformFilterForSave(
               id,
               mergedValues.filters?.[id] || updatedFilterConfigMap[id],
+              filterConfigMap[id] && 'targets' in filterConfigMap[id]
+                ? (filterConfigMap[id] as Filter)
+                : undefined,
             ),
           )
           .filter(Boolean);

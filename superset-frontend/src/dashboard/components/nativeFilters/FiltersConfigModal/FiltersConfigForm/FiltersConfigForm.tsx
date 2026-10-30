@@ -36,6 +36,7 @@ import {
   getChartMetadataRegistry,
   JsonResponse,
   NativeFilterType,
+  NativeFilterTarget,
   ClientErrorObject,
   getClientErrorObject,
   getExtensionsRegistry,
@@ -2485,6 +2486,25 @@ const FiltersConfigForm = (
               }
               formFilterScope={formFilter?.scope}
               initiallyExcludedCharts={initiallyExcludedCharts}
+              filterTargets={
+                (
+                  formFilter as
+                    | {
+                        targets?: Partial<NativeFilterTarget>[];
+                      }
+                    | undefined
+                )?.targets ??
+                (isChartCustomization
+                  ? customizationToEdit?.targets
+                  : filterToEdit?.targets)
+              }
+              onSaveTargets={targets => {
+                updateFormValues({ targets });
+                // The form store is not watched by this component; force a
+                // re-render so the scope tree (and the settings dialog) pick
+                // up the freshly saved targets.
+                forceUpdate();
+              }}
             />
           ),
         },

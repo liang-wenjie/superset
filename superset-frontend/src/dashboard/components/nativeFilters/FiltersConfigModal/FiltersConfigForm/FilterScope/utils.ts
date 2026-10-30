@@ -49,6 +49,7 @@ export const generateChartSubNodes = (
   } & Partial<Pick<Charts[keyof Charts], 'queriesResponse'>>,
   buildTreeLeafTitle: BuildTreeLeafTitle,
   sliceEntities?: Record<number, Slice>,
+  onChartSettings?: (chartId: number) => void,
 ): TreeItem[] => {
   const subNodes: TreeItem[] = [];
 
@@ -79,6 +80,9 @@ export const generateChartSubNodes = (
           sliceName,
           false,
           `Deck.gl layer: ${sliceName}`,
+          false,
+          chartId,
+          onChartSettings,
         ),
         children: [],
         nodeType: 'DECKGL_LAYER',
@@ -100,6 +104,7 @@ export const buildTree = (
   initiallyExcludedCharts: number[],
   buildTreeLeafTitle: BuildTreeLeafTitle,
   sliceEntities?: Record<number, Slice>,
+  onChartSettings?: (chartId: number) => void,
   visited: Set<string> = new Set(),
 ) => {
   if (!node) {
@@ -126,6 +131,8 @@ export const buildTree = (
         charts &&
         charts[node.meta.chartId]?.form_data?.viz_type === 'deck_multi'
       ),
+      node.type === CHART_TYPE ? node.meta?.chartId : undefined,
+      onChartSettings,
     );
 
     const currentTreeItem: TreeItem = {
@@ -144,6 +151,7 @@ export const buildTree = (
           chart,
           buildTreeLeafTitle,
           sliceEntities,
+          onChartSettings,
         );
         currentTreeItem.children = subNodes;
       }
@@ -170,6 +178,7 @@ export const buildTree = (
           initiallyExcludedCharts,
           buildTreeLeafTitle,
           sliceEntities,
+          onChartSettings,
           visited,
         );
       } else {

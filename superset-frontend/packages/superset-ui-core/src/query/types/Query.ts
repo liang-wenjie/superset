@@ -38,6 +38,12 @@ export type BaseQueryObjectFilterClause = {
   col: QueryFormColumn;
   grain?: TimeGranularity;
   isExtra?: boolean;
+  /** Optional SQL template applied to the target column value, converting the
+   * stored field value into the filter value's format before comparison (e.g.
+   * ``CONCAT(SUBSTRING({col},1,4),LPAD(CAST(SUBSTRING({col},6,1) AS
+   * UNSIGNED),2,'0'))`` maps a stored '2026.7月' onto '202607' to match a
+   * YYYYMM selection). ``{col}`` resolves to the quoted column name. */
+  valueTransform?: string;
 };
 
 export type BinaryQueryObjectFilterClause = BaseQueryObjectFilterClause & {

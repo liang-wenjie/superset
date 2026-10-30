@@ -22,6 +22,7 @@ import {
   DatasourceType,
   NativeFilterType,
   NativeFilterScope,
+  NativeFilterTarget,
   Filter,
   Divider,
   ChartCustomizationDivider,
@@ -41,6 +42,9 @@ export interface NativeFiltersFormItem {
     kind?: string;
   };
   column: string;
+  /** Per-report target overrides (alias column + value transform) written by
+   * the scope-tree settings dialog; saved as-is by ``transformFormInput``. */
+  targets?: Partial<NativeFilterTarget>[];
   controlValues: {
     [key: string]: any;
   };

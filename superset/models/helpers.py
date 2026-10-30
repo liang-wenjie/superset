@@ -6278,6 +6278,90 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         col = self.make_sqla_column_compatible(col, label)
         return col
 
+    _VALUE_TRANSFORM_OPERATOR_SQL = {
+        utils.FilterOperator.EQUALS: "=",
+        utils.FilterOperator.NOT_EQUALS: "!=",
+        utils.FilterOperator.GREATER_THAN: ">",
+        utils.FilterOperator.LESS_THAN: "<",
+        utils.FilterOperator.GREATER_THAN_OR_EQUALS: ">=",
+        utils.FilterOperator.LESS_THAN_OR_EQUALS: "<=",
+        utils.FilterOperator.LIKE: "LIKE",
+        utils.FilterOperator.NOT_LIKE: "NOT LIKE",
+        utils.FilterOperator.ILIKE: "ILIKE",
+        utils.FilterOperator.NOT_ILIKE: "NOT ILIKE",
+    }
+
+    def _render_filter_operand(self, value: Any, dialect: Any) -> str:
+        """Render a filter value as a dialect-quoted SQL literal.
+
+        Strings go through the dialect compiler's ``render_literal_value``
+        (which keeps the surrounding quotes), so quotes and backslashes are
+        escaped the way the target database expects. Numbers and booleans stay
+        bare; ``None`` becomes ``NULL``.
+        """
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, (int, float)):
+            return str(value)
+        compiler = dialect.statement_compiler(dialect, None)
+        return compiler.render_literal_value(str(value), sa.String())
+
+    def _value_transform_predicate(
+        self,
+        sqla_col: Any,
+        operator: utils.FilterOperator,
+        values: Any,
+        template: str,
+        dialect: Any,
+        col_sql: str,
+    ) -> Any:
+        """Build a predicate that transforms the target column value into the
+        filter value's format before comparing it.
+
+        ``valueTransform`` templates are authored by the dashboard builder to
+        normalize a stored field value to the shape the filter produces -- e.g.
+        ``CONCAT(SUBSTRING({col},1,4),LPAD(CAST(SUBSTRING({col},6,1) AS
+        UNSIGNED),2,'0'))`` maps a stored ``2026.7月`` onto ``202607`` so it
+        matches a YYYYMM filter selection. ``{col}`` resolves to the
+        dialect-quoted column name; the raw filter value is rendered as a
+        dialect-escaped literal by the compiler, so user input cannot widen
+        the query.
+        """
+        column_expr = literal_column(template.replace("{col}", col_sql))
+
+        if operator in (utils.FilterOperator.IN, utils.FilterOperator.NOT_IN):
+            items = [
+                value
+                for value in (values if isinstance(values, (list, tuple)) else [values])
+                if value is not None
+            ]
+            if not items:
+                raise QueryObjectValidationError(
+                    _(
+                        "Filter value is required for the IN / NOT IN operator "
+                        "with a value transform configured"
+                    )
+                )
+            rendered = [
+                literal_column(self._render_filter_operand(value, dialect))
+                for value in items
+            ]
+            return (
+                column_expr.in_(rendered)
+                if operator == utils.FilterOperator.IN
+                else column_expr.not_in(rendered)
+            )
+        if values is None:
+            raise QueryObjectValidationError(
+                _("Filter value is required when a value transform is configured")
+            )
+        op_sql = self._VALUE_TRANSFORM_OPERATOR_SQL.get(operator, operator.value)
+        return column_expr.op(op_sql)(
+            literal_column(self._render_filter_operand(values, dialect))
+        )
+
     def get_sqla_query(  # pylint: disable=too-many-arguments,too-many-locals,too-many-branches,too-many-statements  # noqa: C901
         self,
         apply_fetch_values_predicate: bool = False,
@@ -6328,7 +6412,8 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
 
         # DB-specifc quoting for identifiers
         with self.database.get_sqla_engine() as engine:
-            quote = engine.dialect.identifier_preparer.quote
+            dialect = engine.dialect
+            quote = dialect.identifier_preparer.quote
 
         template_kwargs = {
             "columns": columns,
@@ -6942,6 +7027,42 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
                     and not _is_parenthesized(sqla_col)
                 ):
                     sqla_col = Grouping(sqla_col)
+
+                # A ``valueTransform`` is an optional SQL template that rewrites
+                # the column value into the filter value's format before the
+                # comparison -- e.g. turn a stored '2026.7月' into '202607' so it
+                # matches a YYYYMM filter selection. The template is authored by
+                # the dashboard builder; the raw filter value is rendered as a
+                # dialect-escaped literal.
+                if value_transform := flt.get("valueTransform"):
+                    if (
+                        isinstance(value_transform, str)
+                        and value_transform.strip()
+                        and sqla_col is not None
+                        and not is_metric_filter
+                        and op != utils.FilterOperator.TEMPORAL_RANGE
+                        and val is not None
+                    ):
+                        if col_obj is not None:
+                            col_sql = dialect.identifier_preparer.quote(
+                                col_obj.column_name
+                            )
+                        elif isinstance(flt_col, str):
+                            col_sql = dialect.identifier_preparer.quote(flt_col)
+                        else:
+                            col_sql = ""
+                        where_clause_and.append(
+                            self._value_transform_predicate(
+                                sqla_col=sqla_col,
+                                operator=op,
+                                values=val,
+                                template=value_transform,
+                                dialect=dialect,
+                                col_sql=col_sql,
+                            )
+                        )
+                        continue
+
                 col_type = col_obj.type if col_obj else None
                 col_spec = db_engine_spec.get_column_spec(native_type=col_type)
                 is_multivalue_col = bool(

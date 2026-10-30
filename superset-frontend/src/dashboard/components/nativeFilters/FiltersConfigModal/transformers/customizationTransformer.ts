@@ -79,9 +79,14 @@ function isFormInput(
   formInputs: ChartCustomizationFormOrSaved,
 ): formInputs is ChartCustomizationsFormItem {
   // Mirrors `filterTransformer`: a saved customization always carries a
-  // serialized `targets` array, and dataset-less types (e.g. the deck.gl layer
-  // visibility customization) have no `dataset` to discriminate on.
-  return !('targets' in formInputs);
+  // serialized `targets` array and an `id`, while a form item's id lives in
+  // the form name path, not in its value, and it only gains a `targets` array
+  // once the scope-tree settings dialog writes it into the form (via a hidden
+  // Form.Item). Keying off `targets` alone would then misclassify that
+  // still-untransformed form value as already saved. Dataset-less types (e.g.
+  // the deck.gl layer visibility customization) have no `dataset` to
+  // discriminate on.
+  return !('id' in formInputs) || !Array.isArray(formInputs.targets);
 }
 
 function transformCustomizationDivider(

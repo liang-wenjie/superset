@@ -30,13 +30,18 @@ import {
   QueryFormColumn,
   QueryFormData,
   SemanticSelectionSource,
+  NativeFilterType,
+  ExtraFormData,
 } from '@superset-ui/core';
 import {
   ChartConfiguration,
   ChartQueryPayload,
   ActiveFilters,
 } from 'src/dashboard/types';
-import { getExtraFormData } from 'src/dashboard/components/nativeFilters/utils';
+import {
+  getExtraFormData,
+  mergeExtraFormData,
+} from 'src/dashboard/components/nativeFilters/utils';
 import { ChartCustomizationPlugins } from 'src/constants';
 import { isChartCustomization } from 'src/dashboard/components/nativeFilters/FiltersConfigModal/utils';
 import { isEqual } from 'lodash-es';
@@ -575,9 +580,38 @@ export default function getFormDataWithExtraFilters({
     .sort((a, b) => Number(!nativeFilters?.[a]) - Number(!nativeFilters?.[b]));
 
   if (filterIdsAppliedOnChart.length) {
-    const aggregatedFormData = getExtraFormData(
-      dataMask,
-      filterIdsAppliedOnChart,
+    // Native filters can carry one per-report target per chart: a chart with
+    // an explicit target (``chartIds`` includes it) maps the filter value
+    // onto a differently named column, optionally rewriting the value via a
+    // SQL template (``valueTransform``) before comparison. Charts without an
+    // explicit target keep the legacy behavior (filter's own column), so
+    // nothing is rewritten and the saved extra form data is used as-is.
+    const aggregatedFormData = filterIdsAppliedOnChart.reduce<ExtraFormData>(
+      (acc, filterId) => {
+        const filter = nativeFilters?.[filterId];
+        const filterData = dataMask[filterId]?.extraFormData ?? {};
+        if (!filter || filter.type !== NativeFilterType.NativeFilter) {
+          return mergeExtraFormData(acc, filterData);
+        }
+        const target = (filter.targets ?? []).find(item =>
+          item.chartIds?.includes(chart.id),
+        );
+        if (!target) {
+          return mergeExtraFormData(acc, filterData);
+        }
+        const columnName = target.column?.name;
+        const { valueTransform } = target;
+        const rewritten: ExtraFormData = {
+          ...filterData,
+          filters: (filterData.filters ?? []).map(clause => ({
+            ...clause,
+            ...(columnName ? { col: columnName } : {}),
+            ...(valueTransform ? { valueTransform } : {}),
+          })),
+        };
+        return mergeExtraFormData(acc, rewritten);
+      },
+      {},
     );
     extraData = {
       extra_form_data: aggregatedFormData,

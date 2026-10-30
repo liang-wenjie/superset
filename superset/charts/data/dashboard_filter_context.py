@@ -31,6 +31,7 @@ from superset.constants import (
     EXTRA_FORM_DATA_OVERRIDE_REGULAR_MAPPINGS,
 )
 from superset.models.dashboard import Dashboard
+from superset.models.slice import Slice
 from superset.utils import json
 from superset.utils.core import QueryObjectFilterClause
 from superset.utils.date_parser import is_no_time_range
@@ -238,6 +239,55 @@ def _get_filter_target_column(filter_config: dict[str, Any]) -> str | None:
     return None
 
 
+def _resolve_filter_target(
+    filter_config: dict[str, Any],
+    slice: Slice,
+) -> dict[str, Any]:
+    """Resolve the native filter target for a chart.
+
+    A filter may carry one per-report target per chart (``chartIds`` scopes a
+    target to specific slices) plus a default target (no ``chartIds``). Only a
+    chart with an explicit target gets its mapping applied; every other chart
+    keeps the legacy single-target behavior (filter's own column), so an empty
+    dict means "no rewrite".
+    """
+    targets = filter_config.get("targets") or []
+    if not targets:
+        return {}
+    for target in targets:
+        if int(slice.id) in (target.get("chartIds") or []):
+            return target
+    return {}
+
+
+def _rewrite_filter_clauses_for_target(
+    extra_form_data: dict[str, Any],
+    target: dict[str, Any],
+) -> dict[str, Any]:
+    """Point a filter's saved clauses at the target column and carry its
+    ``valueTransform`` through to the query layer.
+
+    The saved mask may reference the filter's own dataset column; per-chart
+    targets can map that value onto a differently named column and optionally
+    rewrite the value via a SQL template before comparison. Returns a copy so
+    the saved dashboard metadata is never mutated.
+    """
+    column = target.get("column")
+    column_name = column.get("name") if isinstance(column, dict) else column
+    if not column_name:
+        return extra_form_data
+    value_transform = target.get("valueTransform")
+    rewritten = json.loads(json.dumps(extra_form_data))
+    for clause in rewritten.get("filters") or []:
+        if isinstance(clause, dict) and clause.get("col") is not None:
+            clause["col"] = column_name
+            if value_transform:
+                clause["valueTransform"] = value_transform
+            else:
+                clause.pop("valueTransform", None)
+    return rewritten
+
+
 def _validate_chart_on_dashboard(
     dashboard: Dashboard,
     chart_id: int,
@@ -305,6 +355,10 @@ def get_dashboard_filter_context(
     _check_dashboard_access(dashboard)
     _validate_chart_on_dashboard(dashboard, chart_id)
 
+    slice = db.session.query(Slice).filter_by(id=chart_id).one_or_none()
+    if slice is None:
+        raise ValueError(_("Chart %(chart_id)s not found", chart_id=chart_id))
+
     metadata = json.loads(dashboard.json_metadata or "{}")
     native_filter_config: list[dict[str, Any]] = metadata.get(
         "native_filter_configuration", []
@@ -324,8 +378,21 @@ def get_dashboard_filter_context(
 
         flt_id = flt.get("id", "")
         flt_name = flt.get("name", "")
-        target_column = _get_filter_target_column(flt)
         extra_form_data, status = _resolve_filter_extra_form_data(flt, active_data_mask)
+
+        target = _resolve_filter_target(flt, slice)
+        if target:
+            target_column = (
+                target.get("column", {}).get("name")
+                if isinstance(target.get("column"), dict)
+                else target.get("column")
+            )
+            if extra_form_data:
+                extra_form_data = _rewrite_filter_clauses_for_target(
+                    extra_form_data, target
+                )
+        else:
+            target_column = _get_filter_target_column(flt)
 
         if extra_form_data and status == DashboardFilterStatus.APPLIED:
             context.extra_form_data = _merge_extra_form_data(

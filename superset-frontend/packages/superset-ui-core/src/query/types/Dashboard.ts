@@ -41,6 +41,16 @@ export interface NativeFilterTarget {
   datasetId: number;
   column: NativeFilterColumn;
   datasourceType?: DatasourceType;
+  /** Optional SQL template applied to the target column value, converting the
+   * stored field value into the filter value's format before comparison (e.g.
+   * ``CONCAT(SUBSTRING({col},1,4),LPAD(CAST(SUBSTRING({col},6,1) AS
+   * UNSIGNED),2,'0'))`` maps a stored '2026.7月' onto '202607' to match a
+   * YYYYMM selection). ``{col}`` resolves to the quoted column name. */
+  valueTransform?: string;
+  /** When set, the target applies only to these chart ids (per-report
+   * mapping). A target without ``chartIds`` is the default target used by
+   * every chart that has no explicit per-report target. */
+  chartIds?: number[];
 
   // maybe someday support this?
   // show values from these columns in the filter options selector

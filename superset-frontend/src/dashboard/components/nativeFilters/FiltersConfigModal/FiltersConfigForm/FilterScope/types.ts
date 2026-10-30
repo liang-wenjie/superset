@@ -34,4 +34,6 @@ export type BuildTreeLeafTitle = (
   hasTooltip: boolean,
   tooltipTitle?: string,
   isDeckMultiChart?: boolean,
+  chartId?: number,
+  onChartSettings?: (chartId: number) => void,
 ) => ReactNode;

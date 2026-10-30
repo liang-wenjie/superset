@@ -70,10 +70,16 @@ function isDividerType(
 function isFormInput(
   formInputs: NativeFilterFormOrSaved,
 ): formInputs is NativeFiltersFormItem {
-  // A saved filter always carries a serialized `targets` array; a form item
-  // never does. Keying this off `dataset` misclassified filter types with no
-  // dataset control (e.g. `filter_time`) as already saved.
-  return !('targets' in formInputs);
+  // A saved filter always carries a serialized `targets` array and an `id`;
+  // a form item's id lives in the form name path, not in its value, and it
+  // only gains a `targets` array once the scope-tree settings dialog writes
+  // it into the form (via a hidden Form.Item). Keying off `targets` alone
+  // would misclassify that still-untransformed form value as already saved.
+  // Dashboards affected by an old stripping bug hold `filter_time` entries
+  // with an `id` but no `targets`; those take the form-item path so the next
+  // save repairs them. Keying off `dataset` misclassified filter types with
+  // no dataset control (e.g. `filter_time`) as already saved.
+  return !('id' in formInputs) || !Array.isArray(formInputs.targets);
 }
 
 function transformDivider(
@@ -101,11 +107,28 @@ function buildFilterTarget(
 function transformFormInput(
   id: string,
   formInputs: NativeFiltersFormItem,
+  previousTargets?: Partial<NativeFilterTarget>[],
 ): Filter {
   const defaultScope = {
     rootPath: [DASHBOARD_ROOT_ID],
     excluded: [],
   };
+
+  const formTargets = formInputs.targets;
+  const baseTarget = formTargets?.[0] ?? buildFilterTarget(formInputs);
+  const previousDefault = previousTargets?.[0];
+  if (
+    !formTargets &&
+    previousDefault?.valueTransform &&
+    String(previousDefault.datasetId) === String(baseTarget.datasetId) &&
+    (previousDefault.datasourceType ?? 'table') ===
+      (baseTarget.datasourceType ?? 'table') &&
+    previousDefault.column?.name === baseTarget.column?.name
+  ) {
+    // Preserve the value transform configured on the default target when the
+    // form's dataset/column are unchanged.
+    baseTarget.valueTransform = previousDefault.valueTransform;
+  }
 
   const result: Filter & { time_grains?: string[] } = {
     id,
@@ -113,7 +136,18 @@ function transformFormInput(
     name: formInputs.name,
     filterType: formInputs.filterType,
     description: (formInputs.description || '').trim(),
-    targets: [buildFilterTarget(formInputs)],
+    targets:
+      formTargets && formTargets.length > 0
+        ? // The scope-tree settings dialog already wrote the full target list
+          // (default target + per-report overrides) into the form.
+          formTargets
+        : [
+            baseTarget,
+            // Per-chart target overrides (alias columns / value transforms)
+            // live on targets[1..]; the form has no UI for them, so keep them
+            // across edits instead of silently dropping the mapping.
+            ...(previousTargets?.slice(1) ?? []),
+          ],
     scope: formInputs.scope || defaultScope,
     controlValues: formInputs.controlValues ?? {},
     defaultDataMask: buildNativeFilterDefaultDataMask(
@@ -148,9 +182,10 @@ function transformSavedFilter(id: string, filter: Filter): Filter {
 function transformFilter(
   id: string,
   formInputs: NativeFilterFormOrSaved,
+  previousTargets?: Partial<NativeFilterTarget>[],
 ): Filter {
   if (isFormInput(formInputs)) {
-    return transformFormInput(id, formInputs);
+    return transformFormInput(id, formInputs, previousTargets);
   }
   return transformSavedFilter(id, formInputs);
 }
@@ -158,6 +193,7 @@ function transformFilter(
 export function transformFilterForSave(
   id: string,
   formInputs: FilterFormInput | undefined,
+  previousFilter?: Filter,
 ): Filter | Divider | undefined {
   if (!formInputs) {
     return undefined;
@@ -171,5 +207,5 @@ export function transformFilterForSave(
     return transformDivider(id, formInputs);
   }
 
-  return transformFilter(id, formInputs);
+  return transformFilter(id, formInputs, previousFilter?.targets);
 }

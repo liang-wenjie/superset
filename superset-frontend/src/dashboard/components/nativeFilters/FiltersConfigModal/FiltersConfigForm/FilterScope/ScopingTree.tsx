@@ -17,23 +17,45 @@
  * under the License.
  */
 
-import { FC, useMemo, useState, memo } from 'react';
-import { NativeFilterScope } from '@superset-ui/core';
+import { FC, useMemo, useState, memo, useCallback } from 'react';
+import {
+  NativeFilterScope,
+  NativeFilterTarget,
+  NativeFilterType,
+  DatasourceType,
+  Filter,
+} from '@superset-ui/core';
 import { styled, css } from '@apache-superset/core/theme';
+import { Theme } from '@emotion/react';
+import { t } from '@apache-superset/core/translation';
 import Tree from '@superset-ui/core/components/Tree';
 import { DASHBOARD_ROOT_ID } from 'src/dashboard/util/constants';
 import { Tooltip } from '@superset-ui/core/components';
 import { Icons } from '@superset-ui/core/components/Icons';
-import { Layout } from 'src/dashboard/types';
+import { Layout, RootState } from 'src/dashboard/types';
+import { useSelector } from 'react-redux';
 import { useFilterScopeTree } from './state';
 import { findFilterScope, getTreeCheckedItems } from './utils';
+import FilterTargetSettings from '../../../FilterBar/FilterControls/FilterTargetSettings';
 
 const StyledTree = styled(Tree)`
   .ant-tree-title {
     display: flex;
     align-items: center;
+    gap: ${({ theme }) => theme.sizeUnit}px;
   }
 `;
+
+const parseDatasource = (
+  datasource: string,
+): { datasetId: number; datasourceType: DatasourceType } | null => {
+  const [id, type = 'table'] = String(datasource).split('__');
+  const datasetId = Number(id);
+  if (!id || Number.isNaN(datasetId)) {
+    return null;
+  }
+  return { datasetId, datasourceType: type as DatasourceType };
+};
 
 type ScopingTreeProps = {
   forceUpdate: Function;
@@ -43,6 +65,17 @@ type ScopingTreeProps = {
   chartId?: number;
   initiallyExcludedCharts?: number[];
   title?: string;
+  /** The filter's saved targets, used to seed per-report mapping rows. */
+  filterTargets?: Partial<NativeFilterTarget>[];
+  /** Edit-mode callback that writes the updated targets into the form. */
+  onSaveTargets?: (targets: Partial<NativeFilterTarget>[]) => void;
+};
+
+type SettingsChart = {
+  chartId: number;
+  label: string;
+  datasetId: number;
+  datasourceType: DatasourceType;
 };
 
 const buildTreeLeafTitle = (
@@ -50,6 +83,8 @@ const buildTreeLeafTitle = (
   hasTooltip: boolean,
   tooltipTitle?: string,
   isDeckMultiChart?: boolean,
+  chartId?: number,
+  onChartSettings?: (chartId: number, label?: string) => void,
 ) => {
   let title = <span>{label}</span>;
 
@@ -78,6 +113,41 @@ const buildTreeLeafTitle = (
         {title}&nbsp;
         <Tooltip title={tooltipTitle}>
           <Icons.InfoCircleOutlined iconSize="m" />
+        </Tooltip>
+      </>
+    );
+  }
+
+  if (chartId != null && onChartSettings) {
+    title = (
+      <>
+        {title}&nbsp;
+        <Tooltip
+          placement="top"
+          title={t('Filter target mapping and value transform')}
+        >
+          <button
+            type="button"
+            data-test="chart-filter-target-settings-button"
+            aria-label={t('Filter target mapping and value transform')}
+            css={(theme: Theme) => css`
+              border: none;
+              background: transparent;
+              padding: 0;
+              cursor: pointer;
+              color: ${theme.colorTextTertiary};
+              line-height: 1;
+              &:hover {
+                color: ${theme.colorPrimary};
+              }
+            `}
+            onClick={e => {
+              e.stopPropagation();
+              onChartSettings(chartId, label);
+            }}
+          >
+            <Icons.SettingOutlined iconSize="m" />
+          </button>
         </Tooltip>
       </>
     );
@@ -155,16 +225,43 @@ const ScopingTree: FC<ScopingTreeProps> = ({
   chartId,
   initiallyExcludedCharts = [],
   title,
+  filterTargets,
+  onSaveTargets,
 }) => {
   const [expandedKeys, setExpandedKeys] = useState<string[]>([
     DASHBOARD_ROOT_ID,
   ]);
+
+  const [settingsChart, setSettingsChart] = useState<SettingsChart | null>(
+    null,
+  );
+
+  const charts = useSelector((state: RootState) => state.charts);
+
+  const handleChartSettings = useCallback(
+    (targetChartId: number, targetLabel?: string) => {
+      const chart = charts[targetChartId];
+      const datasource = chart?.form_data?.datasource;
+      const parsed = datasource ? parseDatasource(datasource) : null;
+      if (!parsed) {
+        return;
+      }
+      setSettingsChart({
+        chartId: targetChartId,
+        label: targetLabel ?? String(targetChartId),
+        datasetId: parsed.datasetId,
+        datasourceType: parsed.datasourceType,
+      });
+    },
+    [charts],
+  );
 
   const { treeData, layout } = useFilterScopeTree(
     chartId,
     initiallyExcludedCharts,
     buildTreeLeafTitle,
     title,
+    handleChartSettings,
   );
 
   const [autoExpandParent, setAutoExpandParent] = useState<boolean>(true);
@@ -198,17 +295,45 @@ const ScopingTree: FC<ScopingTreeProps> = ({
     [formScope, initialScope, layout],
   );
 
+  const settingsFilter = useMemo(
+    () =>
+      ({
+        id: 'native-filter-settings',
+        type: NativeFilterType.NativeFilter,
+        name: t('Filter settings'),
+        targets: filterTargets ?? [],
+        scope: { rootPath: [], excluded: [] },
+      }) as unknown as Filter,
+    [filterTargets],
+  );
+
   return (
-    <StyledTree
-      checkable
-      selectable={false}
-      onExpand={handleExpand}
-      expandedKeys={expandedKeys}
-      autoExpandParent={autoExpandParent}
-      onCheck={handleCheck}
-      checkedKeys={checkedKeys}
-      treeData={treeData}
-    />
+    <>
+      <StyledTree
+        checkable
+        selectable={false}
+        onExpand={handleExpand}
+        expandedKeys={expandedKeys}
+        autoExpandParent={autoExpandParent}
+        onCheck={handleCheck}
+        checkedKeys={checkedKeys}
+        treeData={treeData}
+      />
+      {settingsChart && (
+        <FilterTargetSettings
+          filter={settingsFilter}
+          open
+          onClose={() => setSettingsChart(null)}
+          focus={{
+            chartId: settingsChart.chartId,
+            datasetId: settingsChart.datasetId,
+            datasourceType: settingsChart.datasourceType,
+          }}
+          focusLabel={settingsChart.label}
+          onSaveTargets={onSaveTargets}
+        />
+      )}
+    </>
   );
 };
 

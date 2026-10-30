@@ -304,6 +304,103 @@ def test_target_column_no_targets() -> None:
     assert _get_filter_target_column(flt) is None
 
 
+# --- _resolve_filter_target / _rewrite_filter_clauses_for_target ---
+
+
+def _make_slice(
+    chart_id: int = 10,
+    datasource_id: int = 7,
+    datasource_type: str = "table",
+) -> MagicMock:
+    slice_obj = MagicMock()
+    slice_obj.id = chart_id
+    slice_obj.datasource_id = datasource_id
+    slice_obj.datasource_type = datasource_type
+    return slice_obj
+
+
+def test_resolve_filter_target_matches_per_chart_target() -> None:
+    from superset.charts.data.dashboard_filter_context import _resolve_filter_target
+
+    flt = {
+        "targets": [
+            {"datasetId": 1, "column": {"name": "report_date"}},
+            {
+                "datasetId": 7,
+                "datasourceType": "table",
+                "column": {"name": "报告日期"},
+                "valueTransform": "CONCAT(SUBSTRING({col},1,4),LPAD("
+                "CAST(SUBSTRING({col},6,1) AS UNSIGNED),2,'0'))",
+                "chartIds": [10],
+            },
+        ]
+    }
+    resolved = _resolve_filter_target(flt, _make_slice(datasource_id=7))
+    assert resolved["column"]["name"] == "报告日期"
+    assert "{col}" in resolved["valueTransform"]
+
+
+def test_resolve_filter_target_ignores_other_charts_targets() -> None:
+    from superset.charts.data.dashboard_filter_context import _resolve_filter_target
+
+    flt = {
+        "targets": [
+            {"datasetId": 1, "column": {"name": "report_date"}},
+            {
+                "datasetId": 7,
+                "datasourceType": "table",
+                "column": {"name": "报告日期"},
+                "chartIds": [20],
+            },
+        ]
+    }
+    # Chart 10 has no explicit target: no rewrite, default column applies.
+    resolved = _resolve_filter_target(flt, _make_slice(chart_id=10, datasource_id=7))
+    assert resolved == {}
+
+
+def test_resolve_filter_target_empty_targets() -> None:
+    from superset.charts.data.dashboard_filter_context import _resolve_filter_target
+
+    assert _resolve_filter_target({"targets": []}, _make_slice()) == {}
+
+
+def test_rewrite_filter_clauses_remaps_column_and_carries_transform() -> None:
+    from superset.charts.data.dashboard_filter_context import (
+        _rewrite_filter_clauses_for_target,
+    )
+
+    efd = {"filters": [{"col": "report_date", "op": "==", "val": "202607"}]}
+    target = {
+        "datasetId": 7,
+        "column": {"name": "报告日期"},
+        "valueTransform": "CONCAT(SUBSTRING({col},1,4),LPAD("
+        "CAST(SUBSTRING({col},6,1) AS UNSIGNED),2,'0'))",
+    }
+    rewritten = _rewrite_filter_clauses_for_target(efd, target)
+    # The source mask is untouched; only the copy is rewritten.
+    assert efd["filters"][0]["col"] == "report_date"
+    assert "valueTransform" not in efd["filters"][0]
+    assert rewritten["filters"][0]["col"] == "报告日期"
+    assert rewritten["filters"][0]["valueTransform"] == target["valueTransform"]
+
+
+def test_rewrite_filter_clauses_no_transform_clears_previous() -> None:
+    from superset.charts.data.dashboard_filter_context import (
+        _rewrite_filter_clauses_for_target,
+    )
+
+    efd = {
+        "filters": [
+            {"col": "report_date", "op": "==", "val": "202607", "valueTransform": "x"}
+        ]
+    }
+    target = {"datasetId": 7, "column": {"name": "报告日期"}}
+    rewritten = _rewrite_filter_clauses_for_target(efd, target)
+    assert rewritten["filters"][0]["col"] == "报告日期"
+    assert "valueTransform" not in rewritten["filters"][0]
+
+
 # --- validate_chart_on_dashboard ---
 
 
@@ -520,6 +617,57 @@ def test_get_dashboard_filter_context_skips_dividers(
     ctx = get_dashboard_filter_context(dashboard_id=1, chart_id=10)
     assert len(ctx.filters) == 1
     assert ctx.filters[0].name == "Region"
+
+
+@patch("superset.charts.data.dashboard_filter_context._check_dashboard_access")
+@patch("superset.charts.data.dashboard_filter_context.db")
+def test_get_dashboard_filter_context_per_chart_target_value_transform(
+    mock_db: MagicMock,
+    mock_check_access: MagicMock,
+) -> None:
+    """Per-chart targets remap the column and carry valueTransform to clauses."""
+    filter_config = [
+        _make_filter(
+            flt_id="f1",
+            name="Report month",
+            scope_root=["ROOT_ID"],
+            default_value=["202607"],
+            target_column="report_date",
+        ),
+    ]
+    # The filter's own target points at dataset 1; chart 10 has an explicit
+    # per-chart target that remaps the column and rewrites the value.
+    filter_config[0]["targets"] = [
+        {"datasetId": 1, "column": {"name": "report_date"}},
+        {
+            "datasetId": 7,
+            "datasourceType": "table",
+            "column": {"name": "报告日期"},
+            "valueTransform": "CONCAT(SUBSTRING({col},1,4),LPAD("
+            "CAST(SUBSTRING({col},6,1) AS UNSIGNED),2,'0'))",
+            "chartIds": [10],
+        },
+    ]
+    metadata = {"native_filter_configuration": filter_config}
+
+    dashboard = MagicMock()
+    dashboard.id = 1
+    slice_obj = _make_slice(chart_id=10, datasource_id=7)
+    dashboard.slices = [slice_obj]
+    dashboard.json_metadata = json.dumps(metadata)
+    dashboard.position_json = json.dumps(SAMPLE_POSITION_JSON)
+    # First query loads the dashboard, second loads the chart's Slice.
+    (
+        mock_db.session.query.return_value.filter_by.return_value.one_or_none
+    ).side_effect = [dashboard, slice_obj]
+
+    ctx = get_dashboard_filter_context(dashboard_id=1, chart_id=10)
+
+    assert ctx.filters[0].column == "报告日期"
+    clauses = ctx.extra_form_data.get("filters", [])
+    assert len(clauses) == 1
+    assert clauses[0]["col"] == "报告日期"
+    assert "{col}" in clauses[0]["valueTransform"]
 
 
 @patch("superset.charts.data.dashboard_filter_context._check_dashboard_access")

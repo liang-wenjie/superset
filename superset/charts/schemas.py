@@ -1162,6 +1162,17 @@ class ChartDataFilterSchema(Schema):
         },
         required=True,
     )
+    valueTransform = fields.String(  # noqa: N815
+        allow_none=True,
+        metadata={
+            "description": "Optional SQL expression template applied to the target "
+            "column value, converting the stored field value into the filter value's "
+            "format before comparison. ``{col}`` resolves to the quoted column name; "
+            "e.g. ``CONCAT(SUBSTRING({col},1,4),LPAD(CAST(SUBSTRING({col},6,1) AS "
+            "UNSIGNED),2,'0'))`` turns a stored 2026.7月 into 202607 so it matches "
+            "a YYYYMM filter selection.",
+        },
+    )
     op = fields.String(  # pylint: disable=invalid-name
         metadata={"description": "The comparison operator.", "example": "IN"},
         validate=utils.OneOfCaseInsensitive(

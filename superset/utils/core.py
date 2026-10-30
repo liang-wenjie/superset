@@ -312,6 +312,7 @@ class QueryObjectFilterClause(TypedDict, total=False):
     val: FilterValues | None
     grain: str | None
     isExtra: bool | None
+    valueTransform: str | None
 
 
 class ExtraFiltersTimeColumnType(StrEnum):

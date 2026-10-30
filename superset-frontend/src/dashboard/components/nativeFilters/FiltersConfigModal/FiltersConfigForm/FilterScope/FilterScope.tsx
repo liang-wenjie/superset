@@ -18,7 +18,7 @@
  */
 
 import { FC, useCallback, useEffect, useMemo, useState } from 'react';
-import { NativeFilterScope } from '@superset-ui/core';
+import { NativeFilterScope, NativeFilterTarget } from '@superset-ui/core';
 import { styled } from '@apache-superset/core/theme';
 import { FormItem } from '@superset-ui/core/components';
 import ScopingTree from './ScopingTree';
@@ -32,6 +32,10 @@ type FilterScopeProps = {
   filterScope?: NativeFilterScope;
   chartId?: number;
   initiallyExcludedCharts?: number[];
+  /** The filter's saved targets, used to seed per-report mapping rows. */
+  filterTargets?: Partial<NativeFilterTarget>[];
+  /** Edit-mode callback that writes the updated targets into the form. */
+  onSaveTargets?: (targets: Partial<NativeFilterTarget>[]) => void;
 };
 
 const Wrapper = styled.div`
@@ -55,6 +59,8 @@ const FilterScope: FC<FilterScopeProps> = ({
   updateFormValues,
   chartId,
   initiallyExcludedCharts,
+  filterTargets,
+  onSaveTargets,
 }) => {
   const initialFilterScope = useMemo(
     () => filterScope || getDefaultScopeValue(chartId, initiallyExcludedCharts),
@@ -97,6 +103,8 @@ const FilterScope: FC<FilterScopeProps> = ({
         forceUpdate={forceUpdate}
         chartId={chartId}
         initiallyExcludedCharts={initiallyExcludedCharts}
+        filterTargets={filterTargets}
+        onSaveTargets={onSaveTargets}
       />
       <CleanFormItem
         name={[...pathToFormValue, 'scope']}
