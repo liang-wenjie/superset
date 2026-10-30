@@ -5955,14 +5955,16 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             return None
         return and_(True, *l)
 
-    def values_for_column(  # pylint: disable=too-many-locals
+    def values_for_column(  # noqa: C901  # pylint: disable=too-many-locals
         self,
         column_name: str,
         limit: int = 10000,
         denormalize_column: bool = False,
         array_elements: bool = False,
         search: str | None = None,
-        extra_filters: list[dict] | None = None,
+        extra_filters: list[dict[str, Any]] | None = None,
+        adhoc_filters: list[dict[str, Any]] | None = None,
+        filters: list[dict[str, Any]] | None = None,
     ) -> list[Any]:
         # denormalize column name before querying for values
         # unless disabled in the dataset configuration
@@ -6013,6 +6015,38 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             ef_expr = cols[ef_col].get_sqla_col(template_processor=tp)
             qry = qry.where(ef_expr == ef_val)
 
+        # Inherit the chart's own WHERE filters so the suggested values match
+        # the universe the chart actually renders: a chart restricted to one
+        # category (e.g. ``一级分类 IN '营业收入'``) only suggests values that
+        # survive that filter. SIMPLE adhoc filters and legacy ``filters``
+        # narrow by column/operator/value predicates; SQL adhoc filters join
+        # into a free-form WHERE expression. Metric (HAVING) filters and
+        # unsupported operators are skipped, since they cannot narrow
+        # row-level distinct values.
+        from superset.common.form_data_query_context import (
+            adhoc_filters_to_query_filters,
+            freeform_where_having,
+        )
+
+        for flt in (filters or []) + adhoc_filters_to_query_filters(
+            adhoc_filters or [], where_only=True
+        ):
+            predicate = self._column_filter_to_sqla(flt, cols, tp)
+            if predicate is not None:
+                qry = qry.where(predicate)
+        where_sql = freeform_where_having({"adhoc_filters": adhoc_filters or []}).get(
+            "where"
+        )
+        if where_sql:
+            processed_where = self._process_select_expression(
+                expression=where_sql,
+                engine=self.database.backend,
+                schema=self.schema,
+                template_processor=tp,
+            )
+            if processed_where:
+                qry = qry.where(Grouping(self.text(processed_where)))
+
         if limit:
             qry = qry.limit(limit)
 
@@ -6055,6 +6089,117 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
                 # replace NaN with None to ensure it can be serialized to JSON
                 df = df.replace({np.nan: None})
                 return df["column_values"].to_list()
+
+    def _column_filter_to_sqla(
+        self,
+        flt: dict[str, Any],
+        cols: dict[str, "TableColumn"],
+        template_processor: Optional[BaseTemplateProcessor] = None,
+    ) -> Optional[ColumnElement]:
+        """Build a WHERE predicate for a single ``{col, op, val}`` filter.
+
+        Used by ``values_for_column`` to apply a chart's own filters to the
+        distinct-value query, so the suggested values match the rows the chart
+        renders. Supports the scalar operators that can narrow row-level column
+        values; unsupported operators (temporal ranges, array-element and
+        string-length operators) are skipped rather than failing the request.
+        Filters that resolve to a metric (HAVING) or to a removed column are
+        skipped too, mirroring ``get_sqla_query``.
+        """
+        flt_col = flt.get("col")
+        flt_op = flt.get("op")
+        if not flt_col or not flt_op:
+            return None
+        try:
+            operator = utils.FilterOperator(str(flt_op).upper())
+        except ValueError:
+            return None
+        col_obj = self._get_filter_column(str(flt_col), cols)
+        if col_obj is None:
+            return None
+        sqla_col = self.convert_tbl_column_to_sqla_col(
+            tbl_column=col_obj, template_processor=template_processor
+        )
+        db_engine_spec = self.database.db_engine_spec
+        col_spec = db_engine_spec.get_column_spec(native_type=col_obj.type)
+        target_generic_type = (
+            col_spec.generic_type if col_spec else utils.GenericDataType.STRING
+        )
+        is_list_target = operator in {
+            utils.FilterOperator.IN,
+            utils.FilterOperator.NOT_IN,
+        }
+        eq = self.filter_values_handler(
+            values=flt.get("val"),
+            operator=operator,
+            target_generic_type=target_generic_type,
+            target_native_type=col_obj.type,
+            is_list_target=is_list_target,
+            db_engine_spec=db_engine_spec,
+            db_extra=self.db_extra,
+        )
+        if operator == utils.FilterOperator.IS_NULL:
+            return sqla_col.is_(None)
+        if operator == utils.FilterOperator.IS_NOT_NULL:
+            return sqla_col.is_not(None)
+        if operator == utils.FilterOperator.IS_TRUE:
+            return sqla_col.is_(True)
+        if operator == utils.FilterOperator.IS_FALSE:
+            return sqla_col.is_(False)
+        if operator in {
+            utils.FilterOperator.IN,
+            utils.FilterOperator.NOT_IN,
+        }:
+            return self._in_filter_to_sqla(sqla_col, eq, operator, db_engine_spec)
+        # Remaining supported operators are binary; TEMPORAL_RANGE,
+        # CONTAINS_ANY/CONTAINS_ALL, IS_EMPTY/IS_NOT_EMPTY and the LENGTH_*
+        # operators cannot narrow row-level distinct values and are skipped.
+        if eq is None:
+            return None
+        binary_predicates: dict[utils.FilterOperator, Callable[[], ColumnElement]] = {
+            utils.FilterOperator.EQUALS: lambda: sqla_col == eq,
+            utils.FilterOperator.NOT_EQUALS: lambda: keep_null_rows(
+                sqla_col, sqla_col != eq, db_engine_spec
+            ),
+            utils.FilterOperator.GREATER_THAN: lambda: sqla_col > eq,
+            utils.FilterOperator.LESS_THAN: lambda: sqla_col < eq,
+            utils.FilterOperator.GREATER_THAN_OR_EQUALS: lambda: sqla_col >= eq,
+            utils.FilterOperator.LESS_THAN_OR_EQUALS: lambda: sqla_col <= eq,
+            utils.FilterOperator.LIKE: lambda: sqla_col.like(eq),
+            utils.FilterOperator.NOT_LIKE: lambda: keep_null_rows(
+                sqla_col, ~sqla_col.like(eq), db_engine_spec
+            ),
+            utils.FilterOperator.ILIKE: lambda: sqla_col.ilike(eq),
+            utils.FilterOperator.NOT_ILIKE: lambda: keep_null_rows(
+                sqla_col, ~sqla_col.ilike(eq), db_engine_spec
+            ),
+        }
+        builder = binary_predicates.get(operator)
+        return builder() if builder is not None else None
+
+    def _in_filter_to_sqla(
+        self,
+        sqla_col: Column,
+        eq: Any,
+        operator: utils.FilterOperator,
+        db_engine_spec: Any,
+    ) -> Optional[ColumnElement]:
+        """Build an IN / NOT IN predicate for a list of values.
+
+        NULL values inside the list match via ``col IS NULL``, and negations
+        keep NULL rows (``keep_null_rows``), mirroring ``get_sqla_query``.
+        """
+        if not isinstance(eq, (tuple, list)) or len(eq) == 0:
+            return None
+        non_null = [item for item in eq if item is not None]
+        if not non_null:
+            return None
+        in_cond: ColumnElement = sqla_col.in_(non_null)
+        if len(non_null) < len(eq):
+            in_cond = or_(sqla_col.is_(None), in_cond)
+        if operator == utils.FilterOperator.NOT_IN:
+            return keep_null_rows(sqla_col, ~in_cond, db_engine_spec)
+        return in_cond
 
     def validate_expression(
         self,

@@ -128,7 +128,8 @@ def get_cached_column_values(
     search: str | None = None,
     selection_version: str | None = None,
     force: bool = False,
-    extra_filters: list[dict] | None = None,
+    extra_filters: list[dict[str, Any]] | None = None,
+    chart_filters: dict[str, Any] | None = None,
 ) -> tuple[list[Any], bool]:
     """Return a column's distinct values through the shared ``data_cache`` entry.
 
@@ -142,34 +143,54 @@ def get_cached_column_values(
     those of the tables its SQL reads), not by user, so the cache itself is not
     an access check. ``search`` must already be stripped, with
     ``None`` for "no search", so equal queries produce equal keys.
+    ``chart_filters`` carries the chart's own WHERE filters
+    (``{adhoc_filters, filters}``); equal filters produce equal keys, and they
+    are only applied for datasets, since semantic views resolve values through
+    their own provider machinery.
 
     Returns ``(values, cache_hit)``. ``force`` skips the read and refreshes
     the entry.
     """
     # Normalize extra_filters into a deterministic string for the cache key.
-    normalized_ef: list[dict] = sorted(
-        (
-            {"col": ef.get("col"), "val": ef.get("val")}
-            for ef in (extra_filters or [])
-        ),
+    normalized_ef: list[dict[str, Any]] = sorted(
+        ({"col": ef.get("col"), "val": ef.get("val")} for ef in (extra_filters or [])),
         key=lambda item: str(item.get("col", "")),
     )
-    cache_key: str = _column_values_cache_key(
-        datasource,
-        {
-            **(
-                {"semantic_selection_version": selection_version}
-                if selection_version is not None
-                else {}
+    # Normalize the chart's own filters into deterministic JSON strings so
+    # order differences don't cause cache misses.
+    normalized_cf: dict[str, list[str]] | None = None
+    if chart_filters:
+        normalized_cf = {
+            "adhoc": sorted(
+                json.dumps(flt, sort_keys=True)
+                for flt in chart_filters.get("adhoc_filters") or []
+                if isinstance(flt, dict)
             ),
-            "col": column_name,
-            "limit": limit,
-            "denorm": denormalize_column,
-            "elements": array_elements,
-            "q": search,
-            "ef": normalized_ef,
-        },
-    )
+            "filters": sorted(
+                json.dumps(flt, sort_keys=True)
+                for flt in chart_filters.get("filters") or []
+                if isinstance(flt, dict)
+            ),
+        }
+    cache_material: dict[str, Any] = {
+        **(
+            {"semantic_selection_version": selection_version}
+            if selection_version is not None
+            else {}
+        ),
+        "col": column_name,
+        "limit": limit,
+        "denorm": denormalize_column,
+        "elements": array_elements,
+        "q": search,
+    }
+    # Empty filter sets keep the legacy key bytes (and cached entries), so
+    # ``ef``/``cf`` are only added when they carry predicates.
+    if normalized_ef:
+        cache_material["ef"] = normalized_ef
+    if normalized_cf:
+        cache_material["cf"] = normalized_cf
+    cache_key: str = _column_values_cache_key(datasource, cache_material)
     timeout: int = datasource.cache_timeout or app.config.get(
         "CACHE_DEFAULT_TIMEOUT", 300
     )
@@ -183,14 +204,23 @@ def get_cached_column_values(
             "column-values cache HIT: uid=%s col=%s", datasource.uid, column_name
         )
         return cached, True
-    payload: list[Any] = datasource.values_for_column(
-        column_name=column_name,
-        limit=limit,
-        denormalize_column=denormalize_column,
-        array_elements=array_elements,
-        search=search,
-        extra_filters=extra_filters,
-    )
+    # ``extra_filters`` and the chart's own filters only apply to datasets,
+    # whose ``values_for_column`` narrows the distinct query. Semantic views
+    # resolve values through their own provider machinery and keep the plain
+    # signature; always passing ``extra_filters`` would 500 them.
+    values_kwargs: dict[str, Any] = {
+        "column_name": column_name,
+        "limit": limit,
+        "denormalize_column": denormalize_column,
+        "array_elements": array_elements,
+        "search": search,
+    }
+    if isinstance(datasource, SqlaTable):
+        values_kwargs["extra_filters"] = extra_filters
+        if chart_filters:
+            values_kwargs["adhoc_filters"] = chart_filters.get("adhoc_filters")
+            values_kwargs["filters"] = chart_filters.get("filters")
+    payload: list[Any] = datasource.values_for_column(**values_kwargs)
 
     # Warn before caching very large payloads (high-cardinality columns)
     # so operators can spot cache-memory pressure before Redis OOMs.
@@ -286,6 +316,19 @@ class DatasourceRestApi(BaseSupersetApi):
               Identity version from the saved or explicitly initialized field
               selections. Required for versioned semantic views; never infer it
               from current datasource metadata for legacy selections.
+          - in: query
+            schema:
+              type: string
+            name: chart_filters
+            description: >-
+              Optional JSON object carrying the chart's own WHERE filters as
+              adhoc_filters and filters arrays, so values are narrowed to the
+              rows the chart renders, e.g. an inline filter dropdown inheriting
+              the chart's adhoc filters. SIMPLE adhoc filters and legacy
+              filters map to column/operator/value predicates; SQL adhoc
+              filters join into a free-form WHERE. Sibling inline selections
+              are passed separately via extra_filters. Ignored for semantic
+              views, whose values are resolved by their own provider.
           responses:
             200:
               description: A List of distinct values for the column
@@ -344,7 +387,7 @@ class DatasourceRestApi(BaseSupersetApi):
         except SupersetSecurityException as ex:
             return self.response(403, message=ex.message, errors=[ex.to_dict()])
 
-    def _column_values_response(
+    def _column_values_response(  # noqa: C901
         self, datasource: BaseDatasource, datasource_type: str, column_name: str
     ) -> FlaskResponse:
         """Return suggestions for an authorized datasource, gating before cache."""
@@ -380,18 +423,31 @@ class DatasourceRestApi(BaseSupersetApi):
 
         # Cascading inline filters: client passes sibling column selections as
         # a JSON array of {"col": name, "val": value} objects.
-        extra_filters: list[dict] = []
-        raw_extra = request.args.get("extra_filters")
-        if raw_extra:
+        extra_filters: list[dict[str, Any]] = []
+        if raw_extra := request.args.get("extra_filters"):
             try:
                 parsed = json.loads(raw_extra)
                 if isinstance(parsed, list):
                     extra_filters = [
-                        item for item in parsed
+                        item
+                        for item in parsed
                         if isinstance(item, dict) and item.get("col")
                     ]
             except (json.JSONDecodeError, TypeError):
                 extra_filters = []
+
+        # Chart inline filters inherit the chart's own WHERE filters: the
+        # client passes them as {"adhoc_filters": [...], "filters": [...]} so
+        # suggested values match the rows the chart renders, not the full
+        # table. Sibling inline selections travel separately in extra_filters.
+        chart_filters: dict[str, Any] | None = None
+        if raw_chart := request.args.get("chart_filters"):
+            try:
+                parsed_chart = json.loads(raw_chart)
+                if isinstance(parsed_chart, dict):
+                    chart_filters = parsed_chart
+            except (json.JSONDecodeError, TypeError):
+                chart_filters = None
 
         # Cache distinct column-value results so a dashboard with many filters
         # backed by the same (often heavy) virtual dataset doesn't re-execute
@@ -421,6 +477,7 @@ class DatasourceRestApi(BaseSupersetApi):
                 selection_version=selection_version,
                 force=force,
                 extra_filters=extra_filters,
+                chart_filters=chart_filters,
             )
         except (SemanticLayerQueryRejectedError, SemanticLayerExecutionError) as ex:
             return self.response(ex.status, message=ex.message)

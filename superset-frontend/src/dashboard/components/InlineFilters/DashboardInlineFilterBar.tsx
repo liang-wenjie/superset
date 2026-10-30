@@ -31,6 +31,10 @@ interface DashboardInlineFilterBarProps {
   rawConfig: JsonObject | InlineFilterConfig[] | undefined;
   datasourceId?: string | number;
   datasourceType?: string;
+  /** The chart's own adhoc filters, inherited by the values endpoint. */
+  chartAdhocFilters?: JsonObject[];
+  /** Legacy chart filters (``{col, op, val}``), inherited the same way. */
+  chartLegacyFilters?: JsonObject[];
 }
 
 /** Coerce the loosely-typed formData value into InlineFilterConfig[]. */
@@ -50,10 +54,18 @@ function normalizeConfig(
  */
 export const DashboardInlineFilterBar: React.FC<
   DashboardInlineFilterBarProps
-> = ({ chartId, rawConfig, datasourceId, datasourceType }) => {
+> = ({
+  chartId,
+  rawConfig,
+  datasourceId,
+  datasourceType,
+  chartAdhocFilters,
+  chartLegacyFilters,
+}) => {
   const dispatch = useDispatch();
   const selection = useSelector(
-    (state: RootState) => state.dashboardState.chartInlineFilters?.[chartId] ?? {},
+    (state: RootState) =>
+      state.dashboardState.chartInlineFilters?.[chartId] ?? {},
   );
 
   const handleSelect = useCallback(
@@ -71,6 +83,8 @@ export const DashboardInlineFilterBar: React.FC<
       onSelect={handleSelect}
       datasourceId={datasourceId}
       datasourceType={datasourceType}
+      chartAdhocFilters={chartAdhocFilters}
+      chartLegacyFilters={chartLegacyFilters}
     />
   );
 };

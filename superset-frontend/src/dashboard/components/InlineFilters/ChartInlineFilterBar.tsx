@@ -19,7 +19,7 @@
 import React, { useEffect, useState } from 'react';
 import { styled } from '@apache-superset/core/theme';
 import { Select } from '@superset-ui/core/components';
-import { SupersetClient } from '@superset-ui/core';
+import { JsonObject, SupersetClient } from '@superset-ui/core';
 import { t } from '@apache-superset/core/translation';
 import type { InlineFilterConfig, InlineFilterSelection } from './types';
 
@@ -55,10 +55,21 @@ export interface ChartInlineFilterBarProps {
   /** Current selection state per filter id. */
   selection: InlineFilterSelection;
   /** Called when the user picks a value (or clears the filter). */
-  onSelect: (filterId: string, value: string | number | boolean | undefined) => void;
+  onSelect: (
+    filterId: string,
+    value: string | number | boolean | undefined,
+  ) => void;
   /** Datasource info for fetching distinct column values. */
   datasourceId?: string | number;
   datasourceType?: string;
+  /**
+   * The chart's own adhoc filters (``formData.adhoc_filters``). WHERE-clause
+   * entries are sent to the values endpoint so the dropdown only suggests
+   * values that survive the chart's own filters.
+   */
+  chartAdhocFilters?: JsonObject[];
+  /** Legacy ``formData.filters`` (``{col, op, val}``), inherited the same way. */
+  chartLegacyFilters?: JsonObject[];
 }
 
 /**
@@ -71,6 +82,8 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   onSelect,
   datasourceId,
   datasourceType,
+  chartAdhocFilters,
+  chartLegacyFilters,
 }) => {
   const [distinctCache, setDistinctCache] = useState<DistinctCache>({});
 
@@ -97,6 +110,22 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
           if (extraFilters.length > 0) {
             params.set('extra_filters', JSON.stringify(extraFilters));
           }
+          // Inherit the chart's own WHERE filters so the suggested values match
+          // the rows the chart renders (e.g. only the category a chart-level
+          // filter already selected). Sibling inline selections stay in
+          // extra_filters; the chart's own adhoc_filters never include them.
+          const whereAdhoc = (chartAdhocFilters ?? []).filter(
+            f => (f?.clause ?? 'WHERE') === 'WHERE',
+          );
+          if (whereAdhoc.length > 0 || (chartLegacyFilters?.length ?? 0) > 0) {
+            params.set(
+              'chart_filters',
+              JSON.stringify({
+                adhoc_filters: whereAdhoc,
+                filters: chartLegacyFilters ?? [],
+              }),
+            );
+          }
           const query = params.toString();
           const { json } = await SupersetClient.get({
             endpoint:
@@ -115,7 +144,12 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
             });
           return [col, options] as const;
         } catch {
-          return [col, []] as const;
+          // Keep the same tuple shape as the success branch so the cached
+          // options stay assignable to the mutable DistinctCache values.
+          return [col, [] as { label: string; value: string }[]] as [
+            string,
+            { label: string; value: string }[],
+          ];
         }
       }),
     ).then(entries => {
@@ -133,7 +167,14 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, datasourceId, datasourceType, JSON.stringify(selection)]);
+  }, [
+    filters,
+    datasourceId,
+    datasourceType,
+    JSON.stringify(selection),
+    JSON.stringify(chartAdhocFilters),
+    JSON.stringify(chartLegacyFilters),
+  ]);
 
   if (!filters || filters.length === 0) return null;
 

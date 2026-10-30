@@ -1325,6 +1325,11 @@
               "Japan"
             ],
             "nullable": true
+          },
+          "valueTransform": {
+            "description": "Optional SQL expression template applied to the target column value, converting the stored field value into the filter value's format before comparison. ``{col}`` resolves to the quoted column name; e.g. ``CONCAT(SUBSTRING({col},1,4),LPAD(CAST(SUBSTRING({col},6,1) AS UNSIGNED),2,'0'))`` turns a stored 2026.7\u6708 into 202607 so it matches a YYYYMM filter selection.",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -25957,6 +25962,87 @@
         ]
       }
     },
+    "/api/v1/dataset/{pk}/validate_filter_target_transform/": {
+      "post": {
+        "description": "Checks that a dashboard editor's value transform SQL is a single parseable scalar expression over the {col} placeholder, with no Jinja, executable comments, sequence reads or disallowed functions. The check mirrors the shape and safety gates the query path relies on, so a bad transform is caught in the editor instead of failing every chart query that uses it.",
+        "parameters": [
+          {
+            "description": "The dataset ID",
+            "in": "path",
+            "name": "pk",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateFilterTargetTransformSchema"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "properties": {
+                        "errors": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "valid": {
+                          "type": "boolean"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Validation result"
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          }
+        },
+        "security": [
+          {
+            "jwt": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Validate a per-report filter value transform expression",
+        "tags": [
+          "Datasets"
+        ]
+      }
+    },
     "/api/v1/dataset/{uuid_str}/activity/": {
       "get": {
         "description": "A dataset's own edits only. Datasets have no transitive layer in V2 \u2014 chart and dashboard edits that touch this dataset do NOT appear here. ``?include=self`` and ``?include=all`` return the dataset's own edits; ``?include=related`` returns an empty stream (a dataset has no related entities to fan out to).",
@@ -26635,6 +26721,14 @@
             "description": "Identity version from the saved or explicitly initialized field selections. Required for versioned semantic views; never infer it from current datasource metadata for legacy selections.",
             "in": "query",
             "name": "semantic_selection_version",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional JSON object carrying the chart's own WHERE filters as adhoc_filters and filters arrays, so values are narrowed to the rows the chart renders, e.g. an inline filter dropdown inheriting the chart's adhoc filters. SIMPLE adhoc filters and legacy filters map to column/operator/value predicates; SQL adhoc filters join into a free-form WHERE. Sibling inline selections are passed separately via extra_filters. Ignored for semantic views, whose values are resolved by their own provider.",
+            "in": "query",
+            "name": "chart_filters",
             "schema": {
               "type": "string"
             }

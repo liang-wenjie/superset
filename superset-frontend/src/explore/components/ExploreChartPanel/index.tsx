@@ -241,7 +241,15 @@ const ExploreChartPanel = ({
         );
       });
     },
-    [actions, chart.id, formData, inlineConfig, inlineSelection, ownState, timeout],
+    [
+      actions,
+      chart.id,
+      formData,
+      inlineConfig,
+      inlineSelection,
+      ownState,
+      timeout,
+    ],
   );
 
   const showInlineBar = inlineConfig.length > 0;
@@ -377,7 +385,9 @@ const ExploreChartPanel = ({
         {chartPanelWidth && chartPanelHeight && (
           <ChartContainer
             width={Math.floor(chartPanelWidth)}
-            height={chartPanelHeight - (showInlineBar ? INLINE_FILTER_BAR_HEIGHT : 0)}
+            height={
+              chartPanelHeight - (showInlineBar ? INLINE_FILTER_BAR_HEIGHT : 0)
+            }
             ownState={mergedOwnState}
             annotationData={chart.annotationData}
             chartId={chart.id}
@@ -525,6 +535,12 @@ const ExploreChartPanel = ({
             onSelect={handleInlineFilterChange}
             datasourceId={datasource?.id}
             datasourceType={datasource?.type}
+            chartAdhocFilters={
+              (formData as JsonObject).adhoc_filters as JsonObject[] | undefined
+            }
+            chartLegacyFilters={
+              (formData as JsonObject).filters as JsonObject[] | undefined
+            }
           />
         )}
         {renderChart()}

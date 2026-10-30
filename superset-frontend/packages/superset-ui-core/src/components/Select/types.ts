@@ -68,6 +68,7 @@ export type AntdExposedProps = Pick<
   | 'prefix'
   | 'showArrow'
   | 'showSearch'
+  | 'size'
   | 'tokenSeparators'
   | 'virtual'
   | 'getPopupContainer'

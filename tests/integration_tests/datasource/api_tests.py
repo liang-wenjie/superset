@@ -516,6 +516,7 @@ class TestDatasourceApi(SupersetTestCase):
         self.login(ADMIN_USERNAME)
         table = self.get_virtual_dataset()
         table.normalize_columns = True
+        values_for_column_mock.return_value = []
         self.client.get(f"api/v1/datasource/table/{table.id}/column/col2/values/")  # noqa: F841
         values_for_column_mock.assert_called_with(
             column_name="col2",
@@ -523,6 +524,7 @@ class TestDatasourceApi(SupersetTestCase):
             denormalize_column=False,
             array_elements=False,
             search=None,
+            extra_filters=[],
         )
 
     @pytest.mark.usefixtures("app_context", "virtual_dataset")
@@ -584,6 +586,110 @@ class TestDatasourceApi(SupersetTestCase):
         assert values_for_column_mock.call_args.kwargs["search"] is None
 
     @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    def test_get_column_values_inherits_chart_simple_adhoc_filter(self):
+        """Chart inline filter values inherit the chart's SIMPLE adhoc filters.
+
+        A chart restricted to ``col1 IN (1, 2)`` must only suggest the ``col2``
+        values that survive that filter (``b``, ``c``), not the full column.
+        """
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        chart_filters = {
+            "adhoc_filters": [
+                {
+                    "clause": "WHERE",
+                    "expressionType": "SIMPLE",
+                    "subject": "col1",
+                    "operator": "IN",
+                    "comparator": [1, 2],
+                }
+            ]
+        }
+        rv = self.client.get(
+            f"api/v1/datasource/table/{table.id}/column/col2/values/",
+            query_string={"chart_filters": json.dumps(chart_filters)},
+        )
+        assert rv.status_code == 200
+        assert set(json.loads(rv.data.decode("utf-8"))["result"]) == {"b", "c"}
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    def test_get_column_values_inherits_chart_sql_adhoc_filter(self):
+        """SQL adhoc WHERE expressions narrow suggested values as well."""
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        chart_filters = {
+            "adhoc_filters": [
+                {
+                    "clause": "WHERE",
+                    "expressionType": "SQL",
+                    "sqlExpression": "col1 >= 8",
+                }
+            ]
+        }
+        rv = self.client.get(
+            f"api/v1/datasource/table/{table.id}/column/col2/values/",
+            query_string={"chart_filters": json.dumps(chart_filters)},
+        )
+        assert rv.status_code == 200
+        assert set(json.loads(rv.data.decode("utf-8"))["result"]) == {"i", "j"}
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    def test_get_column_values_inherits_chart_legacy_filters(self):
+        """Legacy ``{col, op, val}`` chart filters narrow suggested values."""
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        chart_filters = {"filters": [{"col": "col1", "op": ">=", "val": 8}]}
+        rv = self.client.get(
+            f"api/v1/datasource/table/{table.id}/column/col2/values/",
+            query_string={"chart_filters": json.dumps(chart_filters)},
+        )
+        assert rv.status_code == 200
+        assert set(json.loads(rv.data.decode("utf-8"))["result"]) == {"i", "j"}
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    @patch("superset.models.helpers.ExploreMixin.values_for_column")
+    def test_get_column_values_chart_filters_are_cache_isolated(
+        self, values_for_column_mock
+    ):
+        """Different chart filters must not share cached values."""
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        values_for_column_mock.return_value = ["x"]
+        base = f"api/v1/datasource/table/{table.id}/column/col2/values/"
+        for comparator in (1, 2):
+            self.client.get(
+                base,
+                query_string={
+                    "chart_filters": json.dumps(
+                        {
+                            "adhoc_filters": [
+                                {
+                                    "clause": "WHERE",
+                                    "expressionType": "SIMPLE",
+                                    "subject": "col1",
+                                    "operator": "==",
+                                    "comparator": comparator,
+                                }
+                            ]
+                        }
+                    )
+                },
+            )
+        assert values_for_column_mock.call_count == 2
+        assert (
+            values_for_column_mock.call_args_list[0].kwargs.get("adhoc_filters")[0][
+                "comparator"
+            ]
+            == 1
+        )
+        assert (
+            values_for_column_mock.call_args_list[1].kwargs.get("adhoc_filters")[0][
+                "comparator"
+            ]
+            == 2
+        )
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
     def test_get_column_values_returns_applied_limit(self):
         """The client needs the limit to tell a short list from a truncated
         one, so it can say the list is partial instead of implying it is whole."""
@@ -626,6 +732,7 @@ class TestDatasourceApi(SupersetTestCase):
         self.login(ADMIN_USERNAME)
         table = self.get_virtual_dataset()
         table.normalize_columns = False
+        values_for_column_mock.return_value = []
         self.client.get(f"api/v1/datasource/table/{table.id}/column/col2/values/")  # noqa: F841
         values_for_column_mock.assert_called_with(
             column_name="col2",
@@ -633,6 +740,7 @@ class TestDatasourceApi(SupersetTestCase):
             denormalize_column=True,
             array_elements=False,
             search=None,
+            extra_filters=[],
         )
 
     @pytest.mark.usefixtures("app_context", "virtual_dataset")

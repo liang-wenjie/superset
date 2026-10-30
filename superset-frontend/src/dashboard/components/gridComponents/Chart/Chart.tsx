@@ -873,6 +873,12 @@ const Chart = (props: ChartProps) => {
           rawConfig={inlineFilterConfig}
           datasourceId={datasource?.id}
           datasourceType={datasource?.type}
+          chartAdhocFilters={
+            (formData as JsonObject).adhoc_filters as JsonObject[] | undefined
+          }
+          chartLegacyFilters={
+            (formData as JsonObject).filters as JsonObject[] | undefined
+          }
         />
       )}
 
