@@ -23,6 +23,13 @@ export const getMetricDisplayName = (
   metric: QueryFormMetric,
   verboseMap: Record<string, string> = {},
 ): string => {
+  // A chart without metrics (or a series resolved from an empty metric set)
+  // passes `undefined` here; treat it like the fallback below instead of
+  // crashing on `metric.label`.
+  if (!metric) {
+    return 'Unknown Metric';
+  }
+
   // Case 1: Simple string metric - use verboseMap or the string itself
   if (typeof metric === 'string') {
     return verboseMap[metric] || metric;
