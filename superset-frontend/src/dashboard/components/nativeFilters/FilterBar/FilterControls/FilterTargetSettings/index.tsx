@@ -344,8 +344,9 @@ const FilterTargetSettings = ({
         (typeof saved?.column === 'string' ? saved.column : '');
       // The default mapping is "same field name": the picker pre-selects the
       // filter's own column name, so an untouched row means "match by name"
-      // (no explicit target needed). If the table has no such column, the
-      // selection still shows the default name and the builder picks another.
+      // (no explicit target needed). Once the table's columns are known and
+      // the field is absent, the correction effect below clears the
+      // preselection (default is empty, no mapping).
       setRows([
         {
           datasourceKey: focusKey,
@@ -390,6 +391,35 @@ const FilterTargetSettings = ({
 
     setRows(nextRows);
   }, [open, filter.targets, datasourceRows, focus, focusLabel]);
+
+  // After the focused table's columns are known, clear the default "same
+  // name" preselection when the table has no such field: the default mapping
+  // is "match by name", so an untouched row must be empty (no mapping) rather
+  // than showing a column that does not exist on the table.
+  useEffect(() => {
+    if (!focus || columnsLoading || columns.length === 0) {
+      return;
+    }
+    const [defaultTarget] = filter.targets ?? [];
+    const defaultColumn =
+      defaultTarget?.column?.name ??
+      (typeof defaultTarget?.column === 'string' ? defaultTarget.column : '');
+    if (!defaultColumn) {
+      return;
+    }
+    const columnNames = new Set(columns.map(col => col.column_name));
+    if (columnNames.has(defaultColumn)) {
+      return;
+    }
+    const focusKey = datasourceKey(focus.datasetId, focus.datasourceType);
+    setRows(prev =>
+      prev.map(row =>
+        row.datasourceKey === focusKey && row.column === defaultColumn
+          ? { ...row, column: '' }
+          : row,
+      ),
+    );
+  }, [focus, columns, columnsLoading, filter.targets]);
 
   const updateRow = (datasourceKey: string, patch: Partial<TargetRow>) => {
     setRows(prev =>
