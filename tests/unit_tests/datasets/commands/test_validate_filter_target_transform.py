@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Unit tests for ``superset.datasets.commands.validate_filter_target_transform``."""
+"""Unit tests for ``superset.commands.dataset.validate_filter_target_transform``."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from flask import Flask
 from pytest_mock import MockerFixture
 
 from superset.commands.dataset.exceptions import DatasetNotFoundError
-from superset.datasets.commands.validate_filter_target_transform import (
+from superset.commands.dataset.validate_filter_target_transform import (
     ValidateFilterTargetTransformCommand,
 )
 from superset.db_engine_specs.mysql import MySQLEngineSpec
@@ -43,7 +43,7 @@ def _command(
         type(dataset), "db_engine_spec", PropertyMock(return_value=engine_spec)
     )
     mocker.patch(
-        "superset.datasets.commands.validate_filter_target_transform."
+        "superset.commands.dataset.validate_filter_target_transform."
         "DatasetDAO.find_by_id",
         return_value=dataset,
     )
@@ -92,7 +92,7 @@ def test_invalid_expressions(
 
 def test_missing_dataset_raises(app: Flask, mocker: MockerFixture) -> None:
     mocker.patch(
-        "superset.datasets.commands.validate_filter_target_transform."
+        "superset.commands.dataset.validate_filter_target_transform."
         "DatasetDAO.find_by_id",
         return_value=None,
     )
