@@ -661,6 +661,29 @@ class PartitionMappingPreviewSchema(Schema):
     )
 
 
+class ValidateFilterTargetTransformSchema(Schema):
+    """Payload for validating a per-report filter value transform SQL.
+
+    The expression is a scalar SQL expression over the ``{col}`` placeholder
+    (the filter's default column), e.g.
+    ``CONCAT(SUBSTRING({col},1,4),LPAD(CAST(SUBSTRING({col},6,1) AS
+    UNSIGNED),2,'0'))``. Bound like ``PartitionMappingPreviewSchema``: the
+    endpoint parses the expression with sqlglot, so an unbounded string is
+    parser time an editor can spend at will.
+    """
+
+    expression = fields.String(
+        required=True,
+        validate=Length(1, 1000),
+        metadata={
+            "description": (
+                "Scalar SQL expression over the {col} placeholder, converting "
+                "a stored field value into the filter value's format."
+            )
+        },
+    )
+
+
 class DatasetCacheWarmUpRequestSchema(Schema):
     db_name = fields.String(
         required=True,

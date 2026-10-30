@@ -57,6 +57,9 @@ from superset.commands.dataset.importers.dispatcher import ImportDatasetsCommand
 from superset.commands.dataset.refresh import RefreshDatasetCommand
 from superset.commands.dataset.restore import RestoreDatasetCommand
 from superset.commands.dataset.update import UpdateDatasetCommand
+from superset.commands.dataset.validate_filter_target_transform import (
+    ValidateFilterTargetTransformCommand,
+)
 from superset.commands.dataset.warm_up_cache import DatasetWarmUpCacheCommand
 from superset.commands.deletion_retention.purge_impact import (
     DatasetPurgeImpact,
@@ -104,6 +107,7 @@ from superset.datasets.schemas import (
     GetOrCreateDatasetSchema,
     openapi_spec_methods_override,
     PartitionMappingPreviewSchema,
+    ValidateFilterTargetTransformSchema,
 )
 from superset.exceptions import (
     OAuth2RedirectError,
@@ -267,6 +271,9 @@ class DatasetRestApi(SoftDeleteApiMixin, BaseSupersetModelRestApi):
         # ``can_write`` on Dataset -- enough to store the mapping -- is denied
         # the preview of it unless an operator grants a second permission.
         "partition_mapping_preview": "write",
+        # Validating a per-report filter value transform is a read-only syntax
+        # and safety check, so it follows the read permission.
+        "validate_filter_target_transform": "read",
     }
     include_route_methods = RouteMethod.REST_MODEL_VIEW_CRUD_SET | {
         RouteMethod.EXPORT,
@@ -285,6 +292,7 @@ class DatasetRestApi(SoftDeleteApiMixin, BaseSupersetModelRestApi):
         "warm_up_cache",
         "get_drill_info",
         "partition_mapping_preview",
+        "validate_filter_target_transform",
         "list_versions",
         "get_version",
         "activity",
@@ -2292,6 +2300,88 @@ class DatasetRestApi(SoftDeleteApiMixin, BaseSupersetModelRestApi):
                 partition_column=payload["partition_column"],
             ),
         )
+
+    @expose("/<int:pk>/validate_filter_target_transform/", methods=("POST",))
+    @protect()
+    @safe
+    @statsd_metrics
+    @event_logger.log_this_with_context(
+        action=lambda self, *args, **kwargs: (
+            f"{self.__class__.__name__}.validate_filter_target_transform"
+        ),
+        log_to_statsd=False,
+    )
+    @requires_json
+    def validate_filter_target_transform(self, pk: int) -> Response:
+        """Validate a per-report filter value transform expression.
+        ---
+        post:
+          summary: Validate a per-report filter value transform expression
+          description: >-
+            Checks that a dashboard editor's value transform SQL is a single
+            parseable scalar expression over the {col} placeholder, with no
+            Jinja, executable comments, sequence reads or disallowed
+            functions. The check mirrors the shape and safety gates the query
+            path relies on, so a bad transform is caught in the editor
+            instead of failing every chart query that uses it.
+          parameters:
+          - in: path
+            schema:
+              type: integer
+            name: pk
+            description: The dataset ID
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ValidateFilterTargetTransformSchema'
+          responses:
+            200:
+              description: Validation result
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          valid:
+                            type: boolean
+                          errors:
+                            type: array
+                            items:
+                              type: string
+            400:
+              $ref: '#/components/responses/400'
+            401:
+              $ref: '#/components/responses/401'
+            403:
+              $ref: '#/components/responses/403'
+            404:
+              $ref: '#/components/responses/404'
+            500:
+              $ref: '#/components/responses/500'
+        """
+        dataset = DatasetDAO.find_by_id(pk)
+        if not dataset:
+            return self.response_404()
+        try:
+            security_manager.raise_for_editorship(dataset)
+        except SupersetSecurityException:
+            return self.response_403()
+        try:
+            payload = ValidateFilterTargetTransformSchema().load(request.json)
+        except ValidationError as error:
+            return self.response_400(message=error.messages)
+        try:
+            result = ValidateFilterTargetTransformCommand(
+                pk, payload["expression"]
+            ).run()
+        except DatasetNotFoundError:
+            return self.response_404()
+        return self.response(200, result=result)
 
     @expose("/<int:pk>/drill_info/", methods=("GET",))
     @protect()

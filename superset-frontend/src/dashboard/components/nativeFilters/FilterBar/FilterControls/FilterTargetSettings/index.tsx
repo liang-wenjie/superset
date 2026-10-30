@@ -429,6 +429,76 @@ const FilterTargetSettings = ({
     );
   };
 
+  // Per-row validation state of the value transform SQL: not yet validated,
+  // validating, valid, or invalid (with the backend's message).
+  type TransformValidation = {
+    status: 'idle' | 'validating' | 'valid' | 'invalid';
+    error?: string;
+  };
+  const [validations, setValidations] = useState<
+    Record<string, TransformValidation>
+  >({});
+
+  const validateTransform = async (row: TargetRow) => {
+    const expression = row.valueTransform.trim();
+    if (!expression) {
+      return;
+    }
+    setValidations(prev => ({
+      ...prev,
+      [row.datasourceKey]: { status: 'validating' },
+    }));
+    try {
+      const response = await fetch(
+        `/api/v1/dataset/${row.datasetId}/validate_filter_target_transform/`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expression }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const errorText = selectClientErrorMessage(
+          await getClientErrorObject(response),
+          t('An error has occurred'),
+        );
+        setValidations(prev => ({
+          ...prev,
+          [row.datasourceKey]: { status: 'invalid', error: errorText },
+        }));
+        return;
+      }
+      const result = payload?.result as
+        | { valid?: boolean; errors?: string[] }
+        | undefined;
+      if (result?.valid) {
+        setValidations(prev => ({
+          ...prev,
+          [row.datasourceKey]: { status: 'valid' },
+        }));
+      } else {
+        setValidations(prev => ({
+          ...prev,
+          [row.datasourceKey]: {
+            status: 'invalid',
+            error:
+              (result?.errors ?? []).join(' ') ||
+              t('The value transform SQL did not validate.'),
+          },
+        }));
+      }
+    } catch (error) {
+      setValidations(prev => ({
+        ...prev,
+        [row.datasourceKey]: {
+          status: 'invalid',
+          error: error instanceof Error ? error.message : String(error),
+        },
+      }));
+    }
+  };
+
   const handleSave = () => {
     const targets: Partial<NativeFilterTarget>[] = [];
     const [defaultTarget] = filter.targets ?? [];
@@ -702,7 +772,7 @@ const FilterTargetSettings = ({
                     <Tooltip
                       placement="top"
                       title={t(
-                        `SQL template applied to the column value before comparison. {col} is replaced with the quoted column name (the filter's default column). Example: ${DEFAULT_TRANSFORM_HINT} maps 2026.7月 to 202607.`,
+                        `Write a SQL expression that converts the stored field value into the filter value's format. {col} is replaced with the column name. Example: ${DEFAULT_TRANSFORM_HINT} maps 2026.7月 to 202607.`,
                       )}
                     >
                       <Icons.InfoCircleOutlined iconSize="s" />
@@ -711,15 +781,96 @@ const FilterTargetSettings = ({
                 }
                 style={{ marginBottom: 0 }}
               >
-                <Input
+                <Input.TextArea
                   value={row.valueTransform}
                   placeholder={DEFAULT_TRANSFORM_HINT}
+                  autoSize={{ minRows: 2, maxRows: 6 }}
                   onChange={e =>
                     updateRow(row.datasourceKey, {
                       valueTransform: e.target.value,
                     })
                   }
                 />
+                <div
+                  css={(theme: Theme) => css`
+                    display: flex;
+                    align-items: center;
+                    gap: ${theme.sizeUnit * 2}px;
+                    margin-top: ${theme.sizeUnit}px;
+                    font-size: ${theme.fontSizeSM}px;
+                  `}
+                >
+                  {(() => {
+                    const state = validations[row.datasourceKey];
+                    if (state?.status === 'validating') {
+                      return (
+                        <span
+                          css={(theme: Theme) => css`
+                            color: ${theme.colorTextTertiary};
+                          `}
+                        >
+                          {t('Validating…')}
+                        </span>
+                      );
+                    }
+                    if (state?.status === 'valid') {
+                      return (
+                        <span
+                          css={(theme: Theme) => css`
+                            color: ${theme.colorSuccess};
+                          `}
+                        >
+                          <Icons.CheckCircleOutlined iconSize="s" />{' '}
+                          {t('Validated')}
+                        </span>
+                      );
+                    }
+                    if (state?.status === 'invalid') {
+                      return (
+                        <span
+                          css={(theme: Theme) => css`
+                            color: ${theme.colorError};
+                          `}
+                        >
+                          <Icons.CloseCircleOutlined iconSize="s" />{' '}
+                          {t('Validation failed')}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span
+                        css={(theme: Theme) => css`
+                          color: ${theme.colorTextTertiary};
+                        `}
+                      >
+                        {t('Not validated')}
+                      </span>
+                    );
+                  })()}
+                  <Button
+                    size="small"
+                    disabled={
+                      !row.valueTransform.trim() ||
+                      validations[row.datasourceKey]?.status === 'validating'
+                    }
+                    onClick={() => validateTransform(row)}
+                  >
+                    {t('Validate')}
+                  </Button>
+                </div>
+                {validations[row.datasourceKey]?.status === 'invalid' &&
+                validations[row.datasourceKey]?.error ? (
+                  <div
+                    css={(theme: Theme) => css`
+                      margin-top: ${theme.sizeUnit}px;
+                      color: ${theme.colorError};
+                      font-size: ${theme.fontSizeSM}px;
+                      white-space: pre-wrap;
+                    `}
+                  >
+                    {validations[row.datasourceKey]?.error}
+                  </div>
+                ) : null}
               </FormItem>
             ) : null}
           </StyledFields>
