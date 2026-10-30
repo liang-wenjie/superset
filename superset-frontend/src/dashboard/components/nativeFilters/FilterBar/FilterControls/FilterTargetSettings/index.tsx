@@ -722,26 +722,6 @@ const FilterTargetSettings = ({
                 />
               </FormItem>
             ) : null}
-            {!row.isDefault &&
-            !row.column.trim() &&
-            !row.valueTransform.trim() ? (
-              <div
-                css={(theme: Theme) => css`
-                  display: flex;
-                  align-items: center;
-                  gap: ${theme.sizeUnit}px;
-                  color: ${theme.colorError};
-                  font-size: ${theme.fontSizeSM}px;
-                `}
-              >
-                <Icons.ExclamationCircleOutlined iconSize="s" />
-                <span>
-                  {t(
-                    'No mapping set: choose a column, or write a value transform SQL.',
-                  )}
-                </span>
-              </div>
-            ) : null}
           </StyledFields>
         </StyledRow>
       ))}
