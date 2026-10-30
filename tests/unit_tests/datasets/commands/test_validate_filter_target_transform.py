@@ -35,10 +35,15 @@ def _command(
     app: Flask,
     mocker: MockerFixture,
     expression: str,
+    columns: list[str] | None = None,
     engine_spec: object = MySQLEngineSpec,
 ) -> ValidateFilterTargetTransformCommand:
     """A command backed by a mocked dataset whose engine is MySQL."""
     dataset = mocker.MagicMock()
+    dataset.columns = [
+        mocker.MagicMock(column_name=column_name)
+        for column_name in (columns or [])
+    ]
     mocker.patch.object(
         type(dataset), "db_engine_spec", PropertyMock(return_value=engine_spec)
     )
@@ -62,6 +67,41 @@ def test_valid_expression(app: Flask, mocker: MockerFixture) -> None:
         result = command.run()
     assert result["valid"] is True
     assert result["errors"] == []
+
+
+def test_bare_column_of_the_table_validates(
+    app: Flask, mocker: MockerFixture
+) -> None:
+    """A naked column name of the table is a valid reference (like a custom
+    SQL expression column), e.g. ``报告月份``."""
+    command = _command(app, mocker, "报告月份", columns=["报告月份"])
+    with app.app_context():
+        result = command.run()
+    assert result["valid"] is True
+    assert result["errors"] == []
+
+
+def test_column_references_in_an_expression_are_checked(
+    app: Flask, mocker: MockerFixture
+) -> None:
+    """Referencing a field the table does not have is refused; referencing
+    its own fields (besides ``{col}``) is fine."""
+    bad = _command(
+        app, mocker, "CONCAT(报告月份, {col})", columns=["报告月份"]
+    )
+    with app.app_context():
+        result = bad.run()
+    assert result["valid"] is False
+    assert any(
+        "do not exist in this table" in error for error in result["errors"]
+    )
+
+    good = _command(
+        app, mocker, "CONCAT(报告月份, {col})", columns=["报告月份", "其他列"]
+    )
+    with app.app_context():
+        result = good.run()
+    assert result["valid"] is True
 
 
 @pytest.mark.parametrize(

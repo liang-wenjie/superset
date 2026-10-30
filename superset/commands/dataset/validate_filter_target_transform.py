@@ -27,8 +27,10 @@ the editor instead of failing every chart query that uses it.
 """
 from __future__ import annotations
 
+import sqlglot
 from flask import current_app as app
 from flask_babel import gettext as __
+from sqlglot import exp as sqlglot_exp
 
 from superset.commands.base import BaseCommand
 from superset.commands.dataset.exceptions import DatasetNotFoundError
@@ -48,6 +50,24 @@ from superset.sql.parse import SQLStatement
 #: Stand-in substituted for ``{col}`` before parsing: the placeholder itself
 #: is not a valid identifier in any dialect, and the parse gates need one.
 _COL_STANDIN = "__col"
+
+
+def _referenced_columns(expression: str, engine: str) -> set[str]:
+    """The column names a bare expression references.
+
+    Function names and literals are not columns, and the ``{col}`` stand-in is
+    the filter's own field (validated against the chart query's table at query
+    time), so it is excluded here.
+    """
+    try:
+        parsed = sqlglot.parse_one(f"SELECT {expression}", read=engine)
+    except Exception:  # pylint: disable=broad-except  # noqa: BLE001
+        return set()
+    return {
+        column.name
+        for column in parsed.find_all(sqlglot_exp.Column)
+        if column.name != _COL_STANDIN
+    }
 
 
 class ValidateFilterTargetTransformCommand(BaseCommand):
@@ -122,6 +142,22 @@ class ValidateFilterTargetTransformCommand(BaseCommand):
             )
         else:
             statement = SQLStatement(f"SELECT {expr}", engine)
+            # The transform may reference this table's own fields directly
+            # (like a custom SQL expression column), or the {col} placeholder
+            # for the filter's default field. Any other column name is a typo
+            # or a reference to a field this table does not have.
+            column_names = {
+                column.column_name for column in (dataset.columns or [])
+            }
+            unknown = _referenced_columns(expr, engine) - column_names
+            if unknown:
+                issues.append(
+                    __(
+                        "The value transform references field(s) that do not "
+                        "exist in this table: %(fields)s.",
+                        fields=", ".join(sorted(unknown)),
+                    )
+                )
             if references_sequence(statement):
                 issues.append(
                     __(

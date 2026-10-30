@@ -29,6 +29,7 @@ import {
   getClientErrorObject,
   NativeFilterTarget,
   selectClientErrorMessage,
+  SupersetClient,
 } from '@superset-ui/core';
 import {
   Modal,
@@ -449,27 +450,12 @@ const FilterTargetSettings = ({
       [row.datasourceKey]: { status: 'validating' },
     }));
     try {
-      const response = await fetch(
-        `/api/v1/dataset/${row.datasetId}/validate_filter_target_transform/`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expression }),
-        },
-      );
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const errorText = selectClientErrorMessage(
-          await getClientErrorObject(response),
-          t('An error has occurred'),
-        );
-        setValidations(prev => ({
-          ...prev,
-          [row.datasourceKey]: { status: 'invalid', error: errorText },
-        }));
-        return;
-      }
-      const result = payload?.result as
+      const response = await SupersetClient.post({
+        endpoint: `/api/v1/dataset/${row.datasetId}/validate_filter_target_transform/`,
+        body: JSON.stringify({ expression }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const result = response.json?.result as
         | { valid?: boolean; errors?: string[] }
         | undefined;
       if (result?.valid) {
@@ -489,12 +475,15 @@ const FilterTargetSettings = ({
         }));
       }
     } catch (error) {
+      const errorText = selectClientErrorMessage(
+        await getClientErrorObject(
+          error as Parameters<typeof getClientErrorObject>[0],
+        ),
+        t('An error has occurred'),
+      );
       setValidations(prev => ({
         ...prev,
-        [row.datasourceKey]: {
-          status: 'invalid',
-          error: error instanceof Error ? error.message : String(error),
-        },
+        [row.datasourceKey]: { status: 'invalid', error: errorText },
       }));
     }
   };
