@@ -647,6 +647,103 @@ class TestDatasourceApi(SupersetTestCase):
         assert set(json.loads(rv.data.decode("utf-8"))["result"]) == {"i", "j"}
 
     @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    def test_get_column_values_inherits_chart_comparison_operators(self):
+        """SIMPLE comparison operators (not just IN) narrow suggested values.
+
+        The adhoc spellings (``EQUALS``, ``GREATER_THAN_OR_EQUALS``, ``NOT_IN``)
+        differ from the SQL operator enum's symbol values (``==``, ``>=``,
+        ``NOT IN``); every supported operator must map onto the enum so e.g. a
+        chart filtered to ``col1 >= 8`` suggests only ``i``/``j``.
+        """
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+
+        cases: list[tuple[dict[str, Any], set[str]]] = [
+            (
+                {
+                    "clause": "WHERE",
+                    "expressionType": "SIMPLE",
+                    "subject": "col1",
+                    "operator": "GREATER_THAN_OR_EQUALS",
+                    "comparator": 8,
+                },
+                {"i", "j"},
+            ),
+            (
+                {
+                    "clause": "WHERE",
+                    "expressionType": "SIMPLE",
+                    "subject": "col1",
+                    "operator": "EQUALS",
+                    "comparator": 8,
+                },
+                {"i"},
+            ),
+            (
+                {
+                    "clause": "WHERE",
+                    "expressionType": "SIMPLE",
+                    "subject": "col1",
+                    "operator": "NOT_IN",
+                    "comparator": [8, 9],
+                },
+                {"a", "b", "c", "d", "e", "f", "g", "h"},
+            ),
+        ]
+        for flt, expected in cases:
+            with self.subTest(operator=flt["operator"]):
+                rv = self.client.get(
+                    f"api/v1/datasource/table/{table.id}/column/col2/values/",
+                    query_string={
+                        "chart_filters": json.dumps(
+                            {"adhoc_filters": [flt], "filters": []}
+                        )
+                    },
+                )
+                assert rv.status_code == 200
+                assert set(json.loads(rv.data.decode("utf-8"))["result"]) == expected
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    def test_get_column_values_skips_templated_sql_adhoc_filter(self):
+        """A free-form WHERE with Jinja time templates must not fail the request.
+
+        The values endpoint has no time-range context, so ``{{ from_dttm }}``
+        cannot be resolved; the predicate is skipped (values return unfiltered)
+        instead of 500-ing every inline filter dropdown on the dashboard.
+        """
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        chart_filters = {
+            "adhoc_filters": [
+                {
+                    "clause": "WHERE",
+                    "expressionType": "SQL",
+                    "sqlExpression": (
+                        "col1 >= {{ from_dttm }} AND col1 <= {{ to_dttm }}"
+                    ),
+                }
+            ],
+            "filters": [],
+        }
+        rv = self.client.get(
+            f"api/v1/datasource/table/{table.id}/column/col2/values/",
+            query_string={"chart_filters": json.dumps(chart_filters)},
+        )
+        assert rv.status_code == 200
+        assert set(json.loads(rv.data.decode("utf-8"))["result"]) == {
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+        }
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
     @patch("superset.models.helpers.ExploreMixin.values_for_column")
     def test_get_column_values_chart_filters_are_cache_isolated(
         self, values_for_column_mock

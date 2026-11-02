@@ -253,6 +253,59 @@ def build_like_predicate(
     return sa.func.lower(expr).contains(search.lower(), autoescape=True)
 
 
+# Adhoc filters spell operators with semantic names ("EQUALS",
+# "GREATER_THAN_OR_EQUALS", "NOT_IN", "IS NULL"), while legacy query-object
+# filters spell them as symbols ("==", ">=", "!=", "not in", "is null") and
+# Superset's SQL operator enum uses the legacy symbols as its values. Map the
+# adhoc spellings onto the enum so chart filters narrow distinct values for
+# every supported operator, not only those whose name coincides with the enum
+# value ("IN", "IS NULL", "IS TRUE", ...).
+_CHART_FILTER_OPERATOR_MAP: dict[str, utils.FilterOperator] = {
+    "==": utils.FilterOperator.EQUALS,
+    "EQUALS": utils.FilterOperator.EQUALS,
+    "!=": utils.FilterOperator.NOT_EQUALS,
+    "NOT_EQUALS": utils.FilterOperator.NOT_EQUALS,
+    ">": utils.FilterOperator.GREATER_THAN,
+    "GREATER_THAN": utils.FilterOperator.GREATER_THAN,
+    "<": utils.FilterOperator.LESS_THAN,
+    "LESS_THAN": utils.FilterOperator.LESS_THAN,
+    ">=": utils.FilterOperator.GREATER_THAN_OR_EQUALS,
+    "GREATER_THAN_OR_EQUALS": utils.FilterOperator.GREATER_THAN_OR_EQUALS,
+    "<=": utils.FilterOperator.LESS_THAN_OR_EQUALS,
+    "LESS_THAN_OR_EQUALS": utils.FilterOperator.LESS_THAN_OR_EQUALS,
+    "IN": utils.FilterOperator.IN,
+    "NOT IN": utils.FilterOperator.NOT_IN,
+    "NOT_IN": utils.FilterOperator.NOT_IN,
+    "LIKE": utils.FilterOperator.LIKE,
+    "NOT LIKE": utils.FilterOperator.NOT_LIKE,
+    "NOT_LIKE": utils.FilterOperator.NOT_LIKE,
+    "ILIKE": utils.FilterOperator.ILIKE,
+    "NOT ILIKE": utils.FilterOperator.NOT_ILIKE,
+    "NOT_ILIKE": utils.FilterOperator.NOT_ILIKE,
+    "IS NULL": utils.FilterOperator.IS_NULL,
+    "IS_NULL": utils.FilterOperator.IS_NULL,
+    "IS NOT NULL": utils.FilterOperator.IS_NOT_NULL,
+    "IS_NOT_NULL": utils.FilterOperator.IS_NOT_NULL,
+    "IS TRUE": utils.FilterOperator.IS_TRUE,
+    "IS_TRUE": utils.FilterOperator.IS_TRUE,
+    "IS FALSE": utils.FilterOperator.IS_FALSE,
+    "IS_FALSE": utils.FilterOperator.IS_FALSE,
+    "TEMPORAL_RANGE": utils.FilterOperator.TEMPORAL_RANGE,
+}
+
+
+def _chart_filter_to_sqla_operator(
+    flt_op: str,
+) -> utils.FilterOperator | None:
+    """Resolve an adhoc/legacy filter operator to its SQL operator enum.
+
+    Unknown or unsupported operators (regex, element-level array operators,
+    length comparisons) resolve to ``None`` and the filter is skipped rather
+    than failing the distinct-values request.
+    """
+    return _CHART_FILTER_OPERATOR_MAP.get(flt_op.upper())
+
+
 def _is_parenthesized(sqla_col: ColumnElement) -> bool:
     """
     Return ``True`` when ``sqla_col`` is already wrapped in a ``Grouping``.
@@ -6038,14 +6091,24 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             "where"
         )
         if where_sql:
-            processed_where = self._process_select_expression(
-                expression=where_sql,
-                engine=self.database.backend,
-                schema=self.schema,
-                template_processor=tp,
-            )
-            if processed_where:
-                qry = qry.where(Grouping(self.text(processed_where)))
+            # Free-form WHERE clauses that reference Jinja time templates
+            # (``{{ from_dttm }}`` / ``{{ to_dttm }}``) cannot be evaluated
+            # here: the values endpoint has no time-range context, so an
+            # unresolved template would fail the whole distinct query (500)
+            # and every inline filter dropdown would show "No data". Skip
+            # such predicates; SIMPLE and legacy column filters above still
+            # narrow the suggestions, and template-free SQL applies as-is.
+            if "{{" in where_sql or "{%" in where_sql:
+                where_sql = None
+            else:
+                processed_where = self._process_select_expression(
+                    expression=where_sql,
+                    engine=self.database.backend,
+                    schema=self.schema,
+                    template_processor=tp,
+                )
+                if processed_where:
+                    qry = qry.where(Grouping(self.text(processed_where)))
 
         if limit:
             qry = qry.limit(limit)
@@ -6110,9 +6173,8 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         flt_op = flt.get("op")
         if not flt_col or not flt_op:
             return None
-        try:
-            operator = utils.FilterOperator(str(flt_op).upper())
-        except ValueError:
+        operator = _chart_filter_to_sqla_operator(str(flt_op))
+        if operator is None:
             return None
         col_obj = self._get_filter_column(str(flt_col), cols)
         if col_obj is None:
