@@ -958,6 +958,22 @@ test('should NOT render MetadataBar when embedded', () => {
   ).not.toBeInTheDocument();
 });
 
+test('should not crash when editors are missing from the API response', () => {
+  // Guest users do not receive the `editors` field at all, so the metadata
+  // bar must degrade (its editor info falls back to "None") instead of
+  // reading .length off undefined.
+  const state = {
+    dashboardInfo: {
+      ...initialState.dashboardInfo,
+      editors: undefined,
+    },
+  };
+  expect(() => setup(state)).not.toThrow();
+  expect(
+    screen.getByText(state.dashboardInfo.changed_on_delta_humanized),
+  ).toBeInTheDocument();
+});
+
 test('should hide edit button and navbar, and show Exit fullscreen when in fullscreen mode', () => {
   const fullscreenState = {
     ...initialState,

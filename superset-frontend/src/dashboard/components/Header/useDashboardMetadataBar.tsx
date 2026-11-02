@@ -35,9 +35,12 @@ export const useDashboardMetadataBar = (dashboardInfo: DashboardInfo) => {
       {
         type: MetadataType.Editor as const,
         createdBy: getUserName(dashboardInfo.created_by) || t('Not available'),
+        // The API omits `editors` for guest users (see the dashboard response
+        // schema), so fall back to an empty list instead of reading .length
+        // off undefined.
         editors:
-          dashboardInfo.editors.length > 0
-            ? dashboardInfo.editors.map(getUserName)
+          (dashboardInfo.editors ?? []).length > 0
+            ? (dashboardInfo.editors ?? []).map(getUserName)
             : t('None'),
         createdOn: dashboardInfo.created_on_delta_humanized,
       },
