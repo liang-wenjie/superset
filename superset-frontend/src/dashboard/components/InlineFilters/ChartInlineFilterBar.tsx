@@ -168,7 +168,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    filters,
+    JSON.stringify(filters),
     datasourceId,
     datasourceType,
     JSON.stringify(selection),

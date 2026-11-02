@@ -787,6 +787,43 @@ class TestDatasourceApi(SupersetTestCase):
         )
 
     @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    @patch("superset.models.helpers.ExploreMixin.values_for_column")
+    def test_get_column_values_chart_filters_are_cache_hit(
+        self, values_for_column_mock
+    ):
+        """Equal chart filters share one cached distinct query.
+
+        A dashboard re-mounting (or the inline bar re-rendering with the same
+        chart filters) must not re-execute the distinct query on every pass;
+        the second request with identical ``chart_filters`` should be served
+        from cache.
+        """
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        values_for_column_mock.return_value = ["x"]
+        base = f"api/v1/datasource/table/{table.id}/column/col2/values/"
+        chart_filters = {
+            "adhoc_filters": [
+                {
+                    "clause": "WHERE",
+                    "expressionType": "SIMPLE",
+                    "subject": "col1",
+                    "operator": "IN",
+                    "comparator": [1, 2],
+                }
+            ],
+            "filters": [],
+        }
+        for _ in range(2):
+            rv = self.client.get(
+                base,
+                query_string={"chart_filters": json.dumps(chart_filters)},
+            )
+            assert rv.status_code == 200
+            assert json.loads(rv.data.decode("utf-8"))["result"] == ["x"]
+        assert values_for_column_mock.call_count == 1
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
     def test_get_column_values_returns_applied_limit(self):
         """The client needs the limit to tell a short list from a truncated
         one, so it can say the list is partial instead of implying it is whole."""

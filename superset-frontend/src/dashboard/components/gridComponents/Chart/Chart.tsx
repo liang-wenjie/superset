@@ -423,6 +423,14 @@ const Chart = (props: ChartProps) => {
 
   const showInlineFilterBar = inlineFilterConfig.length > 0 && !editMode;
 
+  // Resolve the datasource id/type from the form-data key ("{id}__{type}") so
+  // the inline filter values fetch can start in the same tick as the chart
+  // query, without waiting for the datasource metadata slice to arrive.
+  const inlineFilterDatasourceKey = (chart?.form_data as JsonObject | undefined)
+    ?.datasource as string | undefined;
+  const [inlineFilterDatasourceId, inlineFilterDatasourceType] =
+    inlineFilterDatasourceKey?.split('__') ?? [undefined, undefined];
+
   const getChartHeight = useCallback((): number => {
     const headerHeight = getHeaderHeight();
     const queriedLabelHeight =
@@ -871,8 +879,8 @@ const Chart = (props: ChartProps) => {
         <DashboardInlineFilterBar
           chartId={props.id}
           rawConfig={inlineFilterConfig}
-          datasourceId={datasource?.id}
-          datasourceType={datasource?.type}
+          datasourceId={inlineFilterDatasourceId ?? datasource?.id}
+          datasourceType={inlineFilterDatasourceType ?? datasource?.type}
           chartAdhocFilters={
             (chart?.form_data as JsonObject | undefined)?.adhoc_filters as
               | JsonObject[]
