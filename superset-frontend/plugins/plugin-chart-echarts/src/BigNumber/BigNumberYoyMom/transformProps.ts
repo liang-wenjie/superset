@@ -428,58 +428,18 @@ export default function transformProps(
     typeof comparisonFontSize === 'number'
       ? comparisonFontSize
       : Number(comparisonFontSize) || DEFAULT_COMPARISON_FONT_SIZE;
-  const comparisonFontSizePx =
+  const requestedComparisonFontSizePx =
     comparisonFontSizeValue <= 1
       ? Math.ceil(comparisonFontSizeValue * height)
       : Math.ceil(comparisonFontSizeValue);
   const titleRowHeight = titleFontSizePx * 1.2;
   const bigNumberRowHeight = bigNumberFontSizePx * 1.2;
-  const comparisonRowHeight = comparisonFontSizePx * 1.2;
   const titleTopValue = normalizePosition(titleTop);
   const bigNumberTopValue = normalizePosition(bigNumberTop);
   const comparisonTopValue = normalizePosition(comparisonTop);
   const hasComparison =
     (showComparison1 && !!(comparison1Offset || comparison1Column)) ||
     (showComparison2 && !!(comparison2Offset || comparison2Column));
-  // Match the Big Number family: the complete text stack is centered in the
-  // tile. The configured top values remain minimum padding, while the gap
-  // controls preserve the spacing inside the stack.
-  const contentHeight =
-    (hasTitle ? titleRowHeight + bigNumberTopValue : 0) +
-    bigNumberRowHeight +
-    (hasComparison ? comparisonTopValue + comparisonRowHeight : 0);
-  const contentTop = Math.max(titleTopValue, (height - contentHeight) / 2);
-  const effectiveTitleTop = hasTitle ? contentTop : titleTopValue;
-  const effectiveBigNumberTop = hasTitle
-    ? contentTop + titleRowHeight + bigNumberTopValue
-    : contentTop;
-  const effectiveComparisonTop =
-    effectiveBigNumberTop + bigNumberRowHeight + comparisonTopValue;
-
-  if (headerText) {
-    graphic.push({
-      type: 'text',
-      left: titleLeft,
-      top: effectiveTitleTop,
-      style: {
-        text: headerText,
-        fontSize: titleFontSizePx,
-        fill: toCssColor(titleColor, defaultTitleColor),
-      },
-    });
-  }
-
-  graphic.push({
-    type: 'text',
-    left: bigNumberLeft,
-    top: effectiveBigNumberTop,
-    style: {
-      text: bigNumberText,
-      fontSize: bigNumberFontSizePx,
-      fontWeight: 'bold',
-      fill: toCssColor(bigNumberColor, defaultBigNumberColor),
-    },
-  });
 
   const positiveColor = toCssColor(
     comparisonPositiveColor,
@@ -570,11 +530,7 @@ export default function transformProps(
     // rendered in the no-change color with no trend arrow.
     const withinThreshold = Math.abs(percent) <= comparisonThreshold;
     const arrow =
-      !comparisonShowArrow || withinThreshold
-        ? ''
-        : percent > 0
-          ? '↑'
-          : '↓';
+      !comparisonShowArrow || withinThreshold ? '' : percent > 0 ? '↑' : '↓';
     return {
       text: `${labelPrefix}${arrow}${formatter(Math.abs(percent))}`,
       fill: withinThreshold
@@ -615,6 +571,71 @@ export default function transformProps(
     formatter: percentFormatter2,
     valueFormatter: valueFormatter2,
   });
+  // Comparison slots render side by side (MoM / YoY) and, like the big
+  // number, are clipped at the canvas edge when the tile is narrow. Both
+  // slots start at comparisonLeft and align to the widest text, so the row
+  // occupies `left + widest + gap + widest` at most. Shrink the font
+  // proportionally when that exceeds the tile width, mirroring the big
+  // number auto-size logic, while keeping a floor so the row stays readable.
+  const comparison1TextWidth = comparison1Content
+    ? estimateTextWidth(comparison1Content.text, requestedComparisonFontSizePx)
+    : 0;
+  const comparison2TextWidth = comparison2Content
+    ? estimateTextWidth(comparison2Content.text, requestedComparisonFontSizePx)
+    : 0;
+  const widestComparisonTextWidth = Math.max(
+    comparison1TextWidth,
+    comparison2TextWidth,
+  );
+  const bothComparisonsShown = !!comparison1Content && !!comparison2Content;
+  const estimatedComparisonRowWidth =
+    comparisonLeft +
+    (bothComparisonsShown
+      ? widestComparisonTextWidth * 2 + comparisonGapPx
+      : widestComparisonTextWidth);
+  const comparisonAvailableWidth = Math.max(
+    0,
+    width - comparisonLeft - DEFAULT_BIG_NUMBER_LEFT,
+  );
+  // The floor is an absolute pixel size like the big number's: a proportional
+  // floor (e.g. 50%) would block the shrink on narrow tiles and let the row
+  // overflow again. ceil() on each slot's estimated width can still leave the
+  // row a few pixels over, so re-measure at the shrunk size and refine once.
+  const minComparisonFontSizePx = 10;
+  let comparisonFontSizePx = requestedComparisonFontSizePx;
+  if (
+    comparisonAvailableWidth > 0 &&
+    estimatedComparisonRowWidth > comparisonAvailableWidth
+  ) {
+    comparisonFontSizePx = Math.max(
+      minComparisonFontSizePx,
+      Math.floor(
+        (requestedComparisonFontSizePx * comparisonAvailableWidth) /
+          estimatedComparisonRowWidth,
+      ),
+    );
+    const shrunkWidestWidth = Math.max(
+      comparison1Content
+        ? estimateTextWidth(comparison1Content.text, comparisonFontSizePx)
+        : 0,
+      comparison2Content
+        ? estimateTextWidth(comparison2Content.text, comparisonFontSizePx)
+        : 0,
+    );
+    const shrunkRowWidth =
+      comparisonLeft +
+      (bothComparisonsShown
+        ? shrunkWidestWidth * 2 + comparisonGapPx
+        : shrunkWidestWidth);
+    if (shrunkRowWidth > comparisonAvailableWidth) {
+      comparisonFontSizePx = Math.max(
+        minComparisonFontSizePx,
+        Math.floor(
+          (comparisonFontSizePx * comparisonAvailableWidth) / shrunkRowWidth,
+        ),
+      );
+    }
+  }
   const comparisonWidth = Math.max(
     comparison1Content
       ? estimateTextWidth(comparison1Content.text, comparisonFontSizePx)
@@ -633,6 +654,48 @@ export default function transformProps(
       : swapComparisonOrder
         ? [comparisonLeft + comparisonWidth + comparisonGapPx, comparisonLeft]
         : [comparisonLeft, comparisonLeft + comparisonWidth + comparisonGapPx];
+
+  // Match the Big Number family: the complete text stack is centered in the
+  // tile. Heights use the post auto-size font sizes so the stack stays
+  // centered with the final layout. The configured top values remain minimum
+  // padding, while the gap controls preserve the spacing inside the stack.
+  const comparisonRowHeight = comparisonFontSizePx * 1.2;
+  const contentHeight =
+    (hasTitle ? titleRowHeight + bigNumberTopValue : 0) +
+    bigNumberRowHeight +
+    (hasComparison ? comparisonTopValue + comparisonRowHeight : 0);
+  const contentTop = Math.max(titleTopValue, (height - contentHeight) / 2);
+  const effectiveTitleTop = hasTitle ? contentTop : titleTopValue;
+  const effectiveBigNumberTop = hasTitle
+    ? contentTop + titleRowHeight + bigNumberTopValue
+    : contentTop;
+  const effectiveComparisonTop =
+    effectiveBigNumberTop + bigNumberRowHeight + comparisonTopValue;
+
+  if (headerText) {
+    graphic.push({
+      type: 'text',
+      left: titleLeft,
+      top: effectiveTitleTop,
+      style: {
+        text: headerText,
+        fontSize: titleFontSizePx,
+        fill: toCssColor(titleColor, defaultTitleColor),
+      },
+    });
+  }
+
+  graphic.push({
+    type: 'text',
+    left: bigNumberLeft,
+    top: effectiveBigNumberTop,
+    style: {
+      text: bigNumberText,
+      fontSize: bigNumberFontSizePx,
+      fontWeight: 'bold',
+      fill: toCssColor(bigNumberColor, defaultBigNumberColor),
+    },
+  });
 
   const pushComparison = (
     content: { text: string; fill: string } | null,
