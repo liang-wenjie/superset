@@ -18,10 +18,9 @@
  */
 
 /**
- * Ace positions the caret on a monospace grid (`column × charWidth`) and
- * renders anything it classifies as "full width" inside a forced
- * `2 × charWidth` inline-block (`.ace_cjk`), so the grid model and the pixels
- * agree. Its width tables only cover East-Asian ranges, though:
+ * Ace positions the caret on a monospace grid (`column × charWidth`). This
+ * patch handles BMP emoji whose visual width does not match Ace's default
+ * column accounting; CJK glyphs retain Ace's native handling.
  *
  * - Astral emoji (💡, surrogate pairs) happen to work: the renderer's
  *   surrogate-pair branch forces the 2-cell box and the column counter
@@ -150,7 +149,6 @@ export function patchAceEmojiWidths(
   patched = true;
 
   const sessionProto = EditSession.prototype;
-  const { isFullWidth } = sessionProto;
 
   // Mirrors EditSession.prototype.$getStringScreenWidth from ace-builds
   // (src-noconflict/ace.js), adding the emojiWidth branch.
@@ -173,8 +171,6 @@ export function patchAceEmojiWidths(
         screen += this.getScreenTabSize(screen);
       } else if (emoji !== null) {
         screen += emoji;
-      } else if (c >= 0x1100 && isFullWidth(c)) {
-        screen += 2;
       } else {
         screen += 1;
       }
@@ -224,8 +220,6 @@ export function patchAceEmojiWidths(
         arr.push(SPACE);
       } else if ((c > 39 && c < 48) || (c > 57 && c < 64)) {
         arr.push(PUNCTUATION);
-      } else if (c >= 0x1100 && isFullWidth(c)) {
-        arr.push(CHAR, CHAR_EXT);
       } else {
         arr.push(CHAR);
       }
