@@ -66,6 +66,10 @@ UNSUPPORTED_FRONTEND_PRESETS: frozenset[str] = frozenset(
 DEFAULT_LOCALE: str = "en"
 CURRENCY_SYMBOL_LOCALE: str = "en_US"
 
+# Mirrors CJK_SYMBOL_REGEX in currency-format/symbolPosition.ts. Custom CJK
+# unit suffixes are attached to the number without an intervening space.
+CJK_SYMBOL_RE = re.compile(r"[\u2e80-\u9fff\u3000-\u303f\uff00-\uffef]")
+
 # SI prefixes keyed by their power-of-1000 exponent, mirroring d3-format.
 SI_PREFIXES: dict[int, str] = {
     -8: "y",
@@ -569,6 +573,8 @@ def apply_currency(formatted: str, currency: dict[str, Any]) -> str:
 
     Mirrors ``currency-format/CurrencyFormatter.ts::format``: percentage signs
     are removed, explicit positions win, and an unset position is locale-driven.
+    CJK unit suffixes (元, 万元, ...) are written directly against the number,
+    matching ``currency-format/symbolPosition.ts::formatWithSymbolPosition``.
 
     :return: the number with a prefix or suffix currency symbol
     """
@@ -578,9 +584,10 @@ def apply_currency(formatted: str, currency: dict[str, Any]) -> str:
     position = currency.get("symbolPosition")
     if position not in ("prefix", "suffix"):
         position = resolve_symbol_position(code, get_currency_locale())
+    separator = "" if CJK_SYMBOL_RE.search(symbol) else " "
     if position == "prefix":
-        return f"{symbol} {normalized}"
-    return f"{normalized} {symbol}"
+        return f"{symbol}{separator}{normalized}"
+    return f"{normalized}{separator}{symbol}"
 
 
 def trim_trailing_zeros(formatted: str) -> str:

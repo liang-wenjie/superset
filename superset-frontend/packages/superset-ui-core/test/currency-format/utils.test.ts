@@ -213,6 +213,19 @@ test('getValueFormatter with currency from control panel when no saved currencie
   });
 });
 
+test('getValueFormatter renders a custom CJK currency suffix', () => {
+  const formatter = getValueFormatter(
+    'sum__num',
+    {},
+    {},
+    ',.2f',
+    { symbol: '元', symbolPosition: 'suffix' },
+    undefined,
+  );
+  expect(formatter).toBeInstanceOf(CurrencyFormatter);
+  expect((formatter as CurrencyFormatter)(1758.78)).toEqual('1,758.78元');
+});
+
 test('getValueFormatter return NumberFormatter when no currency formatters', () => {
   const formatter = getValueFormatter(
     ['count', 'sum__num'],

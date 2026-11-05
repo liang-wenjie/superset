@@ -48,13 +48,27 @@ interface CurrencyFormatter {
   ): string;
 }
 
-export const getCurrencySymbol = (currency: Partial<Currency>) =>
-  new Intl.NumberFormat('en-US', {
+export const getCurrencySymbol = (currency: Partial<Currency>) => {
+  const { symbol } = currency;
+  // Symbols typed into the "Custom..." option of the Currency control are
+  // free-form labels (元, 万元, pts, ...) rather than ISO 4217 codes. Intl
+  // throws a RangeError for anything that is not a three-letter code, and
+  // CurrencyFormatter swallows that error, silently dropping the symbol.
+  // Keep ISO codes on the localized path and use custom labels verbatim.
+  if (
+    symbol &&
+    symbol !== AUTO_CURRENCY_SYMBOL &&
+    !ISO_4217_REGEX.test(symbol.toUpperCase())
+  ) {
+    return symbol;
+  }
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: currency.symbol,
+    currency: symbol,
   })
     .formatToParts(1)
     .find(x => x.type === 'currency')?.value;
+};
 
 export function normalizeCurrency(value: RowDataValue): string | null {
   if (value === null || value === undefined) return null;

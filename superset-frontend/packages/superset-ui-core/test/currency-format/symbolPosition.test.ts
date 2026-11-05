@@ -72,3 +72,18 @@ test('formatWithSymbolPosition places the symbol according to the position', () 
   expect(formatWithSymbolPosition('$', '1,000', 'prefix')).toEqual('$ 1,000');
   expect(formatWithSymbolPosition('€', '1,000', 'suffix')).toEqual('1,000 €');
 });
+
+test('formatWithSymbolPosition omits the space for CJK unit suffixes', () => {
+  expect(formatWithSymbolPosition('元', '1,758.78', 'suffix')).toEqual(
+    '1,758.78元',
+  );
+  expect(formatWithSymbolPosition('万元', '3.81', 'suffix')).toEqual(
+    '3.81万元',
+  );
+  expect(formatWithSymbolPosition('元', '1,758.78', 'prefix')).toEqual(
+    '元1,758.78',
+  );
+  expect(formatWithSymbolPosition('ZZZ', '1,000', 'prefix')).toEqual(
+    'ZZZ 1,000',
+  );
+});

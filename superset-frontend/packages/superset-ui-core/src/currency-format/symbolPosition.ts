@@ -83,11 +83,18 @@ export function resolveSymbolPosition(
 
 /**
  * Combine a symbol and a formatted value according to the resolved position.
+ * CJK unit suffixes (元, 万元, ...) are written directly against the number
+ * in Chinese; latin currency symbols keep the separating space.
  */
+const CJK_SYMBOL_REGEX = /[\u2E80-\u9FFF\u3000-\u303F\uFF00-\uFFEF]/;
+
 export function formatWithSymbolPosition(
   symbol: string,
   value: string,
   position: SymbolPosition,
 ): string {
-  return position === 'prefix' ? `${symbol} ${value}` : `${value} ${symbol}`;
+  const separator = CJK_SYMBOL_REGEX.test(symbol) ? '' : ' ';
+  return position === 'prefix'
+    ? `${symbol}${separator}${value}`
+    : `${value}${separator}${symbol}`;
 }

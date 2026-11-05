@@ -61,6 +61,9 @@ def test_format_number(d3_format: str | None, value: Any, expected: Any) -> None
         ({"symbol": "EUR", "symbolPosition": "suffix"}, 1234.5, "1,234.50 €"),
         ({"symbol": "BRL", "symbolPosition": None}, 1234.5, "R$ 1,234.50"),
         ({"symbol": "ZZZ", "symbolPosition": None}, 1234.5, "ZZZ 1,234.50"),
+        ({"symbol": "元", "symbolPosition": "suffix"}, 1234.5, "1,234.50元"),
+        ({"symbol": "万元", "symbolPosition": "suffix"}, 1234.5, "1,234.50万元"),
+        ({"symbol": "元", "symbolPosition": "prefix"}, 1234.5, "元1,234.50"),
     ],
 )
 def test_format_number_with_currency(

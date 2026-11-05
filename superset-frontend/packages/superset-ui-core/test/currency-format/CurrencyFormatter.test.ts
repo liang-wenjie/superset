@@ -37,9 +37,36 @@ test('getCurrencySymbol', () => {
     getCurrencySymbol({ symbol: 'USD', symbolPosition: 'prefix' }),
   ).toEqual('$');
 
-  expect(() =>
+  // Custom labels entered through the Currency control are not ISO codes and
+  // must be used verbatim instead of throwing (and being silently dropped).
+  expect(getCurrencySymbol({ symbol: '元', symbolPosition: 'suffix' })).toEqual(
+    '元',
+  );
+  expect(
+    getCurrencySymbol({ symbol: '万元', symbolPosition: 'suffix' }),
+  ).toEqual('万元');
+  expect(
     getCurrencySymbol({ symbol: 'INVALID_CODE', symbolPosition: 'prefix' }),
+  ).toEqual('INVALID_CODE');
+
+  // AUTO is a sentinel resolved before symbol lookup, so keep it invalid.
+  expect(() =>
+    getCurrencySymbol({ symbol: 'AUTO', symbolPosition: 'prefix' }),
   ).toThrow(RangeError);
+});
+
+test('CurrencyFormatter renders a custom CJK suffix', () => {
+  const formatter = new CurrencyFormatter({
+    currency: { symbol: '元', symbolPosition: 'suffix' },
+    d3Format: ',.2f',
+  });
+  expect(formatter(1758.78)).toEqual('1,758.78元');
+
+  const wanFormatter = new CurrencyFormatter({
+    currency: { symbol: '万元', symbolPosition: 'suffix' },
+    d3Format: ',.2f',
+  });
+  expect(wanFormatter(3808637.34)).toEqual('3,808,637.34万元');
 });
 
 test('CurrencyFormatter object fields', () => {
@@ -186,14 +213,14 @@ test('CurrencyFormatter static mode ignores row context', () => {
   expect(formatter.format(1000, row, 'currency')).toContain('$');
 });
 
-test('CurrencyFormatter gracefully handles invalid currency code', () => {
+test('CurrencyFormatter renders non-ISO custom symbols verbatim', () => {
   const formatter = new CurrencyFormatter({
     currency: { symbol: 'INVALID_CODE', symbolPosition: 'prefix' },
     d3Format: ',.2f',
   });
 
-  // Should not throw, should return formatted value without currency symbol
-  expect(formatter.format(1000)).toBe('1,000.00');
+  // Free-form labels must not throw or be silently dropped.
+  expect(formatter.format(1000)).toBe('INVALID_CODE 1,000.00');
 });
 
 test('CurrencyFormatter AUTO mode uses suffix position from row context', () => {
