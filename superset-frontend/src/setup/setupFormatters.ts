@@ -32,6 +32,7 @@ import {
   setCurrencyLocale,
   createLengthFormatter,
   createThroughputFormatter,
+  createChineseUnitFormatter,
   FormatLocaleDefinition,
 } from '@superset-ui/core';
 import { TimeLocaleDefinition } from 'd3-time-format';
@@ -121,6 +122,18 @@ export default function setupFormatters(
     .registerValue(
       'LENGTH_CM_M',
       createLengthFormatter({ convertType: 'cm => m' }),
+    )
+    .registerValue(
+      'CHINESE_WAN',
+      createChineseUnitFormatter({ id: 'CHINESE_WAN' }),
+    )
+    .registerValue(
+      'CHINESE_YI',
+      createChineseUnitFormatter({ id: 'CHINESE_YI' }),
+    )
+    .registerValue(
+      'CHINESE_WANYI',
+      createChineseUnitFormatter({ id: 'CHINESE_WANYI' }),
     );
 
   const timeFormatterRegistry = getTimeFormatterRegistry();

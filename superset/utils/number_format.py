@@ -63,6 +63,28 @@ UNSUPPORTED_FRONTEND_PRESETS: frozenset[str] = frozenset(
     }
 )
 
+# Fixed Chinese large-number units (10^4 steps), mirroring
+# number-format/factories/createChineseUnitFormatter.ts. Values are divided by
+# the divisor and the suffix is appended, e.g. 3808637.34 -> "380.86万".
+CHINESE_UNIT_FORMATS: dict[str, tuple[int, str]] = {
+    "CHINESE_WAN": (10**4, "万"),
+    "CHINESE_YI": (10**8, "亿"),
+    "CHINESE_WANYI": (10**12, "万亿"),
+}
+
+# Specifier grammar mirrors parseChineseUnitFormat() in
+# number-format/factories/createChineseUnitFormatter.ts: an optional leading
+# zero-pad flag, sign, thousands separator, precision, trim flag and optional
+# `f` type, followed by a Chinese unit. Longest suffix first (万亿 > 亿 > 万).
+CHINESE_UNIT_SPECIFIER_RE = re.compile(
+    r"^0?([+-]?)(,?)(?:\.(\d+))?(~?)(f?)(万亿|亿|万)$"
+)
+CHINESE_UNIT_DIVISORS: dict[str, int] = {
+    "万": 10**4,
+    "亿": 10**8,
+    "万亿": 10**12,
+}
+
 DEFAULT_LOCALE: str = "en"
 CURRENCY_SYMBOL_LOCALE: str = "en_US"
 
@@ -214,18 +236,60 @@ def format_number_with_config(
         return raw_string(value)
 
 
+def parse_chinese_unit_specifier(
+    d3_format: str,
+) -> tuple[str, int, str] | None:
+    """
+    Parse ``,.1万`` into a (d3 fixed-point specifier, divisor, suffix) triple.
+
+    Mirrors ``parseChineseUnitFormat.ts``. A missing ``f`` type is added so the
+    number after the dot means decimal places rather than significant digits.
+
+    :return: the parsed triple, or ``None`` when the specifier is not Chinese
+    """
+    match = CHINESE_UNIT_SPECIFIER_RE.match(d3_format)
+    if not match:
+        return None
+    sign, comma, precision, trim, ftype, suffix = match.groups()
+    # A bare unit ("万") carries no precision; the fixed format ids cover it.
+    if not precision and not ftype:
+        return None
+    prefix = f"{sign}{comma}{f'.{precision}' if precision else ''}{trim}{ftype or 'f'}"
+    return prefix, CHINESE_UNIT_DIVISORS[suffix], suffix
+
+
+def format_chinese_unit(d3_format: str, value: float) -> str:
+    """
+    Scale ``value`` by a fixed Chinese unit and append its suffix.
+
+    Mirrors ``number-format/factories/createChineseUnitFormatter.ts``: two
+    decimals with a thousands separator, and the sign on the scaled number.
+
+    :return: the scaled value with a 万 / 亿 / 万亿 suffix
+    """
+    divisor, suffix = CHINESE_UNIT_FORMATS[d3_format]
+    return f"{value / divisor:,.2f}{suffix}"
+
+
 def format_numeric(d3_format: str, value: float) -> str:
     """
     Format ``value`` according to a d3 number format.
 
     Delegates to the port of ``createSmartNumberFormatter.ts`` for the two smart
-    pseudo-formats and to the port of ``d3-format/src/locale.js`` for d3
-    specifiers. Registered frontend-only factories are rejected explicitly.
+    pseudo-formats, to ``format_chinese_unit`` / ``format_d3`` for the fixed
+    Chinese units and Chinese unit specifiers, and to the port of
+    ``d3-format/src/locale.js`` for d3 specifiers. Registered frontend-only
+    factories are rejected explicitly.
 
     :return: a formatted number string
     """
     if d3_format in UNSUPPORTED_FRONTEND_PRESETS:
         raise ValueError(f"Frontend preset {d3_format!r} is not available in reports")
+    if d3_format in CHINESE_UNIT_FORMATS:
+        return format_chinese_unit(d3_format, value)
+    if chinese_unit := parse_chinese_unit_specifier(d3_format):
+        prefix, divisor, suffix = chinese_unit
+        return f"{format_d3(prefix, value / divisor)}{suffix}"
     if d3_format in (SMART_NUMBER, SMART_NUMBER_SIGNED):
         return format_smart_number(value, signed=d3_format == SMART_NUMBER_SIGNED)
     return format_d3(d3_format, value)
@@ -659,6 +723,10 @@ NAMED_NUMBER_FORMATS: frozenset[str] = UNSUPPORTED_FRONTEND_PRESETS | frozenset(
         SMART_NUMBER,
         SMART_NUMBER_SIGNED,
         OVER_MAX_HIDDEN,
+        # fixed Chinese units, kept in sync with CHINESE_UNIT_FORMATS
+        "CHINESE_WAN",
+        "CHINESE_YI",
+        "CHINESE_WANYI",
         "NETWORK_THROUGHPUT",
         "NETWORK_THROUGHPUT_FROM_BYTES",
         # deprecated / common-typo shims (setupFormatters.ts)
@@ -708,5 +776,7 @@ def is_valid_d3_format(value: str | None) -> bool:
     if not value:
         return True
     if value in NAMED_NUMBER_FORMATS:
+        return True
+    if parse_chinese_unit_specifier(value):
         return True
     return D3_FORMAT_VALIDATION_RE.fullmatch(value) is not None

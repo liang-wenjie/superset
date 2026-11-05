@@ -20,6 +20,9 @@ import { FormatLocaleDefinition } from 'd3-format';
 import { RegistryWithDefaultKey, OverwritePolicy } from '../models';
 import { DEFAULT_D3_FORMAT } from './D3FormatConfig';
 import createD3NumberFormatter from './factories/createD3NumberFormatter';
+import createChineseUnitFormatter, {
+  parseChineseUnitFormat,
+} from './factories/createChineseUnitFormatter';
 import createSmartNumberFormatter from './factories/createSmartNumberFormatter';
 import NumberFormats from './NumberFormats';
 import NumberFormatter from './NumberFormatter';
@@ -74,6 +77,19 @@ export default class NumberFormatterRegistry extends RegistryWithDefaultKey<
 
     if (this.has(targetFormat)) {
       return super.get(targetFormat) as NumberFormatter;
+    }
+
+    // Chinese units use a d3-style specifier (e.g. `,.1万`) whose suffix d3
+    // cannot parse. Build and cache the formatter before the d3 fallback.
+    const chineseSpecifier = parseChineseUnitFormat(targetFormat);
+    if (chineseSpecifier) {
+      const formatter = createChineseUnitFormatter({
+        id: targetFormat,
+        specifier: chineseSpecifier,
+        locale: this.d3Format,
+      });
+      this.registerValue(targetFormat, formatter);
+      return formatter;
     }
 
     // Create new formatter if does not exist

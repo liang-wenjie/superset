@@ -42,6 +42,7 @@ jest.mock('@superset-ui/core', () => ({
   createSmartDateDetailedFormatter: jest.fn(() => jest.fn()),
   createLengthFormatter: jest.fn(() => jest.fn()),
   createThroughputFormatter: jest.fn(() => jest.fn()),
+  createChineseUnitFormatter: jest.fn(() => jest.fn()),
   NumberFormats: { INTEGER: ',d', INTEGER_SIGNED: '+,d' },
   SMART_DATE_ID: 'smart_date',
   SMART_DATE_DETAILED_ID: 'smart_date_detailed',
@@ -91,4 +92,26 @@ test('registers both network throughput formats with matching converters', async
 
   expect(registered.get('NETWORK_THROUGHPUT')).toBe(bitsFormatter);
   expect(registered.get('NETWORK_THROUGHPUT_FROM_BYTES')).toBe(bytesFormatter);
+});
+
+test('registers the three fixed Chinese unit formats', async () => {
+  await runSetupFormatters('en-US');
+
+  const { getNumberFormatterRegistry, createChineseUnitFormatter } =
+    await import('@superset-ui/core');
+
+  expect(createChineseUnitFormatter).toHaveBeenCalledWith({
+    id: 'CHINESE_WAN',
+  });
+  expect(createChineseUnitFormatter).toHaveBeenCalledWith({ id: 'CHINESE_YI' });
+  expect(createChineseUnitFormatter).toHaveBeenCalledWith({
+    id: 'CHINESE_WANYI',
+  });
+
+  const registry = (getNumberFormatterRegistry as jest.Mock).mock.results[0]
+    .value;
+  const registered = new Map(registry.registerValue.mock.calls);
+  expect(registered.has('CHINESE_WAN')).toBe(true);
+  expect(registered.has('CHINESE_YI')).toBe(true);
+  expect(registered.has('CHINESE_WANYI')).toBe(true);
 });

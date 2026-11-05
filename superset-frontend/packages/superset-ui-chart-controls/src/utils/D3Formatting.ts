@@ -56,6 +56,11 @@ export const D3_FORMAT_OPTIONS: [string, string][] = [
   [NumberFormats.SMART_NUMBER, t('Adaptive formatting')],
   ['~g', t('Original value')],
   ...d3Formatted,
+  // Chinese unit templates. label === value on purpose: the number format
+  // control is freeForm, so clicking an option leaves the format string in the
+  // editable input, where it can be tweaked directly (e.g. ,.2万 -> ,.1万).
+  [',.2万', ',.2万'],
+  [',.2万亿', ',.2万亿'],
   ['DURATION', t('Duration in ms (66000 => 1m 6s)')],
   ['DURATION_SUB', t('Duration in ms (1.40008 => 1ms 400µs 80ns)')],
   ['DURATION_COL', t('Duration in ms (10500 => 0:00:10.5)')],

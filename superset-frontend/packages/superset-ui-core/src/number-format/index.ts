@@ -39,3 +39,12 @@ export { default as createSmartNumberFormatter } from './factories/createSmartNu
 export { default as getSmallNumberFormatter } from './getSmallNumberFormatter';
 export { default as createLengthFormatter } from './factories/createLengthFormatter';
 export { default as createThroughputFormatter } from './factories/createThroughputFormatter';
+export {
+  default as createChineseUnitFormatter,
+  CHINESE_UNIT_FORMATS,
+  parseChineseUnitFormat,
+} from './factories/createChineseUnitFormatter';
+export type {
+  ChineseUnitFormatId,
+  ChineseUnitSpecifier,
+} from './factories/createChineseUnitFormatter';

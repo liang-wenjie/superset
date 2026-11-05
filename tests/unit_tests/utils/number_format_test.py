@@ -72,6 +72,60 @@ def test_format_number_with_currency(
     assert format_number_with_config(",.2f", currency, value) == expected
 
 
+@pytest.mark.parametrize(
+    "d3_format,value,expected",
+    [
+        ("CHINESE_WAN", 3808637.34, "380.86万"),
+        ("CHINESE_WAN", 1758.78, "0.18万"),
+        ("CHINESE_WAN", 12345678, "1,234.57万"),
+        ("CHINESE_WAN", 0, "0.00万"),
+        ("CHINESE_WAN", -250000, "-25.00万"),
+        ("CHINESE_YI", 1234567890, "12.35亿"),
+        ("CHINESE_WANYI", 1234567890000, "1.23万亿"),
+    ],
+)
+def test_format_number_with_chinese_units(
+    d3_format: str, value: float, expected: str
+) -> None:
+    assert format_number_with_config(d3_format, None, value) == expected
+
+
+@pytest.mark.parametrize(
+    "d3_format,value,expected",
+    [
+        (",.1万", 3808637.34, "380.9万"),
+        ("0.1万", 3808637.34, "380.9万"),
+        (",.2万", 3808637.34, "380.86万"),
+        (".0亿", 1234567890, "12亿"),
+        (",.2~f万亿", 1234567890000, "1.23万亿"),
+        (",.1万", -250000, "-25.0万"),
+    ],
+)
+def test_format_number_with_chinese_unit_specifiers(
+    d3_format: str, value: float, expected: str
+) -> None:
+    assert format_number_with_config(d3_format, None, value) == expected
+
+
+def test_chinese_unit_specifiers_are_valid_d3_formats() -> None:
+    assert is_valid_d3_format(",.1万")
+    assert is_valid_d3_format("0.1万亿")
+    assert not is_valid_d3_format(",.1万abc")
+
+
+def test_chinese_units_are_valid_and_combine_with_currency() -> None:
+    assert "CHINESE_WAN" in NAMED_NUMBER_FORMATS
+    assert is_valid_d3_format("CHINESE_WANYI")
+    assert (
+        format_number_with_config(
+            "CHINESE_WAN",
+            {"symbol": "元", "symbolPosition": "suffix"},
+            3808637.34,
+        )
+        == "380.86万元"
+    )
+
+
 def test_currency_defaults_to_smart_number_when_no_d3_format() -> None:
     assert (
         format_number_with_config(

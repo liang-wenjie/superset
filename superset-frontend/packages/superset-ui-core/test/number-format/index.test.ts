@@ -18,6 +18,8 @@
  */
 
 import {
+  CHINESE_UNIT_FORMATS,
+  createChineseUnitFormatter,
   createD3NumberFormatter,
   createDurationFormatter,
   createLengthFormatter,
@@ -39,6 +41,8 @@ describe('index', () => {
       createLengthFormatter,
       createSiAtMostNDigitFormatter,
       createMemoryFormatter,
+      createChineseUnitFormatter,
+      CHINESE_UNIT_FORMATS,
       formatNumber,
       getNumberFormatter,
       getNumberFormatterRegistry,
