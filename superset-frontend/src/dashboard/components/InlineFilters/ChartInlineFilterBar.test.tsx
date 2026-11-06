@@ -84,7 +84,7 @@ test('renders full distinct values in a popup wider than the compact trigger', a
   });
 });
 
-test('single and multi filter boxes use the standard search control height', async () => {
+test('single and multi filter boxes match the pagination page-size height', async () => {
   mockGet.mockResolvedValue({ json: { result: ['账号二', '账号三'] } });
 
   render(
@@ -106,12 +106,13 @@ test('single and multi filter boxes use the standard search control height', asy
 
   expect(single).toBeInTheDocument();
   expect(multi).toBeInTheDocument();
-  // Both variants are pinned to theme.controlHeight, the same token the
-  // ListView search input and filter pills use. A plain height is ignored
-  // here because the root is a flex item with flex-basis: 0; min/max-height
-  // are the constraints that actually apply.
-  expect(supersetTheme.controlHeight).toBeGreaterThan(0);
-  const controlHeight = `${supersetTheme.controlHeight}px`;
+  // The table chart's "Entries per page" selector is a plain antd Select with
+  // size="small", whose height is theme.controlHeightSM. A plain height is
+  // ignored here because Superset's Select gives the root flex: 0 inside a
+  // column flex container (flex-basis: 0); min/max-height are the constraints
+  // that actually apply.
+  expect(supersetTheme.controlHeightSM).toBeGreaterThan(0);
+  const controlHeight = `${supersetTheme.controlHeightSM}px`;
   [single, multi].forEach(box => {
     expect(getComputedStyle(box).minHeight).toBe(controlHeight);
     expect(getComputedStyle(box).maxHeight).toBe(controlHeight);
@@ -125,8 +126,9 @@ test('single and multi filter boxes use the standard search control height', asy
   expect(getComputedStyle(singleContent).alignSelf).toBe('center');
   expect(getComputedStyle(multiContent).alignSelf).toBe('center');
 
-  // The single variant also needs its inherited 32px line-height and padding
-  // compacted, otherwise its value overflows the shorter box.
+  // Superset's Select wrapper forces a 32px line-height on the antd root.
+  // Resetting it to the theme's standard control line-height makes the value
+  // text use the same metrics as the pagination selector.
   const ruleTexts = Array.from(document.styleSheets)
     .flatMap(sheet => {
       try {
@@ -139,9 +141,8 @@ test('single and multi filter boxes use the standard search control height', asy
   expect(
     ruleTexts.some(
       rule =>
-        rule.includes('.ant-select-single') &&
-        rule.includes('line-height:1') &&
-        rule.includes('padding-block:0'),
+        rule.includes('.ant-select') &&
+        rule.includes(`line-height:${supersetTheme.lineHeight}`),
     ),
   ).toBe(true);
 });

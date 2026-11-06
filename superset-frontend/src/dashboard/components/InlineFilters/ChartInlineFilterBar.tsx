@@ -81,31 +81,25 @@ const FilterLabel = styled.span`
 
 // Grow with the selected value instead of showing a fixed 100px box; the bar
 // scrolls horizontally when several filters are configured. Both select
-// variants use the standard search-control height from the theme, so the
-// "Allow multiple values" switch never resizes the filter box.
+// variants match the table chart's "Entries per page" pagination selector,
+// so the "Allow multiple values" switch never resizes the filter box.
 const StyledSelect = styled(Select)`
   width: auto;
   min-width: 110px;
   max-width: 220px;
   flex-shrink: 0;
 
-  /* In antd 6 the bordered box is the .ant-select root itself. Superset's
-     Select gives that root flex: 0 inside a column flex container, so
-     flex-basis 0 makes a plain height ineffective. min/max-height are hard
-     constraints for flex items. Use the same theme.controlHeight that the
-     ListView search input and filter pills use, so all search controls in the
-     app line up. */
+  /* In antd 6 the bordered box is the .ant-select root itself. The pagination
+     page-size selector is a plain antd Select with size="small", which resolves
+     to theme.controlHeightSM via --ant-select-height. Superset's Select wrapper
+     otherwise forces a 32px line-height on that root and gives it flex: 0 inside
+     a column flex container, where flex-basis 0 makes a plain height
+     ineffective. Restore antd's own line-height and pin min/max-height to the
+     same small-control token: those are hard constraints for flex items. */
   && .ant-select {
-    min-height: ${({ theme }) => theme.controlHeight}px;
-    max-height: ${({ theme }) => theme.controlHeight}px;
-  }
-
-  /* The single variant is taller by default: it inherits the wrapper's 32px
-     line-height and adds vertical padding. Compact both so its value fits the
-     standard control height without being clipped. */
-  && .ant-select-single {
-    line-height: 1;
-    padding-block: 0;
+    line-height: ${({ theme }) => theme.lineHeight};
+    min-height: ${({ theme }) => theme.controlHeightSM}px;
+    max-height: ${({ theme }) => theme.controlHeightSM}px;
   }
 
   /* Center the value row against the (already centered) arrow. */
