@@ -170,7 +170,7 @@ test('visual formatting toggles are off for charts saved without them', () => {
   expect(transformed.showNullAsBlank).toBe(false);
 });
 
-test('outer border emits its CSS variable only when enabled', () => {
+test('outer border emits its CSS variables only when enabled', () => {
   const enabled = transformProps({
     ...testData.basic,
     rawFormData: {
@@ -183,11 +183,10 @@ test('outer border emits its CSS variable only when enabled', () => {
     .firstElementChild as HTMLElement;
   expect(
     enabledWrapper.style.getPropertyValue('--table-outer-border-width'),
-  ).toBe('var(--table-border-width, 1px)');
-  // The edge above the header is emphasized like the header underline.
-  expect(
-    enabledWrapper.style.getPropertyValue('--table-outer-border-top-width'),
   ).toBe('var(--table-header-border-width, 2px)');
+  expect(
+    enabledWrapper.style.getPropertyValue('--table-outer-border-color'),
+  ).toContain('var(--table-border-color');
   enabledRender.unmount();
 
   const { container } = render(
@@ -198,17 +197,18 @@ test('outer border emits its CSS variable only when enabled', () => {
     '--table-outer-border-width',
   );
   expect(wrapper.getAttribute('style') ?? '').not.toContain(
-    '--table-outer-border-top-width',
+    '--table-outer-border-color',
   );
 });
 
-test('outer border top edge follows the configured header underline width', () => {
+test('outer border frame follows header width and the shared line color', () => {
   const transformed = transformProps({
     ...testData.basic,
     rawFormData: {
       ...testData.basic.rawFormData,
       show_outer_border: true,
       header_border_width: '4',
+      border_color: '#36a9c9',
     },
   });
 
@@ -217,11 +217,17 @@ test('outer border top edge follows the configured header underline width', () =
   expect(wrapper.style.getPropertyValue('--table-header-border-width')).toBe(
     '4px',
   );
-  // The top edge resolves that variable at paint time, so a wider header
-  // underline widens the frame above the header too.
-  expect(wrapper.style.getPropertyValue('--table-outer-border-top-width')).toBe(
+  expect(wrapper.style.getPropertyValue('--table-border-color')).toBe(
+    '#36a9c9',
+  );
+  // The frame resolves both variables at paint time, so it always has the
+  // header width and exactly the same color as the header/grid lines.
+  expect(wrapper.style.getPropertyValue('--table-outer-border-width')).toBe(
     'var(--table-header-border-width, 2px)',
   );
+  expect(
+    wrapper.style.getPropertyValue('--table-outer-border-color'),
+  ).toContain('var(--table-border-color');
 });
 
 test('renders null values as blank when the option is enabled', () => {

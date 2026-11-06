@@ -18,7 +18,7 @@
  */
 import { css, styled } from '@apache-superset/core/theme';
 import {
-  TABLE_OUTER_BORDER_TOP_VAR,
+  TABLE_OUTER_BORDER_COLOR_VAR,
   TABLE_OUTER_BORDER_VAR,
 } from './utils/tableStyle';
 
@@ -37,18 +37,15 @@ export default styled.div`
       max-width: none;
       margin: 0;
       border-collapse: collapse;
-      /* The "Show outer border" control emits this variable. Without it the
-         frame has zero width, so older charts keep their original look. The
-         frame shares the grid line color and width. */
+      /* The "Show outer border" control emits these variables. Without them
+         the frame has zero width, so older charts keep their original look.
+         The color falls back to the shared line color, so the frame always
+         matches the header underline and the grid separators. */
       border: var(${TABLE_OUTER_BORDER_VAR}, 0px) solid
-        var(--table-border-color, ${theme.colorSplit});
-      /* The top edge sits above the header, so it follows the header underline
-         width instead of the general line width. When the outer border is off,
-         both variables are absent and the frame stays invisible. */
-      border-top-width: var(
-        ${TABLE_OUTER_BORDER_TOP_VAR},
-        var(${TABLE_OUTER_BORDER_VAR}, 0px)
-      );
+        var(
+          ${TABLE_OUTER_BORDER_COLOR_VAR},
+          var(--table-border-color, ${theme.colorSplit})
+        );
     }
 
     /* Cell styling */

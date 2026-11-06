@@ -39,18 +39,13 @@ export {
 };
 
 /**
- * The "Show outer border" control sets this variable. The stylesheet falls
+ * The "Show outer border" control sets these variables. The stylesheet falls
  * back to a zero-width border so charts saved before the control existed keep
- * their original appearance.
+ * their original appearance. The frame uses the same width as the header
+ * underline and the very same color as the header underline and grid lines.
  */
 export const TABLE_OUTER_BORDER_VAR = '--table-outer-border-width';
-
-/**
- * The top edge of the outer border sits directly above the header, so it
- * follows the header underline width while the other three edges keep the
- * general line width. It is only emitted when the outer border is enabled.
- */
-export const TABLE_OUTER_BORDER_TOP_VAR = '--table-outer-border-top-width';
+export const TABLE_OUTER_BORDER_COLOR_VAR = '--table-outer-border-color';
 
 export function getTableStyleVariables(
   config: TableStyleConfig | undefined,
