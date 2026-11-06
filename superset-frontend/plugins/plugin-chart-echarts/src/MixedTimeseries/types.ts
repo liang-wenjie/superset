@@ -169,20 +169,15 @@ export const DEFAULT_FORM_DATA: EchartsMixedTimeseriesFormData = {
 };
 
 /**
- * Horizontal rendering is only meaningful when both queries draw bars. The
- * form-data guard also keeps charts saved with a stale `orientation` value
- * from rendering sideways after one of the series is switched back to a
- * line type.
+ * The orientation control is always visible, so its value is the single
+ * source of truth. Guarding on `seriesType`/`seriesTypeB` here made the
+ * control silently do nothing whenever those form-data keys differed from
+ * what this module expected. Horizontal bars look best when both queries
+ * use the Bar series type, which is explained in the control description.
  */
 export const isHorizontalMixedChart = (
-  formData: Pick<
-    EchartsMixedTimeseriesFormData,
-    'orientation' | 'seriesType' | 'seriesTypeB'
-  >,
-): boolean =>
-  formData.orientation === OrientationType.Horizontal &&
-  formData.seriesType === EchartsTimeseriesSeriesType.Bar &&
-  formData.seriesTypeB === EchartsTimeseriesSeriesType.Bar;
+  formData: Pick<EchartsMixedTimeseriesFormData, 'orientation'>,
+): boolean => formData.orientation === OrientationType.Horizontal;
 
 export interface EchartsMixedTimeseriesProps extends BaseChartProps<EchartsMixedTimeseriesFormData> {
   formData: EchartsMixedTimeseriesFormData;

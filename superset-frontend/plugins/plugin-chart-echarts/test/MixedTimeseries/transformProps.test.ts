@@ -2171,13 +2171,13 @@ test('horizontal orientation swaps axes, series axis index and data tuples', () 
   expect(horizontalBars[0].data?.[0][1]).toBe(verticalBar.data?.[0][0]);
 });
 
-test('ignores a horizontal orientation when one query is not bars', () => {
+test('honours the orientation control even when a query is not bars', () => {
   const options = transformMixedWithOrientation({
     ...horizontalFormData,
     seriesType: EchartsTimeseriesSeriesType.Line,
   });
-  expect(Array.isArray(options.xAxis)).toBe(false);
-  expect(Array.isArray(options.yAxis)).toBe(true);
+  expect(Array.isArray(options.xAxis)).toBe(true);
+  expect(Array.isArray(options.yAxis)).toBe(false);
 });
 
 test('horizontal bar value labels sit at the value end', () => {

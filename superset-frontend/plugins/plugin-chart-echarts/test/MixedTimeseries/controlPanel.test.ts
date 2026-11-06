@@ -212,15 +212,17 @@ test('orientation control always renders both direction options', () => {
       default: string;
       options: unknown[][];
       description: string;
+      disableStash?: boolean;
     };
   } | null;
   expect(orientationCtrl).not.toBeNull();
   // Hiding the section's only control leaves an empty panel, so the control
-  // must stay visible; transformProps guards the horizontal rendering itself.
+  // must stay visible and its value must always reach form_data.
   expect(orientationCtrl?.config.visibility).toBeUndefined();
+  expect(orientationCtrl?.config.disableStash).toBe(true);
   expect(orientationCtrl?.config.default).toBe('vertical');
   expect(orientationCtrl?.config.options).toHaveLength(2);
   expect(orientationCtrl?.config.options[0][0]).toBe('vertical');
   expect(orientationCtrl?.config.options[1][0]).toBe('horizontal');
-  expect(orientationCtrl?.config.description).toContain('Horizontal');
+  expect(orientationCtrl?.config.description).toContain('horizontal');
 });

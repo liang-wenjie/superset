@@ -264,15 +264,11 @@ export default function transformProps(
     metricsB = [],
   }: EchartsMixedTimeseriesFormData = { ...DEFAULT_FORM_DATA, ...formData };
 
-  // Horizontal rendering is only enabled when both queries draw bars (see
-  // isHorizontalMixedChart). Series data is stored as [category, value] for
-  // vertical charts and as [value, category] for horizontal ones, so every
-  // consumer of a datum tuple has to read through these indices.
-  const isHorizontal = isHorizontalMixedChart({
-    orientation,
-    seriesType,
-    seriesTypeB,
-  });
+  // The orientation control is always visible and is the single source of
+  // truth. Series data is stored as [category, value] for vertical charts
+  // and as [value, category] for horizontal ones, so every consumer of a
+  // datum tuple has to read through these indices.
+  const isHorizontal = isHorizontalMixedChart({ orientation });
   const categoryIndex = isHorizontal ? 1 : 0;
   const valueIndex = isHorizontal ? 0 : 1;
   const chartOrientation = isHorizontal

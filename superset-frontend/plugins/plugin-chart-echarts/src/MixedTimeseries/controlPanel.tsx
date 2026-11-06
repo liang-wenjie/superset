@@ -474,8 +474,11 @@ const config: ControlPanelConfig = {
                 [OrientationType.Horizontal, t('Horizontal')],
               ],
               description: t(
-                'Orientation of the bars. Horizontal only takes effect when both Query A and Query B use the Bar series type; otherwise the chart stays vertical.',
+                'Orientation of the chart. For horizontal bars, set both Query A and Query B to the Bar series type.',
               ),
+              // Never let the field be stashed out of form_data; a missing
+              // value makes the control appear to have no effect.
+              disableStash: true,
             },
           },
         ],
