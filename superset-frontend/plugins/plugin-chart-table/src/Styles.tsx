@@ -17,7 +17,10 @@
  * under the License.
  */
 import { css, styled } from '@apache-superset/core/theme';
-import { TABLE_OUTER_BORDER_VAR } from './utils/tableStyle';
+import {
+  TABLE_OUTER_BORDER_TOP_VAR,
+  TABLE_OUTER_BORDER_VAR,
+} from './utils/tableStyle';
 
 export default styled.div`
   ${({ theme }) => css`
@@ -39,6 +42,13 @@ export default styled.div`
          frame shares the grid line color and width. */
       border: var(${TABLE_OUTER_BORDER_VAR}, 0px) solid
         var(--table-border-color, ${theme.colorSplit});
+      /* The top edge sits above the header, so it follows the header underline
+         width instead of the general line width. When the outer border is off,
+         both variables are absent and the frame stays invisible. */
+      border-top-width: var(
+        ${TABLE_OUTER_BORDER_TOP_VAR},
+        var(${TABLE_OUTER_BORDER_VAR}, 0px)
+      );
     }
 
     /* Cell styling */

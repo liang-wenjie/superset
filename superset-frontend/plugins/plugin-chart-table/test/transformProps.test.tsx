@@ -184,6 +184,10 @@ test('outer border emits its CSS variable only when enabled', () => {
   expect(
     enabledWrapper.style.getPropertyValue('--table-outer-border-width'),
   ).toBe('var(--table-border-width, 1px)');
+  // The edge above the header is emphasized like the header underline.
+  expect(
+    enabledWrapper.style.getPropertyValue('--table-outer-border-top-width'),
+  ).toBe('var(--table-header-border-width, 2px)');
   enabledRender.unmount();
 
   const { container } = render(
@@ -192,6 +196,31 @@ test('outer border emits its CSS variable only when enabled', () => {
   const wrapper = container.firstElementChild as HTMLElement;
   expect(wrapper.getAttribute('style') ?? '').not.toContain(
     '--table-outer-border-width',
+  );
+  expect(wrapper.getAttribute('style') ?? '').not.toContain(
+    '--table-outer-border-top-width',
+  );
+});
+
+test('outer border top edge follows the configured header underline width', () => {
+  const transformed = transformProps({
+    ...testData.basic,
+    rawFormData: {
+      ...testData.basic.rawFormData,
+      show_outer_border: true,
+      header_border_width: '4',
+    },
+  });
+
+  const { container } = render(<TableChart {...transformed} sticky={false} />);
+  const wrapper = container.firstElementChild as HTMLElement;
+  expect(wrapper.style.getPropertyValue('--table-header-border-width')).toBe(
+    '4px',
+  );
+  // The top edge resolves that variable at paint time, so a wider header
+  // underline widens the frame above the header too.
+  expect(wrapper.style.getPropertyValue('--table-outer-border-top-width')).toBe(
+    'var(--table-header-border-width, 2px)',
   );
 });
 

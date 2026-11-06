@@ -45,6 +45,13 @@ export {
  */
 export const TABLE_OUTER_BORDER_VAR = '--table-outer-border-width';
 
+/**
+ * The top edge of the outer border sits directly above the header, so it
+ * follows the header underline width while the other three edges keep the
+ * general line width. It is only emitted when the outer border is enabled.
+ */
+export const TABLE_OUTER_BORDER_TOP_VAR = '--table-outer-border-top-width';
+
 export function getTableStyleVariables(
   config: TableStyleConfig | undefined,
 ): CSSProperties {

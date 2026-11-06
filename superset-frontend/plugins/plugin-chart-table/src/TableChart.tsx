@@ -98,6 +98,7 @@ import Styles from './Styles';
 import { formatColumnValue } from './utils/formatValue';
 import {
   getTableStyleVariables,
+  TABLE_OUTER_BORDER_TOP_VAR,
   TABLE_OUTER_BORDER_VAR,
   TABLE_STYLE_VARS,
 } from './utils/tableStyle';
@@ -490,9 +491,11 @@ export default function TableChart<D extends DataRecord = DataRecord>(
     }
     return {
       ...variables,
-      // The outer frame follows the general line width, keeping it consistent
-      // with the header underline and the grid separators.
+      // The frame follows the general line width used by the grid separators.
       [TABLE_OUTER_BORDER_VAR]: `var(${TABLE_STYLE_VARS.borderWidth}, 1px)`,
+      // The top edge frames the header, so it matches the header underline
+      // width rather than the thinner general line width.
+      [TABLE_OUTER_BORDER_TOP_VAR]: `var(${TABLE_STYLE_VARS.headerBorderWidth}, 2px)`,
     } as CSSProperties;
   }, [tableStyle, showOuterBorder]);
 
