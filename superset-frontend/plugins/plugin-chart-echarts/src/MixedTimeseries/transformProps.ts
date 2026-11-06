@@ -381,7 +381,7 @@ export default function transformProps(
     xAxisType,
   });
 
-  // Query A owns the x-axis order: the categorical sort step orders A's
+  // Query A owns the category order: the categorical sort step orders A's
   // pivot rows by the user's sort metric, and ECharts derives the category
   // list from the first series' data array. ECharts places every point at
   // its category position, but draws a line in the order the points appear
@@ -389,26 +389,28 @@ export default function transformProps(
   // B's own metric (or lexicographically), the polyline zig-zags back and
   // forth across categories and looks disconnected. Reorder B's data
   // points to follow A's category order so the line stays contiguous.
+  // In horizontal orientation the tuple is [value, category], so the
+  // category lives at `categoryIndex` rather than always at index 0.
   if (xAxisType === AxisType.Category && rawSeriesA.length > 0) {
     const firstSeriesData = ensureIsArray(rawSeriesA[0].data);
     const categoryOrder = firstSeriesData
-      .map(datum => (Array.isArray(datum) ? datum[0] : datum))
+      .map(datum => (Array.isArray(datum) ? datum[categoryIndex] : datum))
       .filter(
         (value): value is string | number =>
           typeof value === 'string' || typeof value === 'number',
       );
     if (categoryOrder.length > 0) {
-      const categoryIndex = new Map<string, number>();
+      const categoryPosition = new Map<string, number>();
       categoryOrder.forEach((category, idx) =>
-        categoryIndex.set(String(category), idx),
+        categoryPosition.set(String(category), idx),
       );
       rawSeriesB.forEach(series => {
         if (Array.isArray(series.data) && series.data.length > 0) {
           series.data = [...series.data].sort((a, b) => {
-            const aKey = Array.isArray(a) ? String(a[0]) : '';
-            const bKey = Array.isArray(b) ? String(b[0]) : '';
-            const ia = categoryIndex.get(aKey);
-            const ib = categoryIndex.get(bKey);
+            const aKey = Array.isArray(a) ? String(a[categoryIndex]) : '';
+            const bKey = Array.isArray(b) ? String(b[categoryIndex]) : '';
+            const ia = categoryPosition.get(aKey);
+            const ib = categoryPosition.get(bKey);
             if (ia === undefined && ib === undefined) return 0;
             if (ia === undefined) return 1;
             if (ib === undefined) return -1;

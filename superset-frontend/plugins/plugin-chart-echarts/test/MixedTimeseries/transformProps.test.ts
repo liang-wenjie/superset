@@ -350,6 +350,70 @@ test('Query B data points follow Query A x-axis order on a categorical axis', ()
   });
 });
 
+test('Query B line points follow Query A category order when horizontal', () => {
+  const rowsA = [
+    { category_col: 'a', v1: 1, v2: 2 },
+    { category_col: 'b', v1: 3, v2: 4 },
+    { category_col: 'c', v1: 5, v2: 6 },
+  ];
+  // B arrives in c,a,b order, and its values are deliberately out of
+  // category order: sorting by the value slot would yield c,b,a and make
+  // the polyline zig-zag across the categories.
+  const rowsB = [
+    { category_col: 'c', vb: 5 },
+    { category_col: 'a', vb: 30 },
+    { category_col: 'b', vb: 10 },
+  ];
+  const labelMap = {
+    category_col: ['category_col'],
+    v1: ['v1'],
+    v2: ['v2'],
+    vb: ['vb'],
+  };
+  const queries = [
+    createTestQueryData(rowsA, { label_map: labelMap }),
+    createTestQueryData(rowsB, { label_map: labelMap }),
+  ];
+  const chartProps = createEchartsTimeseriesTestChartProps<
+    EchartsMixedTimeseriesFormData,
+    EchartsMixedTimeseriesProps
+  >({
+    ...MIXED_TIMESERIES_CHART_PROPS_DEFAULTS,
+    defaultQueriesData: queries,
+    formData: {
+      ...formData,
+      orientation: OrientationType.Horizontal,
+      x_axis: 'category_col',
+      groupby: [],
+      groupbyB: [],
+      metrics: ['v1'],
+      metricsB: ['vb'],
+      seriesType: EchartsTimeseriesSeriesType.Bar,
+      seriesTypeB: EchartsTimeseriesSeriesType.Line,
+    },
+    queriesData: queries,
+  });
+
+  const series = transformProps(chartProps).echartOptions
+    .series as SeriesOption[];
+  const barSeries = series.filter(s => s.type === 'bar');
+  const lineSeries = series.filter(s => s.type === 'line');
+  const toPairs = (s: SeriesOption) =>
+    (s as { data?: unknown }).data as [number, string][];
+
+  expect(barSeries.length).toBeGreaterThan(0);
+  expect(lineSeries.length).toBeGreaterThan(0);
+  // Horizontal tuples are [value, category]; the category slot must follow
+  // Query A's order for both series so the line stays contiguous.
+  barSeries.forEach(s => {
+    expect(toPairs(s).map(d => d[1])).toEqual(['a', 'b', 'c']);
+  });
+  lineSeries.forEach(s => {
+    expect(toPairs(s).map(d => d[1])).toEqual(['a', 'b', 'c']);
+    expect(toPairs(s).map(d => d[0])).toEqual([30, 10, 5]);
+  });
+});
+
 test('should transform chart props for viz with showQueryIdentifiers=false', () => {
   const chartProps = createEchartsTimeseriesTestChartProps<
     EchartsMixedTimeseriesFormData,
