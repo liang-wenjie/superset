@@ -42,6 +42,7 @@ import {
   DEFAULT_TITLE_FORM_DATA,
   DEFAULT_FORM_DATA as TIMESERIES_DEFAULTS,
 } from '../constants';
+import { OrientationType } from '../Timeseries/types';
 
 export type EchartsMixedTimeseriesFormData = QueryFormData & {
   annotationLayers: AnnotationLayer[];
@@ -108,6 +109,7 @@ export type EchartsMixedTimeseriesFormData = QueryFormData & {
   yAxisIndexB?: number;
   groupby: QueryFormColumn[];
   groupbyB: QueryFormColumn[];
+  orientation?: OrientationType;
 } & LegendFormData &
   TitleFormData;
 
@@ -162,8 +164,25 @@ export const DEFAULT_FORM_DATA: EchartsMixedTimeseriesFormData = {
   showQueryIdentifiers: false,
   xAxisLabelRotation: TIMESERIES_DEFAULTS.xAxisLabelRotation,
   xAxisLabelInterval: TIMESERIES_DEFAULTS.xAxisLabelInterval,
+  orientation: OrientationType.Vertical,
   ...DEFAULT_TITLE_FORM_DATA,
 };
+
+/**
+ * Horizontal rendering is only meaningful when both queries draw bars. The
+ * form-data guard also keeps charts saved with a stale `orientation` value
+ * from rendering sideways after one of the series is switched back to a
+ * line type.
+ */
+export const isHorizontalMixedChart = (
+  formData: Pick<
+    EchartsMixedTimeseriesFormData,
+    'orientation' | 'seriesType' | 'seriesTypeB'
+  >,
+): boolean =>
+  formData.orientation === OrientationType.Horizontal &&
+  formData.seriesType === EchartsTimeseriesSeriesType.Bar &&
+  formData.seriesTypeB === EchartsTimeseriesSeriesType.Bar;
 
 export interface EchartsMixedTimeseriesProps extends BaseChartProps<EchartsMixedTimeseriesFormData> {
   formData: EchartsMixedTimeseriesFormData;

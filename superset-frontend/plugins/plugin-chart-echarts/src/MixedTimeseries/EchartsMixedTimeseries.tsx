@@ -26,7 +26,10 @@ import {
   getNumberFormatter,
   getTimeFormatter,
 } from '@superset-ui/core';
-import { EchartsMixedTimeseriesChartTransformedProps } from './types';
+import {
+  EchartsMixedTimeseriesChartTransformedProps,
+  isHorizontalMixedChart,
+} from './types';
 import Echart from '../components/Echart';
 import { EventHandlers } from '../types';
 import { formatSeriesName } from '../utils/series';
@@ -58,6 +61,10 @@ export default function EchartsMixedTimeseries({
     (seriesIndex: number) => seriesIndex < seriesBreakdown,
     [seriesBreakdown],
   );
+
+  // A horizontal chart stores each datum as [value, category]; a vertical
+  // one as [category, value]. Drill filters always need the category.
+  const categoryIndex = isHorizontalMixedChart(formData) ? 1 : 0;
 
   const getCrossFilterDataMask = useCallback(
     (seriesName: string, seriesIndex: number) => {
@@ -174,8 +181,8 @@ export default function EchartsMixedTimeseries({
                 : xAxis.label,
             grain: formData.timeGrainSqla,
             op: '==',
-            val: data[0],
-            formattedVal: xValueFormatter(data[0]),
+            val: data[categoryIndex],
+            formattedVal: xValueFormatter(data[categoryIndex]),
           });
         }
         if (

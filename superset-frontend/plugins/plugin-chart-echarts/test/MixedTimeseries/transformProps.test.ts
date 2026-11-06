@@ -39,6 +39,7 @@ import {
   LabelPositionEnum,
 } from '../../src';
 import transformProps from '../../src/MixedTimeseries/transformProps';
+import { OrientationType } from '../../src/Timeseries/types';
 import {
   DEFAULT_FORM_DATA,
   EchartsMixedTimeseriesFormData,
@@ -2104,3 +2105,90 @@ test.each([SMART_DATE_ID, '%d/%m/%Y'])(
     );
   },
 );
+
+const horizontalFormData: EchartsMixedTimeseriesFormData = {
+  ...formData,
+  orientation: OrientationType.Horizontal,
+  seriesType: EchartsTimeseriesSeriesType.Bar,
+  seriesTypeB: EchartsTimeseriesSeriesType.Bar,
+};
+
+type MixedEchartOptions = {
+  xAxis: unknown;
+  yAxis: unknown;
+  series: SeriesOption[];
+};
+
+function transformMixedWithOrientation(
+  overrides: EchartsMixedTimeseriesFormData,
+): MixedEchartOptions {
+  const chartProps = createEchartsTimeseriesTestChartProps<
+    EchartsMixedTimeseriesFormData,
+    EchartsMixedTimeseriesProps
+  >({
+    ...MIXED_TIMESERIES_CHART_PROPS_DEFAULTS,
+    defaultQueriesData: queriesData,
+    formData: overrides,
+    queriesData,
+  });
+  return transformProps(chartProps)
+    .echartOptions as unknown as MixedEchartOptions;
+}
+
+test('horizontal orientation swaps axes, series axis index and data tuples', () => {
+  const horizontal = transformMixedWithOrientation(horizontalFormData);
+  const vertical = transformMixedWithOrientation({
+    ...horizontalFormData,
+    orientation: OrientationType.Vertical,
+  });
+
+  // The primary and secondary value axes move to xAxis[]; the single
+  // category/time axis becomes the yAxis object.
+  expect(Array.isArray(horizontal.xAxis)).toBe(true);
+  expect(horizontal.xAxis).toHaveLength(2);
+  expect(Array.isArray(horizontal.yAxis)).toBe(false);
+  expect(Array.isArray(vertical.xAxis)).toBe(false);
+  expect(Array.isArray(vertical.yAxis)).toBe(true);
+
+  const horizontalBars = horizontal.series.filter(
+    series => series.type === 'bar',
+  ) as unknown as {
+    data?: [number, number][];
+    xAxisIndex?: number;
+    yAxisIndex?: number;
+  }[];
+  expect(horizontalBars.length).toBeGreaterThan(0);
+  horizontalBars.forEach(series => {
+    expect(series.xAxisIndex).toBe(0);
+    expect(series.yAxisIndex).toBeUndefined();
+  });
+
+  const verticalBar = vertical.series.find(
+    series => series.type === 'bar',
+  ) as unknown as { data?: [number, number][] };
+  expect(verticalBar).toBeDefined();
+  expect(horizontalBars[0].data?.[0][0]).toBe(verticalBar.data?.[0][1]);
+  expect(horizontalBars[0].data?.[0][1]).toBe(verticalBar.data?.[0][0]);
+});
+
+test('ignores a horizontal orientation when one query is not bars', () => {
+  const options = transformMixedWithOrientation({
+    ...horizontalFormData,
+    seriesType: EchartsTimeseriesSeriesType.Line,
+  });
+  expect(Array.isArray(options.xAxis)).toBe(false);
+  expect(Array.isArray(options.yAxis)).toBe(true);
+});
+
+test('horizontal bar value labels sit at the value end', () => {
+  const options = transformMixedWithOrientation({
+    ...horizontalFormData,
+    showValue: true,
+    showValueB: true,
+  });
+  const bars = options.series.filter(
+    series => series.type === 'bar',
+  ) as unknown as { label?: { position?: string } }[];
+  expect(bars.length).toBeGreaterThan(0);
+  bars.forEach(series => expect(series.label?.position).toBe('right'));
+});

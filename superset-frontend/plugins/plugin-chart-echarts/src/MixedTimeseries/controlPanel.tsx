@@ -34,7 +34,10 @@ import {
 } from '@superset-ui/chart-controls';
 
 import { DEFAULT_FORM_DATA } from './types';
-import { EchartsTimeseriesSeriesType } from '../Timeseries/types';
+import {
+  EchartsTimeseriesSeriesType,
+  OrientationType,
+} from '../Timeseries/types';
 import {
   legendSection,
   minorTicks,
@@ -454,6 +457,35 @@ const config: ControlPanelConfig = {
     createAdvancedAnalyticsSection(t('Advanced analytics Query B'), '_b'),
     sections.annotationsAndLayersControls,
     sections.titleControls,
+    {
+      label: t('Chart Orientation'),
+      expanded: true,
+      controlSetRows: [
+        [
+          {
+            name: 'orientation',
+            config: {
+              type: 'RadioButtonControl',
+              renderTrigger: true,
+              label: t('Bar orientation'),
+              default: OrientationType.Vertical,
+              options: [
+                [OrientationType.Vertical, t('Vertical')],
+                [OrientationType.Horizontal, t('Horizontal')],
+              ],
+              description: t(
+                'Orientation of the bars. Available when both Query A and Query B use bars.',
+              ),
+              visibility: ({ controls }: ControlPanelsContainerProps) =>
+                controls?.seriesType?.value ===
+                  EchartsTimeseriesSeriesType.Bar &&
+                controls?.seriesTypeB?.value ===
+                  EchartsTimeseriesSeriesType.Bar,
+            },
+          },
+        ],
+      ],
+    },
     {
       label: t('Chart Options'),
       expanded: true,

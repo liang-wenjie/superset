@@ -203,3 +203,42 @@ test('Query B filter control hides when filters are shared with Query A', () => 
     } as unknown as ControlPanelsContainerProps),
   ).toBe(true);
 });
+
+test('orientation control is only available when both queries use bars', () => {
+  const orientationCtrl = getControl('orientation') as unknown as {
+    name: string;
+    config: {
+      visibility: (props: ControlPanelsContainerProps) => boolean;
+      default: string;
+      options: unknown[][];
+    };
+  } | null;
+  expect(orientationCtrl).not.toBeNull();
+  expect(orientationCtrl?.config.default).toBe('vertical');
+  expect(orientationCtrl?.config.options).toHaveLength(2);
+
+  expect(
+    orientationCtrl?.config.visibility({
+      controls: {
+        seriesType: { value: 'bar' },
+        seriesTypeB: { value: 'bar' },
+      },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(true);
+  expect(
+    orientationCtrl?.config.visibility({
+      controls: {
+        seriesType: { value: 'line' },
+        seriesTypeB: { value: 'bar' },
+      },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(false);
+  expect(
+    orientationCtrl?.config.visibility({
+      controls: {
+        seriesType: { value: 'bar' },
+        seriesTypeB: { value: 'line' },
+      },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(false);
+});

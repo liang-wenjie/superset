@@ -58,6 +58,7 @@ import {
   EchartsMixedTimeseriesChartTransformedProps,
   EchartsMixedTimeseriesFormData,
   EchartsMixedTimeseriesProps,
+  isHorizontalMixedChart,
 } from './types';
 import {
   EchartsTimeseriesSeriesType,
@@ -65,7 +66,7 @@ import {
   LegendOrientation,
   Refs,
 } from '../types';
-import { BarValueLabelPosition } from '../Timeseries/types';
+import { BarValueLabelPosition, OrientationType } from '../Timeseries/types';
 import { parseAxisBound } from '../utils/controls';
 import { safeParseEChartOptions } from '../utils/safeEChartOptionsParser';
 import {
@@ -115,6 +116,7 @@ import {
 } from '../constants';
 import { getDefaultTooltip } from '../utils/tooltip';
 import {
+  createDedupXAxisFormatter,
   createSpacedXAxisFormatter,
   getBoundaryTimeFormatter,
   getZoomLabelOptions,
@@ -241,6 +243,7 @@ export default function transformProps(
     xAxisLabelInterval,
     groupby,
     groupbyB,
+    orientation,
     xAxis: xAxisOrig,
     xAxisForceCategorical,
     xAxisTitle,
@@ -260,6 +263,21 @@ export default function transformProps(
     metrics = [],
     metricsB = [],
   }: EchartsMixedTimeseriesFormData = { ...DEFAULT_FORM_DATA, ...formData };
+
+  // Horizontal rendering is only enabled when both queries draw bars (see
+  // isHorizontalMixedChart). Series data is stored as [category, value] for
+  // vertical charts and as [value, category] for horizontal ones, so every
+  // consumer of a datum tuple has to read through these indices.
+  const isHorizontal = isHorizontalMixedChart({
+    orientation,
+    seriesType,
+    seriesTypeB,
+  });
+  const categoryIndex = isHorizontal ? 1 : 0;
+  const valueIndex = isHorizontal ? 0 : 1;
+  const chartOrientation = isHorizontal
+    ? OrientationType.Horizontal
+    : OrientationType.Vertical;
 
   const refs: Refs = {};
   const colorScale = CategoricalColorNamespace.getScale(colorScheme as string);
@@ -340,6 +358,7 @@ export default function transformProps(
   const [rawSeriesA, sortedTotalValuesA] = extractSeries(rebasedDataA, {
     fillNeighborValue: stack ? 0 : undefined,
     xAxis: xAxisLabel,
+    isHorizontal,
     sortSeriesType,
     sortSeriesAscending,
     stack,
@@ -358,6 +377,7 @@ export default function transformProps(
   const [rawSeriesB, sortedTotalValuesB] = extractSeries(rebasedDataB, {
     fillNeighborValue: stackB ? 0 : undefined,
     xAxis: xAxisLabel,
+    isHorizontal,
     sortSeriesType: sortSeriesTypeB,
     sortSeriesAscending: sortSeriesAscendingB,
     stack: Boolean(stackB),
@@ -478,10 +498,12 @@ export default function transformProps(
   const showValueIndexesA = extractShowValueIndexes(rawSeriesA, {
     stack,
     onlyTotal,
+    isHorizontal,
   });
   const showValueIndexesB = extractShowValueIndexes(rawSeriesB, {
     stack,
     onlyTotal,
+    isHorizontal,
   });
 
   annotationLayers
@@ -496,6 +518,7 @@ export default function transformProps(
             xAxisType,
             colorScale,
             sliceId,
+            chartOrientation,
           ),
         );
       else if (isIntervalAnnotationLayer(layer)) {
@@ -507,6 +530,7 @@ export default function transformProps(
             colorScale,
             theme,
             sliceId,
+            chartOrientation,
           ),
         );
       } else if (isEventAnnotationLayer(layer)) {
@@ -518,6 +542,7 @@ export default function transformProps(
             colorScale,
             theme,
             sliceId,
+            chartOrientation,
           ),
         );
       } else if (isTimeseriesAnnotationLayer(layer)) {
@@ -529,6 +554,7 @@ export default function transformProps(
             annotationData,
             colorScale,
             sliceId,
+            chartOrientation,
           ),
         );
       }
@@ -657,6 +683,7 @@ export default function transformProps(
         timeShiftColor,
         theme,
         labelPosition,
+        isHorizontal,
         lineStyle,
       },
     );
@@ -766,6 +793,7 @@ export default function transformProps(
         timeShiftColor,
         theme,
         labelPosition: labelPositionB,
+        isHorizontal,
         lineStyle,
       },
     );
@@ -816,14 +844,19 @@ export default function transformProps(
     xAxisTimeFormat,
     resolvedTimeGrain,
   );
+  // The spacing formatter estimates collisions using horizontal pixel
+  // width. With the category axis on the side, fall back to dedup-only, as
+  // the regular timeseries chart does in horizontal orientation.
   const deduplicatedFormatter = showMaxLabel
-    ? createSpacedXAxisFormatter(
-        xAxisFormatter,
-        ...xAxisDomain,
-        Math.max(width - 2 * TIMESERIES_CONSTANTS.gridOffsetLeft, 0),
-        showAllLabels,
-        boundaryFormatter,
-      )
+    ? isHorizontal
+      ? createDedupXAxisFormatter(xAxisFormatter)
+      : createSpacedXAxisFormatter(
+          xAxisFormatter,
+          ...xAxisDomain,
+          Math.max(width - 2 * TIMESERIES_CONSTANTS.gridOffsetLeft, 0),
+          showAllLabels,
+          boundaryFormatter,
+        )
     : xAxisFormatter;
 
   const yAxisTitleMarginPx = convertInteger(yAxisTitleMargin);
@@ -889,6 +922,20 @@ export default function transformProps(
     xAxisTitleMarginPx,
   );
 
+  // Swapping the axes also swaps which side the category labels live on.
+  if (isHorizontal) {
+    [chartPadding.bottom, chartPadding.left] = [
+      chartPadding.left,
+      chartPadding.bottom,
+    ];
+    if (showValue || showValueB) {
+      chartPadding.right = Math.max(
+        chartPadding.right || 0,
+        TIMESERIES_CONSTANTS.horizontalBarLabelRightPadding,
+      );
+    }
+  }
+
   const {
     setDataMask = () => {},
     onContextMenu,
@@ -907,11 +954,9 @@ export default function transformProps(
   // Only meaningful when a bar series is actually rendered — skip the
   // domain scan otherwise. Combines both queries' data for the domain
   // estimate, matching the same combined-domain approach the x-axis label
-  // spacing formatter below already uses. MixedTimeseries has no
-  // chart-orientation control (confirmed: no `orientation`/
-  // `OrientationType` field on its form data, no xAxis/yAxis swap anywhere
-  // in this file), so the temporal axis always renders along `width` —
-  // no horizontal-orientation case to account for. See getGrainBarMaxWidth
+  // spacing formatter below already uses. In horizontal orientation the
+  // category axis runs along `height`, so the plot length comes from the
+  // swapped vertical padding instead of `width`. See getGrainBarMaxWidth
   // for the domain/grain part of the mechanism.
   if (
     seriesType === EchartsTimeseriesSeriesType.Bar ||
@@ -925,7 +970,9 @@ export default function transformProps(
         rebasedDataB as Record<string, unknown>[],
       ],
       xAxisLabel,
-      Math.max(width - chartPadding.left - chartPadding.right, 0),
+      isHorizontal
+        ? Math.max(height - chartPadding.top - chartPadding.bottom, 0)
+        : Math.max(width - chartPadding.left - chartPadding.right, 0),
     );
     if (barMaxWidthPx !== undefined) {
       series.forEach(s => {
@@ -937,6 +984,22 @@ export default function transformProps(
   }
 
   const alignTicks = yAxisIndex !== yAxisIndexB;
+
+  // Horizontal orientation moves the primary/secondary value axes from
+  // yAxis[] to xAxis[], so each series must reference xAxisIndex instead.
+  // Annotation series carry no axis index and keep ECharts' default of 0.
+  if (isHorizontal) {
+    series.forEach(seriesOption => {
+      const entry = seriesOption as unknown as {
+        yAxisIndex?: number;
+        xAxisIndex?: number;
+      };
+      if (entry.yAxisIndex !== undefined) {
+        entry.xAxisIndex = entry.yAxisIndex;
+        delete entry.yAxisIndex;
+      }
+    });
+  }
 
   // Both queries share the axis, so a bucket contributed by either needs a tick.
   const temporalTickValues = resolveTemporalTickValues(
@@ -954,7 +1017,7 @@ export default function transformProps(
     xAxisLabelRotation,
     showAllLabels ? 0 : xAxisLabelInterval,
     deduplicatedFormatter,
-    false,
+    isHorizontal,
     zoomable,
   );
 
@@ -1057,23 +1120,24 @@ export default function transformProps(
       trigger: richTooltip ? 'axis' : 'item',
       formatter: (params: any) => {
         const xValue: number = richTooltip
-          ? params[0].value[0]
-          : params.value[0];
+          ? params[0].value[categoryIndex]
+          : params.value[categoryIndex];
         const forecastValue: any[] = richTooltip ? params : [params];
 
         const sortedKeys = collapseForecastKeys(
           extractTooltipKeys(
             forecastValue,
-            // horizontal mode is not supported in mixed series chart
-            1,
+            valueIndex,
             richTooltip,
             tooltipSortByMetric,
           ),
         );
 
         const rows: string[][] = [];
-        const forecastValues =
-          extractForecastValuesFromTooltipParams(forecastValue);
+        const forecastValues = extractForecastValuesFromTooltipParams(
+          forecastValue,
+          isHorizontal,
+        );
 
         const keys = Object.keys(forecastValues);
         let focusedRow;
@@ -1147,7 +1211,9 @@ export default function transformProps(
       right: TIMESERIES_CONSTANTS.toolboxRight,
       feature: {
         dataZoom: {
-          yAxisIndex: false,
+          // Only the category axis should zoom. It moves from x to y in
+          // horizontal orientation, so the disabled axis flips with it.
+          ...(isHorizontal ? { xAxisIndex: false } : { yAxisIndex: false }),
           title: {
             zoom: 'zoom area',
             back: 'restore zoom',
@@ -1162,13 +1228,26 @@ export default function transformProps(
             start: TIMESERIES_CONSTANTS.dataZoomStart,
             end: TIMESERIES_CONSTANTS.dataZoomEnd,
             bottom: TIMESERIES_CONSTANTS.zoomBottom,
-            ...(xAxisType === AxisType.Time
+            ...(!isHorizontal && xAxisType === AxisType.Time
               ? getZoomLabelOptions(width, xAxisDomain, boundaryFormatter)
               : {}),
+            yAxisIndex: isHorizontal ? 0 : undefined,
           },
         ]
       : [],
   };
+
+  // The value axes (primary + secondary) and the category/time axis are
+  // built in their vertical positions above. Horizontal orientation simply
+  // swaps them, mirroring the regular Bar chart: xAxis becomes the value
+  // axis pair, yAxis becomes the single category axis.
+  if (isHorizontal) {
+    const swapped = echartOptions as unknown as {
+      xAxis: unknown;
+      yAxis: unknown;
+    };
+    [swapped.xAxis, swapped.yAxis] = [swapped.yAxis, swapped.xAxis];
+  }
 
   const onFocusedSeries = (seriesName: string | null) => {
     focusedSeries = seriesName;

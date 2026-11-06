@@ -31,6 +31,10 @@ import {
   EchartsMixedTimeseriesProps,
 } from '../../src/MixedTimeseries/types';
 import Echart from '../../src/components/Echart';
+import {
+  EchartsTimeseriesSeriesType,
+  OrientationType,
+} from '../../src/Timeseries/types';
 import { createEchartsTimeseriesTestChartProps } from '../helpers';
 
 jest.mock('../../src/components/Echart', () => ({
@@ -210,6 +214,31 @@ test('EchartsMixedTimeseries context menu emits the category x-axis filter', asy
     }),
     expect.objectContaining({ col: 'gender', op: '==', val: 'girl' }),
   ]);
+});
+
+test('EchartsMixedTimeseries horizontal context menu drills on the category slot', async () => {
+  const { eventHandlers, onContextMenu } = setup({
+    orientation: OrientationType.Horizontal,
+    seriesType: EchartsTimeseriesSeriesType.Bar,
+    seriesTypeB: EchartsTimeseriesSeriesType.Bar,
+  });
+
+  // Horizontal series data is [value, category], so the drill filter must
+  // read the timestamp from index 1 rather than index 0.
+  await eventHandlers.contextmenu({
+    data: [1, ts1],
+    seriesName: 'sum__num, boy',
+    seriesIndex: 0,
+    name: '',
+    event: { stop: jest.fn(), event: { clientX: 0, clientY: 0 } },
+  });
+
+  const payload = onContextMenu.mock.calls[0][2];
+  expect(payload.drillToDetail).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ col: 'ds', op: '==', val: ts1 }),
+    ]),
+  );
 });
 
 test('EchartsMixedTimeseries hover focuses and unfocuses the series', () => {
