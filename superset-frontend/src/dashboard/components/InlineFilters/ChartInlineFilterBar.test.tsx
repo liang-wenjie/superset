@@ -16,12 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { supersetTheme } from '@apache-superset/core/theme';
 import { SupersetClient } from '@superset-ui/core';
 import { render, screen, userEvent, waitFor } from '@superset-ui/core/spec';
 import {
   ChartInlineFilterBar,
   getInlineFilterPopupWidth,
-  INLINE_FILTER_SELECT_HEIGHT,
 } from './ChartInlineFilterBar';
 
 jest.mock('@superset-ui/core', () => ({
@@ -84,7 +84,7 @@ test('renders full distinct values in a popup wider than the compact trigger', a
   });
 });
 
-test('single and multi filter boxes use the original multi height', async () => {
+test('single and multi filter boxes use the standard search control height', async () => {
   mockGet.mockResolvedValue({ json: { result: ['账号二', '账号三'] } });
 
   render(
@@ -106,17 +106,15 @@ test('single and multi filter boxes use the original multi height', async () => 
 
   expect(single).toBeInTheDocument();
   expect(multi).toBeInTheDocument();
-  // Both variants are pinned to the multiple selector's original 31px box;
-  // the single variant (43px by default) shrinks to match it.
-  // `height` is ignored here because the root is a flex item with
-  // flex-basis: 0; min/max-height are the constraints that actually apply.
+  // Both variants are pinned to theme.controlHeight, the same token the
+  // ListView search input and filter pills use. A plain height is ignored
+  // here because the root is a flex item with flex-basis: 0; min/max-height
+  // are the constraints that actually apply.
+  expect(supersetTheme.controlHeight).toBeGreaterThan(0);
+  const controlHeight = `${supersetTheme.controlHeight}px`;
   [single, multi].forEach(box => {
-    expect(getComputedStyle(box).minHeight).toBe(
-      `${INLINE_FILTER_SELECT_HEIGHT}px`,
-    );
-    expect(getComputedStyle(box).maxHeight).toBe(
-      `${INLINE_FILTER_SELECT_HEIGHT}px`,
-    );
+    expect(getComputedStyle(box).minHeight).toBe(controlHeight);
+    expect(getComputedStyle(box).maxHeight).toBe(controlHeight);
   });
   const singleContent = single.querySelector(
     '.ant-select-content',

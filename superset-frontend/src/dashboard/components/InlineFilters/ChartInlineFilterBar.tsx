@@ -30,14 +30,6 @@ import type {
 
 const BAR_HEIGHT = 28;
 
-// Natural box height of antd's multiple selector at size="small" in this bar,
-// measured from the rendered UI: 31px including its two 1px borders. The
-// SINGLE variant is taller (43px) because it inherits the wrapper's 32px
-// line-height and adds vertical padding, while the multiple selector keeps its
-// content at line-height 1. Pin both to the multiple selector's ORIGINAL
-// height and compact the single variant's metrics to fit that box.
-export const INLINE_FILTER_SELECT_HEIGHT = 31;
-
 // Distinct values are usually much longer than the compact filter trigger.
 // rc-select sizes the popup to the trigger by default, so every value was
 // truncated to a few characters. A numeric width lets the popup grow with its
@@ -89,8 +81,8 @@ const FilterLabel = styled.span`
 
 // Grow with the selected value instead of showing a fixed 100px box; the bar
 // scrolls horizontally when several filters are configured. Both select
-// variants are pinned to the multiple selector's original height below, so
-// the "Allow multiple values" switch never resizes the filter box.
+// variants use the standard search-control height from the theme, so the
+// "Allow multiple values" switch never resizes the filter box.
 const StyledSelect = styled(Select)`
   width: auto;
   min-width: 110px;
@@ -100,16 +92,17 @@ const StyledSelect = styled(Select)`
   /* In antd 6 the bordered box is the .ant-select root itself. Superset's
      Select gives that root flex: 0 inside a column flex container, so
      flex-basis 0 makes a plain height ineffective. min/max-height are hard
-     constraints for flex items: pin both to the multiple selector's original
-     height so the taller single variant shrinks to match. */
+     constraints for flex items. Use the same theme.controlHeight that the
+     ListView search input and filter pills use, so all search controls in the
+     app line up. */
   && .ant-select {
-    min-height: ${INLINE_FILTER_SELECT_HEIGHT}px;
-    max-height: ${INLINE_FILTER_SELECT_HEIGHT}px;
+    min-height: ${({ theme }) => theme.controlHeight}px;
+    max-height: ${({ theme }) => theme.controlHeight}px;
   }
 
-  /* The single variant is 43px by default: it inherits the wrapper's 32px
+  /* The single variant is taller by default: it inherits the wrapper's 32px
      line-height and adds vertical padding. Compact both so its value fits the
-     31px multiple-height box without being clipped. */
+     standard control height without being clipped. */
   && .ant-select-single {
     line-height: 1;
     padding-block: 0;
