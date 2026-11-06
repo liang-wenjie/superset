@@ -110,6 +110,8 @@ export type EchartsMixedTimeseriesFormData = QueryFormData & {
   groupby: QueryFormColumn[];
   groupbyB: QueryFormColumn[];
   orientation?: OrientationType;
+  /** Draw the primary and secondary value axes on the opposite sides. */
+  swapYAxes?: boolean;
 } & LegendFormData &
   TitleFormData;
 
@@ -165,6 +167,7 @@ export const DEFAULT_FORM_DATA: EchartsMixedTimeseriesFormData = {
   xAxisLabelRotation: TIMESERIES_DEFAULTS.xAxisLabelRotation,
   xAxisLabelInterval: TIMESERIES_DEFAULTS.xAxisLabelInterval,
   orientation: OrientationType.Vertical,
+  swapYAxes: false,
   ...DEFAULT_TITLE_FORM_DATA,
 };
 

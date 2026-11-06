@@ -482,6 +482,21 @@ const config: ControlPanelConfig = {
             },
           },
         ],
+        [
+          {
+            name: 'swapYAxes',
+            config: {
+              type: 'CheckboxControl',
+              renderTrigger: true,
+              label: t('Swap Y axes'),
+              default: false,
+              description: t(
+                'Draw the primary value axis on the right and the secondary value axis on the left. Each series keeps its own scale, bounds and number format; only the side its axis is drawn on changes.',
+              ),
+              disableStash: true,
+            },
+          },
+        ],
       ],
     },
     {

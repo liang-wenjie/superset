@@ -2256,3 +2256,57 @@ test('horizontal bar value labels sit at the value end', () => {
   expect(bars.length).toBeGreaterThan(0);
   bars.forEach(series => expect(series.label?.position).toBe('right'));
 });
+
+type PositionedAxis = { position?: string; name?: string };
+
+test('swapYAxes flips the left/right value axes without rebinding series', () => {
+  // No `swapYAxes` key: charts saved before the control existed must keep
+  // the legacy primary-left / secondary-right layout.
+  const base: EchartsMixedTimeseriesFormData = {
+    ...horizontalFormData,
+    orientation: OrientationType.Vertical,
+    yAxisIndex: 0,
+    yAxisIndexB: 1,
+  };
+  const normal = transformMixedWithOrientation(base);
+  const swapped = transformMixedWithOrientation({ ...base, swapYAxes: true });
+
+  const axes = (options: MixedEchartOptions) =>
+    options.yAxis as PositionedAxis[];
+  expect(axes(normal).map(axis => axis.position)).toEqual(['left', 'right']);
+  expect(axes(swapped).map(axis => axis.position)).toEqual(['right', 'left']);
+  // The axis objects are not reordered: each series keeps its own scale,
+  // bounds, title and number format, and only moves to the other side.
+  expect(axes(normal).map(axis => axis.name)).toEqual(
+    axes(swapped).map(axis => axis.name),
+  );
+
+  const axisIndices = (options: MixedEchartOptions) =>
+    options.series
+      .map(series => (series as unknown as { yAxisIndex?: number }).yAxisIndex)
+      .filter(index => index !== undefined);
+  expect(axisIndices(normal)).toContain(1);
+  expect(axisIndices(swapped)).toEqual(axisIndices(normal));
+});
+
+test('swapYAxes flips top/bottom value axes when horizontal', () => {
+  const base: EchartsMixedTimeseriesFormData = {
+    ...horizontalFormData,
+    yAxisIndex: 0,
+    yAxisIndexB: 1,
+  };
+  const normal = transformMixedWithOrientation(base);
+  const swapped = transformMixedWithOrientation({ ...base, swapYAxes: true });
+
+  const axes = (options: MixedEchartOptions) =>
+    options.xAxis as PositionedAxis[];
+  expect(axes(normal).map(axis => axis.position)).toEqual(['bottom', 'top']);
+  expect(axes(swapped).map(axis => axis.position)).toEqual(['top', 'bottom']);
+
+  const axisIndices = (options: MixedEchartOptions) =>
+    options.series.map(
+      series => (series as unknown as { xAxisIndex?: number }).xAxisIndex,
+    );
+  expect(axisIndices(normal)).toContain(1);
+  expect(axisIndices(swapped)).toEqual(axisIndices(normal));
+});

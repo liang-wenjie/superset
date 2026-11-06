@@ -244,6 +244,7 @@ export default function transformProps(
     groupby,
     groupbyB,
     orientation,
+    swapYAxes,
     xAxis: xAxisOrig,
     xAxisForceCategorical,
     xAxisTitle,
@@ -983,6 +984,20 @@ export default function transformProps(
 
   const alignTicks = yAxisIndex !== yAxisIndexB;
 
+  // ECharts assigns a missing axis `position` in array order: the first value
+  // axis goes left (bottom once the pair becomes xAxis in horizontal mode)
+  // and the second goes to the opposite side. Pin both explicitly so the two
+  // sides can be swapped. Only the positions change: series keep their axis
+  // indices, and therefore their own scale, bounds, title and number format.
+  // Flipping the series indices as well would bind each query to the other
+  // axis' formatting without producing any visible swap.
+  const valueAxisPositions = isHorizontal
+    ? (['bottom', 'top'] as const)
+    : (['left', 'right'] as const);
+  const [primaryAxisPosition, secondaryAxisPosition] = swapYAxes
+    ? [valueAxisPositions[1], valueAxisPositions[0]]
+    : valueAxisPositions;
+
   // Horizontal orientation moves the primary/secondary value axes from
   // yAxis[] to xAxis[], so each series must reference xAxisIndex instead.
   // Annotation series carry no axis index and keep ECharts' default of 0.
@@ -1063,6 +1078,7 @@ export default function transformProps(
     yAxis: [
       {
         ...defaultYAxis,
+        position: primaryAxisPosition,
         type: logAxis ? 'log' : 'value',
         min: yAxisMin,
         max: yAxisMax,
@@ -1088,6 +1104,7 @@ export default function transformProps(
       },
       {
         ...defaultYAxis,
+        position: secondaryAxisPosition,
         type: logAxisSecondary ? 'log' : 'value',
         min: minSecondary,
         max: maxSecondary,

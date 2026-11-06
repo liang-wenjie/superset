@@ -226,3 +226,47 @@ test('orientation control always renders both direction options', () => {
   expect(orientationCtrl?.config.options[1][0]).toBe('horizontal');
   expect(orientationCtrl?.config.description).toContain('horizontal');
 });
+
+test('swap Y axes is a checkbox directly below the orientation control', () => {
+  const swapCtrl = getControl('swapYAxes') as unknown as {
+    name: string;
+    config: {
+      type: string;
+      default: boolean;
+      label: string;
+      renderTrigger?: boolean;
+      disableStash?: boolean;
+    };
+  } | null;
+  expect(swapCtrl).not.toBeNull();
+  expect(swapCtrl?.config.type).toBe('CheckboxControl');
+  expect(swapCtrl?.config.default).toBe(false);
+  expect(swapCtrl?.config.renderTrigger).toBe(true);
+  // An unchecked box must still reach form_data.
+  expect(swapCtrl?.config.disableStash).toBe(true);
+
+  const orientationSection = config.controlPanelSections.find(section =>
+    section?.controlSetRows?.some(row =>
+      row.some(
+        control =>
+          typeof control === 'object' &&
+          control !== null &&
+          'name' in control &&
+          control.name === 'orientation',
+      ),
+    ),
+  );
+  const rows = orientationSection?.controlSetRows ?? [];
+  const rowIndex = (name: string) =>
+    rows.findIndex(row =>
+      row.some(
+        control =>
+          typeof control === 'object' &&
+          control !== null &&
+          'name' in control &&
+          control.name === name,
+      ),
+    );
+  expect(rowIndex('orientation')).toBeGreaterThanOrEqual(0);
+  expect(rowIndex('swapYAxes')).toBe(rowIndex('orientation') + 1);
+});
