@@ -21,6 +21,7 @@ import { render, screen, userEvent, waitFor } from '@superset-ui/core/spec';
 import {
   ChartInlineFilterBar,
   getInlineFilterPopupWidth,
+  INLINE_FILTER_SELECT_HEIGHT,
 } from './ChartInlineFilterBar';
 
 jest.mock('@superset-ui/core', () => ({
@@ -83,7 +84,7 @@ test('renders full distinct values in a popup wider than the compact trigger', a
   });
 });
 
-test('single and multi filter boxes share the same height rule', async () => {
+test('single and multi filter boxes use the original multi height', async () => {
   mockGet.mockResolvedValue({ json: { result: ['账号二', '账号三'] } });
 
   render(
@@ -105,11 +106,13 @@ test('single and multi filter boxes share the same height rule', async () => {
 
   expect(single).toBeInTheDocument();
   expect(multi).toBeInTheDocument();
-  // antd sizes the two variants differently; our shared rule has to apply to
-  // both so turning "Allow multiple values" on does not resize the box.
-  expect(getComputedStyle(single).minHeight).not.toBe('');
-  expect(getComputedStyle(single).minHeight).toBe(
-    getComputedStyle(multi).minHeight,
+  // Both variants are pinned to the multiple selector's original 43px box,
+  // so turning "Allow multiple values" on cannot resize the filter box.
+  expect(getComputedStyle(single).height).toBe(
+    `${INLINE_FILTER_SELECT_HEIGHT}px`,
+  );
+  expect(getComputedStyle(multi).height).toBe(
+    `${INLINE_FILTER_SELECT_HEIGHT}px`,
   );
   const singleContent = single.querySelector(
     '.ant-select-content',

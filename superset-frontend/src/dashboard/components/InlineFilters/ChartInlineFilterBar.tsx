@@ -30,6 +30,13 @@ import type {
 
 const BAR_HEIGHT = 28;
 
+// Natural box height of antd's multiple selector at size="small" in this bar,
+// measured from the rendered UI: 43px including its two 1px borders. The
+// single variant only reaches 31px because it has no tag row. Pin both
+// variants to the multiple selector's ORIGINAL height so switching
+// "Allow multiple values" changes only the selection behavior, not the box.
+export const INLINE_FILTER_SELECT_HEIGHT = 43;
+
 // Distinct values are usually much longer than the compact filter trigger.
 // rc-select sizes the popup to the trigger by default, so every value was
 // truncated to a few characters. A numeric width lets the popup grow with its
@@ -80,12 +87,9 @@ const FilterLabel = styled.span`
 `;
 
 // Grow with the selected value instead of showing a fixed 100px box; the bar
-// scrolls horizontally when several filters are configured. antd's multiple
-// selector grows with its tag row (the wrapper's 32px line-height plus tag
-// margins/padding) while the single selector keeps the small-control height,
-// so the two filter kinds rendered boxes of different heights. Pin one shared
-// minimum height on both selectors so switching "Allow multiple values" only
-// changes the selection behavior, not the box appearance.
+// scrolls horizontally when several filters are configured. Both select
+// variants are pinned to the multiple selector's original height below, so
+// the "Allow multiple values" switch never resizes the filter box.
 const StyledSelect = styled(Select)`
   width: auto;
   min-width: 110px;
@@ -94,7 +98,7 @@ const StyledSelect = styled(Select)`
 
   /* In antd 6 the bordered box is the .ant-select root itself. */
   && .ant-select {
-    min-height: ${({ theme }) => theme.sizeXL + theme.sizeUnit * 2 + 2}px;
+    height: ${INLINE_FILTER_SELECT_HEIGHT}px;
   }
 
   /* The root aligns its children to flex-start; center the value row so the
