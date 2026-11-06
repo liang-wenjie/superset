@@ -31,11 +31,12 @@ import type {
 const BAR_HEIGHT = 28;
 
 // Natural box height of antd's multiple selector at size="small" in this bar,
-// measured from the rendered UI: 43px including its two 1px borders. The
-// single variant only reaches 31px because it has no tag row. Pin both
-// variants to the multiple selector's ORIGINAL height so switching
-// "Allow multiple values" changes only the selection behavior, not the box.
-export const INLINE_FILTER_SELECT_HEIGHT = 43;
+// measured from the rendered UI: 31px including its two 1px borders. The
+// SINGLE variant is taller (43px) because it inherits the wrapper's 32px
+// line-height and adds vertical padding, while the multiple selector keeps its
+// content at line-height 1. Pin both to the multiple selector's ORIGINAL
+// height and compact the single variant's metrics to fit that box.
+export const INLINE_FILTER_SELECT_HEIGHT = 31;
 
 // Distinct values are usually much longer than the compact filter trigger.
 // rc-select sizes the popup to the trigger by default, so every value was
@@ -96,13 +97,25 @@ const StyledSelect = styled(Select)`
   max-width: 220px;
   flex-shrink: 0;
 
-  /* In antd 6 the bordered box is the .ant-select root itself. */
+  /* In antd 6 the bordered box is the .ant-select root itself. Superset's
+     Select gives that root flex: 0 inside a column flex container, so
+     flex-basis 0 makes a plain height ineffective. min/max-height are hard
+     constraints for flex items: pin both to the multiple selector's original
+     height so the taller single variant shrinks to match. */
   && .ant-select {
-    height: ${INLINE_FILTER_SELECT_HEIGHT}px;
+    min-height: ${INLINE_FILTER_SELECT_HEIGHT}px;
+    max-height: ${INLINE_FILTER_SELECT_HEIGHT}px;
   }
 
-  /* The root aligns its children to flex-start; center the value row so the
-     taller box keeps its text aligned with the (already centered) arrow. */
+  /* The single variant is 43px by default: it inherits the wrapper's 32px
+     line-height and adds vertical padding. Compact both so its value fits the
+     31px multiple-height box without being clipped. */
+  && .ant-select-single {
+    line-height: 1;
+    padding-block: 0;
+  }
+
+  /* Center the value row against the (already centered) arrow. */
   && .ant-select .ant-select-content {
     align-self: center;
   }

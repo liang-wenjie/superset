@@ -106,14 +106,18 @@ test('single and multi filter boxes use the original multi height', async () => 
 
   expect(single).toBeInTheDocument();
   expect(multi).toBeInTheDocument();
-  // Both variants are pinned to the multiple selector's original 43px box,
-  // so turning "Allow multiple values" on cannot resize the filter box.
-  expect(getComputedStyle(single).height).toBe(
-    `${INLINE_FILTER_SELECT_HEIGHT}px`,
-  );
-  expect(getComputedStyle(multi).height).toBe(
-    `${INLINE_FILTER_SELECT_HEIGHT}px`,
-  );
+  // Both variants are pinned to the multiple selector's original 31px box;
+  // the single variant (43px by default) shrinks to match it.
+  // `height` is ignored here because the root is a flex item with
+  // flex-basis: 0; min/max-height are the constraints that actually apply.
+  [single, multi].forEach(box => {
+    expect(getComputedStyle(box).minHeight).toBe(
+      `${INLINE_FILTER_SELECT_HEIGHT}px`,
+    );
+    expect(getComputedStyle(box).maxHeight).toBe(
+      `${INLINE_FILTER_SELECT_HEIGHT}px`,
+    );
+  });
   const singleContent = single.querySelector(
     '.ant-select-content',
   ) as HTMLElement;
@@ -122,6 +126,26 @@ test('single and multi filter boxes use the original multi height', async () => 
   ) as HTMLElement;
   expect(getComputedStyle(singleContent).alignSelf).toBe('center');
   expect(getComputedStyle(multiContent).alignSelf).toBe('center');
+
+  // The single variant also needs its inherited 32px line-height and padding
+  // compacted, otherwise its value overflows the shorter box.
+  const ruleTexts = Array.from(document.styleSheets)
+    .flatMap(sheet => {
+      try {
+        return Array.from(sheet.cssRules).map(rule => rule.cssText);
+      } catch {
+        return [];
+      }
+    })
+    .map(rule => rule.replace(/\s/g, ''));
+  expect(
+    ruleTexts.some(
+      rule =>
+        rule.includes('.ant-select-single') &&
+        rule.includes('line-height:1') &&
+        rule.includes('padding-block:0'),
+    ),
+  ).toBe(true);
 });
 
 test('a multi filter selects several values and reports them as an array', async () => {
