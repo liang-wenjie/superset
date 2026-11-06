@@ -204,41 +204,23 @@ test('Query B filter control hides when filters are shared with Query A', () => 
   ).toBe(true);
 });
 
-test('orientation control is only available when both queries use bars', () => {
+test('orientation control always renders both direction options', () => {
   const orientationCtrl = getControl('orientation') as unknown as {
     name: string;
     config: {
-      visibility: (props: ControlPanelsContainerProps) => boolean;
+      visibility?: (props: ControlPanelsContainerProps) => boolean;
       default: string;
       options: unknown[][];
+      description: string;
     };
   } | null;
   expect(orientationCtrl).not.toBeNull();
+  // Hiding the section's only control leaves an empty panel, so the control
+  // must stay visible; transformProps guards the horizontal rendering itself.
+  expect(orientationCtrl?.config.visibility).toBeUndefined();
   expect(orientationCtrl?.config.default).toBe('vertical');
   expect(orientationCtrl?.config.options).toHaveLength(2);
-
-  expect(
-    orientationCtrl?.config.visibility({
-      controls: {
-        seriesType: { value: 'bar' },
-        seriesTypeB: { value: 'bar' },
-      },
-    } as unknown as ControlPanelsContainerProps),
-  ).toBe(true);
-  expect(
-    orientationCtrl?.config.visibility({
-      controls: {
-        seriesType: { value: 'line' },
-        seriesTypeB: { value: 'bar' },
-      },
-    } as unknown as ControlPanelsContainerProps),
-  ).toBe(false);
-  expect(
-    orientationCtrl?.config.visibility({
-      controls: {
-        seriesType: { value: 'bar' },
-        seriesTypeB: { value: 'line' },
-      },
-    } as unknown as ControlPanelsContainerProps),
-  ).toBe(false);
+  expect(orientationCtrl?.config.options[0][0]).toBe('vertical');
+  expect(orientationCtrl?.config.options[1][0]).toBe('horizontal');
+  expect(orientationCtrl?.config.description).toContain('Horizontal');
 });

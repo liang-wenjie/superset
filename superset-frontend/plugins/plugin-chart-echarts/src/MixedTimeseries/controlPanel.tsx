@@ -474,13 +474,8 @@ const config: ControlPanelConfig = {
                 [OrientationType.Horizontal, t('Horizontal')],
               ],
               description: t(
-                'Orientation of the bars. Available when both Query A and Query B use bars.',
+                'Orientation of the bars. Horizontal only takes effect when both Query A and Query B use the Bar series type; otherwise the chart stays vertical.',
               ),
-              visibility: ({ controls }: ControlPanelsContainerProps) =>
-                controls?.seriesType?.value ===
-                  EchartsTimeseriesSeriesType.Bar &&
-                controls?.seriesTypeB?.value ===
-                  EchartsTimeseriesSeriesType.Bar,
             },
           },
         ],
