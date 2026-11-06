@@ -39,7 +39,7 @@ import {
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { CSS } from '@dnd-kit/utilities';
 import ControlHeader from 'src/explore/components/ControlHeader';
-import HeaderGroupEditor, { getGroupTitle } from './HeaderGroupEditor';
+import HeaderGroupEditor, { getGroupDisplayTitle } from './HeaderGroupEditor';
 import { HeaderGroupConfig, HeaderGroupsControlProps } from './types';
 import {
   collectUsedHeaderGroupColumns,
@@ -173,7 +173,7 @@ function SortableGroupRow({
           onRemove={onRemove}
         >
           <OptionControlContainer withCaret>
-            <Label>{getGroupTitle([index])}</Label>
+            <Label>{getGroupDisplayTitle(group, [index])}</Label>
             <CaretContainer>
               <Icons.RightOutlined iconSize="m" />
             </CaretContainer>

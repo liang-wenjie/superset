@@ -917,6 +917,31 @@ export default function TableChart<D extends DataRecord = DataRecord>(
     };
   }, [filteredColumnsMeta, headerGroups]);
 
+  // A group placed on the right starts after the ungrouped columns. Its left
+  // edge is drawn in the multi-level header rows, so carry the same edge onto
+  // the column header and body cells to keep the line continuous.
+  const headerGroupBoundaryKeys = useMemo(() => {
+    if (!hasHeaderGroups) {
+      return new Set<string>();
+    }
+    const rows = buildHeaderGroupRows(
+      headerGroups,
+      visibleColumnsMeta.map(column => column.key),
+    );
+    const keys = new Set<string>();
+    rows.forEach(row =>
+      row.forEach(cell => {
+        if (cell.label && cell.columnIndex > 0) {
+          const key = visibleColumnsMeta[cell.columnIndex - 1]?.key;
+          if (key) {
+            keys.add(key);
+          }
+        }
+      }),
+    );
+    return keys;
+  }, [hasHeaderGroups, headerGroups, visibleColumnsMeta]);
+
   // Use visibleColumnsMeta for groupHeaderColumns to ensure indices match the actual
   // table columns. This fixes header misalignment when columns are filtered.
   const groupHeaderColumns = useMemo(
@@ -946,7 +971,8 @@ export default function TableChart<D extends DataRecord = DataRecord>(
     th:first-of-type {
       border-left: none;
     }
-    th[data-dimension-separator='true'] {
+    th[data-dimension-separator='true'],
+    th[data-group-boundary='true'] {
       border-right: var(${TABLE_STYLE_VARS.headerBorderWidth}, 2px) solid
         var(${TABLE_STYLE_VARS.borderColor}, ${theme.colorSplit});
     }
@@ -1022,6 +1048,9 @@ export default function TableChart<D extends DataRecord = DataRecord>(
                 !lastColumn.isMetric &&
                 !lastColumn.isPercentMetric,
               );
+              const hasGroupBoundary = Boolean(
+                lastColumn && headerGroupBoundaryKeys.has(lastColumn.key),
+              );
               const spanColumns = visibleColumnsMeta.slice(
                 cell.columnIndex,
                 cell.columnIndex + cell.colSpan,
@@ -1036,6 +1065,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
                   rowSpan={cell.rowSpan}
                   data-last-column={cell.isLastColumn || undefined}
                   data-dimension-separator={hasDimensionSeparator || undefined}
+                  data-group-boundary={hasGroupBoundary || undefined}
                   style={{
                     borderBottom: cell.label ? undefined : 0,
                     textAlign: cell.labelAlign ?? 'center',
@@ -1182,7 +1212,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
         className += ' dt-is-filter';
       }
 
-      if (!isMetric && !isPercentMetric) {
+      if ((!isMetric && !isPercentMetric) || headerGroupBoundaryKeys.has(key)) {
         className += ' right-border-only';
       } else if (comparisonLabels.includes(label)) {
         const groupinHeader = key.substring(label.length);
@@ -1580,6 +1610,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
       toggleFilter,
       handleContextMenu,
       allowRearrangeColumns,
+      headerGroupBoundaryKeys,
     ],
   );
 

@@ -203,6 +203,14 @@ export function getGroupTitle(path: number[]): string {
     : t('Subgroup %s', numberedPath);
 }
 
+/** Show the configured name in list rows, falling back to a numbered title. */
+export function getGroupDisplayTitle(
+  group: HeaderGroupConfig,
+  path: number[],
+): string {
+  return group.label?.trim() || getGroupTitle(path);
+}
+
 function HeaderGroupForm({
   group,
   path,

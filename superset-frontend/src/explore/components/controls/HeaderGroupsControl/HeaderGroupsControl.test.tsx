@@ -216,7 +216,7 @@ test('disables adding a subgroup when no columns are selected', async () => {
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
 
   expect(screen.getByRole('button', { name: /Add subgroup/ })).toBeDisabled();
   await userEvent.click(screen.getByRole('button', { name: /Add subgroup/ }));
@@ -240,7 +240,7 @@ test('disables adding a subgroup when the group name is empty', async () => {
   expect(onChange).not.toHaveBeenCalled();
 });
 
-test('renders existing groups as numbered labels and edits them in a popover', async () => {
+test('renders existing groups with their names and edits them in a popover', async () => {
   const onChange = jest.fn();
   render(
     <HeaderGroupsControl
@@ -250,11 +250,11 @@ test('renders existing groups as numbered labels and edits them in a popover', a
     />,
   );
 
-  expect(screen.getByText('Group 1')).toBeInTheDocument();
-  expect(screen.queryByText('Group 1: Sales')).not.toBeInTheDocument();
+  expect(screen.getByText('Sales')).toBeInTheDocument();
+  expect(screen.queryByText('Group 1')).not.toBeInTheDocument();
   expect(screen.queryByDisplayValue('Sales')).not.toBeInTheDocument();
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
 
   expect(screen.getByDisplayValue('Sales')).toBeInTheDocument();
   expect(screen.getByText('Label position')).toBeInTheDocument();
@@ -264,6 +264,34 @@ test('renders existing groups as numbered labels and edits them in a popover', a
 
   expect(screen.getByText('Subgroup 1.1')).toBeInTheDocument();
   expect(onChange).not.toHaveBeenCalled();
+});
+
+test('shows each group name instead of a numbered placeholder', () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({ id: 'a', label: 'Revenue' }),
+        createGroup({ id: 'b', label: 'Cost', columns: ['SUM(cost)'] }),
+      ]}
+    />,
+  );
+
+  expect(screen.getByText('Revenue')).toBeInTheDocument();
+  expect(screen.getByText('Cost')).toBeInTheDocument();
+  expect(screen.queryByText('Group 1')).not.toBeInTheDocument();
+  expect(screen.queryByText('Group 2')).not.toBeInTheDocument();
+});
+
+test('falls back to a numbered title when a group has no name', () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup({ label: '   ' })]}
+    />,
+  );
+
+  expect(screen.getByText('Group 1')).toBeInTheDocument();
 });
 
 test('collapses group settings with an icon when a subgroup exists', async () => {
@@ -284,7 +312,7 @@ test('collapses group settings with an icon when a subgroup exists', async () =>
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
 
   const collapseParent = screen.getAllByLabelText('Collapse settings')[0];
   expect(collapseParent).toBeInTheDocument();
@@ -296,7 +324,7 @@ test('collapses group settings with an icon when a subgroup exists', async () =>
 
   expect(screen.queryByDisplayValue('Sales')).not.toBeInTheDocument();
   expect(screen.queryByText('Table side')).not.toBeInTheDocument();
-  expect(screen.queryByText('Sales')).not.toBeInTheDocument();
+  expect(screen.getAllByLabelText('Group name')).toHaveLength(1);
   expect(screen.getByText('Subgroup 1.1')).toBeInTheDocument();
   expect(
     screen.getAllByRole('button', { name: /Add subgroup/ }).length,
@@ -326,7 +354,7 @@ test('collapses a nested subgroup with an icon only', async () => {
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
   await userEvent.click(screen.getAllByLabelText('Collapse settings')[1]);
 
   expect(screen.queryByDisplayValue('Online')).not.toBeInTheDocument();
@@ -338,7 +366,7 @@ test('collapses a nested subgroup with an icon only', async () => {
 test('does not offer collapse when a top-level group has no subgroups', async () => {
   render(<HeaderGroupsControl {...baseProps} value={[createGroup()]} />);
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
 
   expect(screen.queryByLabelText('Collapse settings')).not.toBeInTheDocument();
   expect(screen.getByDisplayValue('Sales')).toBeInTheDocument();
@@ -369,7 +397,7 @@ test('moves a subgroup within its parent group', async () => {
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
   await userEvent.click(screen.getAllByLabelText('Move group right')[0]);
 
   expect(onChange).toHaveBeenCalledWith([
@@ -407,7 +435,7 @@ test('moves a subgroup left within its parent group', async () => {
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
   await userEvent.click(screen.getAllByLabelText('Move group left')[1]);
 
   expect(onChange).toHaveBeenCalledWith([
@@ -467,7 +495,7 @@ test('persists a completed subgroup added while editing', async () => {
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
   await userEvent.click(screen.getByRole('button', { name: /Add subgroup/ }));
   fireEvent.change(screen.getAllByLabelText('Group name')[1], {
     target: { value: 'Online' },
@@ -505,7 +533,7 @@ test('locks columns on automatically created time comparison groups', async () =
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
 
   expect(
     screen
@@ -593,7 +621,7 @@ test('does not show a name error on a new subgroup in edit mode', async () => {
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
   await userEvent.click(screen.getByRole('button', { name: /Add subgroup/ }));
 
   expect(screen.getByText('Subgroup 1.1')).toBeInTheDocument();
@@ -610,7 +638,7 @@ test('does not persist an empty name or last column while editing', async () => 
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
 
   fireEvent.change(screen.getByLabelText('Group name'), {
     target: { value: '' },
@@ -646,7 +674,7 @@ test('edits name, columns, alignment, and placement from the popover', async () 
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
 
   fireEvent.change(screen.getByLabelText('Group name'), {
     target: { value: 'Revenue' },
@@ -707,7 +735,7 @@ test('removes a nested subgroup from the edit popover', async () => {
     />,
   );
 
-  await userEvent.click(screen.getByText('Group 1'));
+  await userEvent.click(screen.getByText('Sales'));
   expect(screen.getByText('Subgroup 1.1')).toBeInTheDocument();
 
   await userEvent.click(screen.getAllByLabelText('Remove group')[1]);

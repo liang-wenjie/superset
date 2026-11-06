@@ -350,6 +350,73 @@ test('renders multi-level header groups above column names', () => {
   });
 });
 
+test('keeps a right-side group boundary line through the header and body', () => {
+  const baseProps = transformProps(testData.advanced);
+  const props = {
+    ...baseProps,
+    headerGroups: [
+      {
+        id: 'right-group',
+        label: 'Right group',
+        columns: ['%pct_nice'],
+        placement: 'right' as const,
+      },
+    ],
+  };
+
+  const { container: baseline } = render(
+    <TableChart {...baseProps} sticky={false} />,
+  );
+  const { container } = render(<TableChart {...props} sticky={false} />);
+  const findSumHeader = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('thead tr:last-of-type th')).find(
+      th => th.getAttribute('data-column-name') === '1',
+    );
+  const baselineSum = findSumHeader(baseline);
+  const sumHeader = findSumHeader(container);
+
+  expect(baselineSum?.textContent).toContain('Sum of Num');
+  expect(baselineSum?.classList.contains('right-border-only')).toBe(false);
+  expect(sumHeader?.classList.contains('right-border-only')).toBe(true);
+  expect(
+    container
+      .querySelectorAll('thead tr:first-of-type th')[1]
+      .getAttribute('data-group-boundary'),
+  ).toBe('true');
+  expect(
+    container
+      .querySelectorAll('tbody tr:first-of-type td')[1]
+      .classList.contains('right-border-only'),
+  ).toBe(true);
+});
+
+test('does not add a boundary line for a left-side group', () => {
+  const props = {
+    ...transformProps(testData.advanced),
+    headerGroups: [
+      {
+        id: 'left-group',
+        label: 'Left group',
+        columns: ['name'],
+        placement: 'left' as const,
+      },
+    ],
+  };
+
+  const { container } = render(<TableChart {...props} sticky={false} />);
+  const sumHeader = Array.from(
+    container.querySelectorAll('thead tr:last-of-type th'),
+  ).find(th => th.getAttribute('data-column-name') === '1');
+
+  expect(sumHeader?.textContent).toContain('Sum of Num');
+  expect(sumHeader?.classList.contains('right-border-only')).toBe(false);
+  expect(
+    container
+      .querySelectorAll('thead tr:first-of-type th')[1]
+      .getAttribute('data-group-boundary'),
+  ).toBeNull();
+});
+
 describe('plugin-chart-table', () => {
   describe('transformProps', () => {
     test('should parse pageLength to pageSize', () => {
