@@ -83,6 +83,44 @@ test('renders full distinct values in a popup wider than the compact trigger', a
   });
 });
 
+test('single and multi filter boxes share the same height rule', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['账号二', '账号三'] } });
+
+  render(
+    <ChartInlineFilterBar
+      filters={[
+        { id: 'single', column: 'account', label: '账号' },
+        { id: 'multi', column: 'region', label: '地区', multi: true },
+      ]}
+      selection={{}}
+      onSelect={jest.fn()}
+      datasourceId={1}
+      datasourceType="table"
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  const single = document.querySelector('.ant-select-single') as HTMLElement;
+  const multi = document.querySelector('.ant-select-multiple') as HTMLElement;
+
+  expect(single).toBeInTheDocument();
+  expect(multi).toBeInTheDocument();
+  // antd sizes the two variants differently; our shared rule has to apply to
+  // both so turning "Allow multiple values" on does not resize the box.
+  expect(getComputedStyle(single).minHeight).not.toBe('');
+  expect(getComputedStyle(single).minHeight).toBe(
+    getComputedStyle(multi).minHeight,
+  );
+  const singleContent = single.querySelector(
+    '.ant-select-content',
+  ) as HTMLElement;
+  const multiContent = multi.querySelector(
+    '.ant-select-content',
+  ) as HTMLElement;
+  expect(getComputedStyle(singleContent).alignSelf).toBe('center');
+  expect(getComputedStyle(multiContent).alignSelf).toBe('center');
+});
+
 test('a multi filter selects several values and reports them as an array', async () => {
   const values = ['账号二-北京分公司', '账号三-上海分公司'];
   mockGet.mockResolvedValue({ json: { result: values } });

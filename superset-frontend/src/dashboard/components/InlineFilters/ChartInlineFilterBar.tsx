@@ -80,12 +80,28 @@ const FilterLabel = styled.span`
 `;
 
 // Grow with the selected value instead of showing a fixed 100px box; the bar
-// scrolls horizontally when several filters are configured.
+// scrolls horizontally when several filters are configured. antd's multiple
+// selector grows with its tag row (the wrapper's 32px line-height plus tag
+// margins/padding) while the single selector keeps the small-control height,
+// so the two filter kinds rendered boxes of different heights. Pin one shared
+// minimum height on both selectors so switching "Allow multiple values" only
+// changes the selection behavior, not the box appearance.
 const StyledSelect = styled(Select)`
   width: auto;
   min-width: 110px;
   max-width: 220px;
   flex-shrink: 0;
+
+  /* In antd 6 the bordered box is the .ant-select root itself. */
+  && .ant-select {
+    min-height: ${({ theme }) => theme.sizeXL + theme.sizeUnit * 2 + 2}px;
+  }
+
+  /* The root aligns its children to flex-start; center the value row so the
+     taller box keeps its text aligned with the (already centered) arrow. */
+  && .ant-select .ant-select-content {
+    align-self: center;
+  }
 `;
 
 interface DistinctCache {
