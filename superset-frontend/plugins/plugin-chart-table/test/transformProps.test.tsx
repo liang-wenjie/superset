@@ -23,11 +23,7 @@ import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabel
 import Styles from '../src/Styles';
 import TableChart from '../src/TableChart';
 import transformProps from '../src/transformProps';
-import {
-  TABLE_FRAME_BODY_CLASS,
-  TABLE_FRAME_FOOTER_CLASS,
-  TABLE_FRAME_HEADER_CLASS,
-} from '../src/utils/tableStyle';
+import { TABLE_FRAME_CLASS } from '../src/utils/tableStyle';
 import testData from './testData';
 
 test('renders authorized chart display labels in table headers without changing data keys', () => {
@@ -236,7 +232,7 @@ test('outer border frame follows header width and the shared line color', () => 
   ).toContain('var(--table-border-color');
 });
 
-test('the frame stylesheet suppresses the sticky inner horizontal edges', () => {
+test('the frame stylesheet draws the sticky frame on the wrapper', () => {
   render(<Styles />);
   // Emotion injects through CSSOM (insertRule) in the test environment, so
   // reading <style> text alone is not enough.
@@ -253,13 +249,13 @@ test('the frame stylesheet suppresses the sticky inner horizontal edges', () => 
     }),
   ].join('\n');
 
-  // These rules are what stop the header/body seam from getting a second line
-  // when sticky mode clones the table into three separate elements.
-  expect(cssText).toContain(`table.${TABLE_FRAME_HEADER_CLASS}`);
-  expect(cssText).toContain(`table.${TABLE_FRAME_BODY_CLASS}`);
-  expect(cssText).toContain(`table.${TABLE_FRAME_FOOTER_CLASS}`);
-  expect(cssText).toMatch(/border-bottom-width:\s*0/);
-  expect(cssText).toMatch(/border-top-width:\s*0/);
+  // An overlay on the wrapper owns all four edges, so the bottom edge uses the
+  // exact same border declaration as the top edge. The cloned tables must not
+  // paint their own edges, or the header/body seam gets a second line.
+  expect(cssText).toContain(`.${TABLE_FRAME_CLASS}`);
+  expect(cssText).toContain(':after');
+  expect(cssText).toContain(`.${TABLE_FRAME_CLASS} table`);
+  expect(cssText).toMatch(/border-width:\s*0/);
 });
 
 test('showing the outer border does not add another line below the header', () => {
@@ -292,10 +288,11 @@ test('showing the outer border does not add another line below the header', () =
     '3px',
   );
   // A non-sticky table is a single element, so it keeps all four frame edges
-  // and must not carry any of the sticky seam classes.
+  // on the table itself and has no sticky wrapper overlay.
+  expect(wrapper.classList.contains(TABLE_FRAME_CLASS)).toBe(false);
   const table = container.querySelector('table');
   expect(table).not.toBeNull();
-  expect(table!.className).not.toContain('dt-table-frame');
+  expect(table!.classList.contains(TABLE_FRAME_CLASS)).toBe(false);
 });
 
 test('renders null values as blank when the option is enabled', () => {

@@ -49,15 +49,13 @@ export const TABLE_OUTER_BORDER_VAR = '--table-outer-border-width';
 export const TABLE_OUTER_BORDER_COLOR_VAR = '--table-outer-border-color';
 
 /**
- * Sticky mode renders one logical table as three separate `<table>` elements
- * (header, body, footer). Those classes tell `Styles.tsx` which of them owns
- * the top/bottom edge of the frame, so the seams between them -- especially
- * the one right below the header -- never get a second line.
+ * Sticky mode renders one logical table as separate header/body/footer
+ * `<table>` elements inside a scrollable wrapper. The wrapper owns the whole
+ * frame: one border declaration keeps the bottom edge identical to the top
+ * edge, visible even when the body scrolls, and avoids extra lines at the
+ * seams between the cloned tables.
  */
-export const TABLE_FRAME_HEADER_CLASS = 'dt-table-frame-header';
-export const TABLE_FRAME_BODY_CLASS = 'dt-table-frame-body';
-export const TABLE_FRAME_FOOTER_CLASS = 'dt-table-frame-footer';
-export const TABLE_FRAME_BOTTOM_CLASS = 'dt-table-frame-bottom';
+export const TABLE_FRAME_CLASS = 'dt-table-frame';
 
 export function getTableStyleVariables(
   config: TableStyleConfig | undefined,

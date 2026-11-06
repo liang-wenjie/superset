@@ -40,12 +40,7 @@ import {
 } from '../utils/getScrollBarSize';
 import needScrollBar from '../utils/needScrollBar';
 import useMountedMemo from '../utils/useMountedMemo';
-import {
-  TABLE_FRAME_BODY_CLASS,
-  TABLE_FRAME_BOTTOM_CLASS,
-  TABLE_FRAME_FOOTER_CLASS,
-  TABLE_FRAME_HEADER_CLASS,
-} from '../../utils/tableStyle';
+import { TABLE_FRAME_CLASS } from '../../utils/tableStyle';
 
 type ReactElementWithChildren<
   T extends keyof JSX.IntrinsicElements,
@@ -121,19 +116,6 @@ const mergeStyleProp = (
   },
 });
 const fixedTableLayout: CSSProperties = { tableLayout: 'fixed' };
-
-/**
- * Sticky mode clones the original `<table>` into a header, a body and an
- * optional footer table. The "Show outer border" frame is styled on `table`,
- * so each clone would otherwise paint its own top and bottom edge. Mark each
- * clone so the stylesheet can keep only the outermost horizontal edges; the
- * header underline must stay a single line instead of gaining extra ones.
- */
-const withFrameClass = (table: Table, ...classNames: string[]) =>
-  cloneElement(table, {
-    role: 'presentation',
-    className: [table.props.className, ...classNames].filter(Boolean).join(' '),
-  });
 
 /**
  * An HOC for generating sticky header and fixed-height scrollable area
@@ -369,7 +351,7 @@ function StickyWrap({
         role="presentation"
       >
         {cloneElement(
-          withFrameClass(table, TABLE_FRAME_HEADER_CLASS),
+          cloneElement(table, { role: 'presentation' }),
           mergeStyleProp(table, fixedTableLayout),
           colgroup,
           thead,
@@ -392,11 +374,7 @@ function StickyWrap({
         role="presentation"
       >
         {cloneElement(
-          withFrameClass(
-            table,
-            TABLE_FRAME_FOOTER_CLASS,
-            TABLE_FRAME_BOTTOM_CLASS,
-          ),
+          cloneElement(table, { role: 'presentation' }),
           mergeStyleProp(table, fixedTableLayout),
           colgroup,
           tfoot,
@@ -429,11 +407,7 @@ function StickyWrap({
         role="presentation"
       >
         {cloneElement(
-          withFrameClass(
-            table,
-            TABLE_FRAME_BODY_CLASS,
-            ...(tfoot ? [] : [TABLE_FRAME_BOTTOM_CLASS]),
-          ),
+          cloneElement(table, { role: 'presentation' }),
           mergeStyleProp(table, fixedTableLayout),
           colgroup,
           tbody,
@@ -448,6 +422,7 @@ function StickyWrap({
     // role="table" is the correct ARIA pattern here, not the suggested tag.
     <div
       ref={wrapRef}
+      className={TABLE_FRAME_CLASS}
       style={{
         width: maxWidth,
         height: sticky.realHeight || maxHeight,

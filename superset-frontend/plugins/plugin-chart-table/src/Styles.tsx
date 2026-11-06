@@ -18,10 +18,7 @@
  */
 import { css, styled } from '@apache-superset/core/theme';
 import {
-  TABLE_FRAME_BODY_CLASS,
-  TABLE_FRAME_BOTTOM_CLASS,
-  TABLE_FRAME_FOOTER_CLASS,
-  TABLE_FRAME_HEADER_CLASS,
+  TABLE_FRAME_CLASS,
   TABLE_OUTER_BORDER_COLOR_VAR,
   TABLE_OUTER_BORDER_VAR,
 } from './utils/tableStyle';
@@ -129,22 +126,36 @@ export default styled.div`
     }
 
     /* Sticky mode splits one logical table into separate header/body/footer
-       <table> elements (see useSticky.tsx). Only the first table's top edge
-       and the last table's bottom edge belong to the outer frame. Suppressing
-       the inner horizontal edges keeps "Show outer border" from drawing extra
-       lines right below the header, on top of the existing header underline.
-       A non-sticky table has none of these classes, so it keeps all four edges. */
-    table.${TABLE_FRAME_HEADER_CLASS} {
-      border-bottom-width: 0;
+       <table> elements inside a scrollable wrapper. Draw the frame on that
+       wrapper instead: a single border declaration makes the bottom edge
+       exactly match the top edge, keeps it visible when the body scrolls, and
+       avoids extra lines at the seams between the cloned tables. The frame is
+       an absolutely positioned overlay, so it never changes the sticky layout.
+       A non-sticky table is not wrapped, so it keeps its own four edges. */
+    .${TABLE_FRAME_CLASS} {
+      position: relative;
     }
 
-    table.${TABLE_FRAME_BODY_CLASS},
-    table.${TABLE_FRAME_FOOTER_CLASS} {
-      border-top-width: 0;
+    .${TABLE_FRAME_CLASS}::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      border: var(${TABLE_OUTER_BORDER_VAR}, 0px) solid
+        var(
+          ${TABLE_OUTER_BORDER_COLOR_VAR},
+          var(--table-border-color, ${theme.colorSplit})
+        );
+      box-sizing: border-box;
+      pointer-events: none;
+      z-index: 1;
     }
 
-    table.${TABLE_FRAME_BODY_CLASS}:not(.${TABLE_FRAME_BOTTOM_CLASS}) {
-      border-bottom-width: 0;
+    /* Only the wrapper draws the frame in sticky mode. */
+    .${TABLE_FRAME_CLASS} table {
+      border-width: 0;
     }
 
     /* Bootstrap-like striped table styles */

@@ -20,12 +20,7 @@ import { useCallback } from 'react';
 import { useTable, Column } from 'react-table';
 import { act, render } from '@superset-ui/core/spec';
 import useSticky from '../../../src/DataTable/hooks/useSticky';
-import {
-  TABLE_FRAME_BODY_CLASS,
-  TABLE_FRAME_BOTTOM_CLASS,
-  TABLE_FRAME_FOOTER_CLASS,
-  TABLE_FRAME_HEADER_CLASS,
-} from '../../../src/utils/tableStyle';
+import { TABLE_FRAME_CLASS } from '../../../src/utils/tableStyle';
 
 // A value distinguishable from any real scrollbar width, so the width
 // assertions below can detect whether header/footer's wrapper width was
@@ -225,50 +220,51 @@ test('sticky header/footer width matches the body, independent of the scrollbar-
   jest.restoreAllMocks();
 });
 
-test('sticky tables mark only the outermost horizontal edges of the frame', () => {
+test('sticky wrapper owns the whole outer border frame', () => {
   mockMeasurements();
 
   const { container } = render(<StickyTableHarness />);
-  const root = container.querySelector('[data-test="sticky-root"] > div');
+  const root = container.querySelector(
+    '[data-test="sticky-root"] > div',
+  ) as HTMLDivElement;
   const [headerDiv, bodyDiv, footerDiv] = Array.from(
-    root!.children,
+    root.children,
   ) as HTMLDivElement[];
-  const headerTable = headerDiv.querySelector('table')!;
-  const bodyTable = bodyDiv.querySelector('table')!;
-  const footerTable = footerDiv.querySelector('table')!;
 
-  // The header table owns the top edge. Giving it a bottom edge too would put
-  // a second line exactly on top of the header underline, which is what made
-  // that line look thicker when "Show outer border" was enabled.
-  expect(headerTable.classList.contains(TABLE_FRAME_HEADER_CLASS)).toBe(true);
-  expect(headerTable.classList.contains(TABLE_FRAME_BOTTOM_CLASS)).toBe(false);
-  // With a footer, the body is a middle segment and owns neither edge.
-  expect(bodyTable.classList.contains(TABLE_FRAME_BODY_CLASS)).toBe(true);
-  expect(bodyTable.classList.contains(TABLE_FRAME_BOTTOM_CLASS)).toBe(false);
-  expect(footerTable.classList.contains(TABLE_FRAME_FOOTER_CLASS)).toBe(true);
-  expect(footerTable.classList.contains(TABLE_FRAME_BOTTOM_CLASS)).toBe(true);
+  // One element -- the wrapper -- draws all four edges with a single border
+  // declaration. That is what makes the bottom edge identical to the top and
+  // keeps it visible while the body scrolls.
+  expect(root.classList.contains(TABLE_FRAME_CLASS)).toBe(true);
+  expect(container.querySelectorAll(`.${TABLE_FRAME_CLASS}`)).toHaveLength(1);
+  // The cloned tables must not paint their own edges: doing so used to add a
+  // second line right below the header and put the bottom edge at the end of
+  // the scrollable content instead of at the bottom of the viewport.
+  [
+    headerDiv.querySelector('table')!,
+    bodyDiv.querySelector('table')!,
+    footerDiv.querySelector('table')!,
+  ].forEach(table => {
+    expect(table.classList.contains(TABLE_FRAME_CLASS)).toBe(false);
+  });
 
   jest.restoreAllMocks();
 });
 
-test('without a footer the sticky body table owns the bottom edge of the frame', () => {
+test('the wrapper still owns the frame when there is no footer', () => {
   mockMeasurements();
 
   const { container } = render(<StickyTableHarness withFooter={false} />);
-  const root = container.querySelector('[data-test="sticky-root"] > div');
-  const [headerDiv, bodyDiv] = Array.from(root!.children) as HTMLDivElement[];
+  const root = container.querySelector(
+    '[data-test="sticky-root"] > div',
+  ) as HTMLDivElement;
 
-  expect(
-    container.querySelectorAll(`table.${TABLE_FRAME_FOOTER_CLASS}`),
-  ).toHaveLength(0);
-  expect(
-    headerDiv
-      .querySelector('table')!
-      .classList.contains(TABLE_FRAME_HEADER_CLASS),
-  ).toBe(true);
-  const bodyTable = bodyDiv.querySelector('table')!;
-  expect(bodyTable.classList.contains(TABLE_FRAME_BODY_CLASS)).toBe(true);
-  expect(bodyTable.classList.contains(TABLE_FRAME_BOTTOM_CLASS)).toBe(true);
+  // Without a footer the body table used to take over the bottom edge. Now
+  // the wrapper owns it in both layouts, so the frame never changes shape.
+  expect(root.classList.contains(TABLE_FRAME_CLASS)).toBe(true);
+  expect(container.querySelectorAll(`.${TABLE_FRAME_CLASS}`)).toHaveLength(1);
+  root.querySelectorAll('table').forEach(table => {
+    expect(table.classList.contains(TABLE_FRAME_CLASS)).toBe(false);
+  });
 
   jest.restoreAllMocks();
 });
