@@ -65,6 +65,7 @@ import {
 import type {
   InlineFilterConfig,
   InlineFilterSelection,
+  InlineFilterSelectionValue,
 } from 'src/dashboard/components/InlineFilters';
 
 const extensionsRegistry = getExtensionsRegistry();
@@ -216,10 +217,12 @@ const ExploreChartPanel = ({
   );
 
   const handleInlineFilterChange = useCallback(
-    (filterId: string, value: string | number | boolean | undefined) => {
+    (filterId: string, value: InlineFilterSelectionValue | undefined) => {
+      const cleared =
+        value === undefined || (Array.isArray(value) && value.length === 0);
       setInlineSelection(prev => {
         const next = { ...prev };
-        if (value === undefined) {
+        if (cleared) {
           delete next[filterId];
         } else {
           next[filterId] = value;
@@ -231,7 +234,7 @@ const ExploreChartPanel = ({
         actions.postChartFormData(
           injectInlineFilters(formData, inlineConfig, {
             ...inlineSelection,
-            ...(value === undefined ? {} : { [filterId]: value }),
+            ...(cleared ? {} : { [filterId]: value }),
           }),
           true,
           timeout ?? 0,

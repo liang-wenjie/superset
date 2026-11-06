@@ -513,7 +513,8 @@ export const controls = {
     description: t(
       'Configure quick-filter dropdowns at the top-left of the chart. ' +
         'Each group binds to a column; picking a value adds a WHERE clause ' +
-        'and re-queries the chart.',
+        'and re-queries the chart. Turn on "Allow multiple values" to filter ' +
+        'by several values at once.',
     ),
     mapStateToProps: (state: ControlState) => ({
       columns: state.datasource ? state.datasource.columns : [],

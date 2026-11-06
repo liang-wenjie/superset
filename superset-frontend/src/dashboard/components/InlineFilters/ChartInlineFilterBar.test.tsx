@@ -33,6 +33,10 @@ jest.mock('@superset-ui/core', () => ({
 const mockGet = SupersetClient.get as jest.Mock;
 const filters = [{ id: 'filter-1', column: 'account', label: '' }];
 
+beforeEach(() => {
+  mockGet.mockReset();
+});
+
 test('popup width grows with the longest value and stays within bounds', () => {
   expect(getInlineFilterPopupWidth([])).toBe(140);
   expect(getInlineFilterPopupWidth([{ label: 'a' }])).toBe(140);
@@ -77,4 +81,32 @@ test('renders full distinct values in a popup wider than the compact trigger', a
     expect(screen.getByText(value)).toBeInTheDocument();
     expect(screen.getByTitle(value)).toBeInTheDocument();
   });
+});
+
+test('a multi filter selects several values and reports them as an array', async () => {
+  const values = ['账号二-北京分公司', '账号三-上海分公司'];
+  mockGet.mockResolvedValue({ json: { result: values } });
+  const onSelect = jest.fn();
+
+  render(
+    <ChartInlineFilterBar
+      filters={[{ ...filters[0], multi: true }]}
+      selection={{ 'filter-1': [values[0]] }}
+      onSelect={onSelect}
+      datasourceId={1}
+      datasourceType="table"
+    />,
+  );
+
+  expect(document.querySelector('.ant-select-multiple')).toBeInTheDocument();
+  await waitFor(() => expect(mockGet).toHaveBeenCalled());
+  await userEvent.click(screen.getByRole('combobox'));
+  await userEvent.click(await screen.findByTitle(values[1]));
+
+  await waitFor(() =>
+    expect(onSelect).toHaveBeenCalledWith(
+      'filter-1',
+      expect.arrayContaining(values),
+    ),
+  );
 });

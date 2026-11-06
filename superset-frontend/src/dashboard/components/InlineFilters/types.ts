@@ -17,12 +17,20 @@
  * under the License.
  */
 
+/** A single inline filter value as returned by the column values endpoint. */
+export type InlineFilterValue = string | number | boolean;
+
+/** A selection is either one value or (for multi-select filters) several. */
+export type InlineFilterSelectionValue =
+  | InlineFilterValue
+  | InlineFilterValue[];
+
 /**
  * One inline filter, bound to a single datasource column.
  * Saved on the chart's formData under `inline_filters`.
  *
- * At render time each configured column shows a single dropdown selector;
- * picking a value injects a WHERE clause and re-queries the chart.
+ * At render time each configured column shows a dropdown selector; picking a
+ * value injects a WHERE clause and re-queries the chart.
  */
 export interface InlineFilterConfig {
   /** Stable key used to track the selected value across renders. */
@@ -32,36 +40,43 @@ export interface InlineFilterConfig {
   /** Optional label shown before the dropdown, e.g. "分类". */
   label?: string;
   /**
+   * When true the dropdown accepts several values and the injected WHERE
+   * clause uses `IN` instead of `==`. Defaults to single-select.
+   */
+  multi?: boolean;
+  /**
    * Optional preset options shown in the dropdown. If omitted the dropdown
    * falls back to a free-text combobox mode.
    */
-  options?: Array<{ label: string; value: string | number | boolean }>;
-  /** Default selected value when the chart first loads. */
-  defaultValue?: string | number | boolean;
+  options?: Array<{ label: string; value: InlineFilterValue }>;
+  /** Default selected value(s) when the chart first loads. */
+  defaultValue?: InlineFilterSelectionValue;
 }
 
 /**
- * Runtime selection state: filter id -> selected value.
- * `undefined` means the filter is cleared (no WHERE clause injected).
+ * Runtime selection state: filter id -> selected value(s).
+ * `undefined` (and an empty array) means the filter is cleared, so no WHERE
+ * clause is injected.
  */
 export type InlineFilterSelection = Record<
   string,
-  string | number | boolean | undefined
+  InlineFilterSelectionValue | undefined
 >;
 
 /**
  * Build the adhoc_filter object injected into the query for a selected value.
+ * Multi-value selections become an `IN` filter; single values keep `==`.
  * `isExtra: true` keeps it out of the visible adhoc_filters editor list.
  */
 export function buildInlineAdhocFilter(
   config: InlineFilterConfig,
-  value: string | number | boolean,
+  value: InlineFilterSelectionValue,
 ) {
   return {
     clause: 'WHERE' as const,
     expressionType: 'SIMPLE' as const,
     subject: config.column,
-    operator: '==',
+    operator: Array.isArray(value) ? 'IN' : '==',
     comparator: value,
     isExtra: true,
     filterOptionName: `inline_${config.id}`,

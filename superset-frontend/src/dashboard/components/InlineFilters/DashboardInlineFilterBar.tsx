@@ -19,8 +19,8 @@
 import React, { useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { JsonObject } from '@superset-ui/core';
-import ChartInlineFilterBar from './ChartInlineFilterBar';
-import type { InlineFilterConfig } from './types';
+import { ChartInlineFilterBar } from './ChartInlineFilterBar';
+import type { InlineFilterConfig, InlineFilterSelectionValue } from './types';
 import type { RootState } from '../../types';
 import { setChartInlineFilter } from '../../actions/dashboardState';
 import { triggerQuery } from 'src/components/Chart/chartAction';
@@ -69,7 +69,7 @@ export const DashboardInlineFilterBar: React.FC<
   );
 
   const handleSelect = useCallback(
-    (filterId: string, value: string | number | boolean | undefined) => {
+    (filterId: string, value: InlineFilterSelectionValue | undefined) => {
       dispatch(setChartInlineFilter(chartId, filterId, value));
       dispatch(triggerQuery(true, chartId));
     },

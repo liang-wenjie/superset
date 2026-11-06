@@ -151,9 +151,19 @@ def get_cached_column_values(
     Returns ``(values, cache_hit)``. ``force`` skips the read and refreshes
     the entry.
     """
+
     # Normalize extra_filters into a deterministic string for the cache key.
+    def normalize_ef(ef: dict[str, Any]) -> dict[str, Any]:
+        val = ef.get("val")
+        # Multi-select filters send a list of values. IN is order-insensitive,
+        # so sort them to avoid a cache miss when the selection order changes.
+        return {
+            "col": ef.get("col"),
+            "val": sorted(val, key=str) if isinstance(val, list) else val,
+        }
+
     normalized_ef: list[dict[str, Any]] = sorted(
-        ({"col": ef.get("col"), "val": ef.get("val")} for ef in (extra_filters or [])),
+        (normalize_ef(ef) for ef in (extra_filters or [])),
         key=lambda item: str(item.get("col", "")),
     )
     # Normalize the chart's own filters into deterministic JSON strings so

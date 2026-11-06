@@ -613,6 +613,35 @@ class TestDatasourceApi(SupersetTestCase):
         assert set(json.loads(rv.data.decode("utf-8"))["result"]) == {"b", "c"}
 
     @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    def test_get_column_values_cascades_multi_select_inline_filter(self):
+        """A sibling multi-select inline filter narrows via IN, not equality.
+
+        Multi-select sends ``{"col": ..., "val": [...]}``; comparing the column
+        to a Python list would error instead of narrowing the suggestions.
+        """
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        extra_filters = [{"col": "col1", "val": [1, 2]}]
+        rv = self.client.get(
+            f"api/v1/datasource/table/{table.id}/column/col2/values/",
+            query_string={"extra_filters": json.dumps(extra_filters)},
+        )
+        assert rv.status_code == 200
+        assert set(json.loads(rv.data.decode("utf-8"))["result"]) == {"b", "c"}
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
+    def test_get_column_values_ignores_empty_multi_select(self):
+        """An empty selection must not emit an invalid ``IN ()`` predicate."""
+        self.login(ADMIN_USERNAME)
+        table = self.get_virtual_dataset()
+        rv = self.client.get(
+            f"api/v1/datasource/table/{table.id}/column/col2/values/",
+            query_string={"extra_filters": json.dumps([{"col": "col1", "val": []}])},
+        )
+        assert rv.status_code == 200
+        assert set(json.loads(rv.data.decode("utf-8"))["result"]) == set("abcdefghij")
+
+    @pytest.mark.usefixtures("app_context", "virtual_dataset")
     def test_get_column_values_inherits_chart_sql_adhoc_filter(self):
         """SQL adhoc WHERE expressions narrow suggested values as well."""
         self.login(ADMIN_USERNAME)

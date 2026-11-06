@@ -383,7 +383,6 @@ def _validate_literal_filter_value(operator: str, value: Any) -> None:
         raise QueryObjectValidationError(_("Literal filters require scalar values"))
 
 
-
 def _is_parenthesized(sqla_col: ColumnElement) -> bool:
     """
     Return ``True`` when ``sqla_col`` is already wrapped in a ``Grouping``.
@@ -6233,14 +6232,23 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             qry = qry.where(build_like_predicate(value_expr, search))
 
         # Apply cascading inline filters: each extra filter narrows the
-        # distinct values by equality on a sibling column.
+        # distinct values on a sibling column. A multi-select inline filter
+        # sends a list of values, which becomes an IN predicate; a single
+        # selection keeps the equality predicate.
         for ef in extra_filters or []:
             ef_col = ef.get("col")
             ef_val = ef.get("val")
             if not ef_col or ef_col not in cols:
                 continue
             ef_expr = cols[ef_col].get_sqla_col(template_processor=tp)
-            qry = qry.where(ef_expr == ef_val)
+            if isinstance(ef_val, (list, tuple, set)):
+                ef_values = list(ef_val)
+                # An empty IN () is invalid SQL; skip it like a cleared filter.
+                if not ef_values:
+                    continue
+                qry = qry.where(ef_expr.in_(ef_values))
+            else:
+                qry = qry.where(ef_expr == ef_val)
 
         # Inherit the chart's own WHERE filters so the suggested values match
         # the universe the chart actually renders: a chart restricted to one

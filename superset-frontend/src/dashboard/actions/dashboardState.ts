@@ -41,6 +41,7 @@ import { logging } from '@apache-superset/core/utils';
 import { t } from '@apache-superset/core/translation';
 import { chart as initChart } from 'src/components/Chart/chartReducer';
 import { applyDefaultFormData } from 'src/explore/store';
+import type { InlineFilterSelectionValue } from '../components/InlineFilters/types';
 import {
   SAVE_TYPE_OVERWRITE,
   SAVE_TYPE_OVERWRITE_CONFIRMED,
@@ -1143,13 +1144,13 @@ interface SetChartInlineFilterAction {
   type: typeof SET_CHART_INLINE_FILTER;
   chartId: number;
   filterId: string;
-  value: string | number | boolean | undefined;
+  value: InlineFilterSelectionValue | undefined;
 }
 
 export function setChartInlineFilter(
   chartId: number,
   filterId: string,
-  value: string | number | boolean | undefined,
+  value: InlineFilterSelectionValue | undefined,
 ): SetChartInlineFilterAction {
   return { type: SET_CHART_INLINE_FILTER, chartId, filterId, value };
 }

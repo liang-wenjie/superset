@@ -19,7 +19,7 @@
 import React, { useCallback } from 'react';
 import { css, styled, useTheme } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
-import { Button, Input, Select } from '@superset-ui/core/components';
+import { Button, Input, Select, Switch } from '@superset-ui/core/components';
 import ControlHeader from 'src/explore/components/ControlHeader';
 import type { InlineFilterConfig } from 'src/dashboard/components/InlineFilters/types';
 
@@ -59,6 +59,11 @@ const StyledSelect = styled(Select)`
 const StyledInput = styled(Input)`
   flex: 1;
   min-width: 0;
+`;
+
+const SwitchLabel = styled.span`
+  font-size: ${({ theme }) => theme.fontSizeSM}px;
+  color: ${({ theme }) => theme.colorTextSecondary};
 `;
 
 // Column names are frequently longer than the narrow control panel. Let the
@@ -179,6 +184,17 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
                   updateGroup(idx, { label: e.target.value })
                 }
               />
+            </Row>
+            <Row>
+              <Switch
+                size="small"
+                aria-label={t('Allow multiple values')}
+                checked={Boolean(group.multi)}
+                onChange={(checked: boolean) =>
+                  updateGroup(idx, { multi: checked })
+                }
+              />
+              <SwitchLabel>{t('Allow multiple values')}</SwitchLabel>
             </Row>
           </GroupBlock>
         ))}

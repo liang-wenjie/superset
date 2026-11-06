@@ -18,6 +18,10 @@
  */
 /* eslint-disable camelcase */
 import { JsonObject } from '@superset-ui/core';
+import type {
+  InlineFilterSelection,
+  InlineFilterSelectionValue,
+} from '../components/InlineFilters/types';
 import {
   ADD_SLICE,
   ON_CHANGE,
@@ -108,8 +112,8 @@ interface DashboardStateShape {
   overwriteConfirmMetadata?: JsonObject;
   nativeFiltersBarOpen?: boolean;
   chartStates?: Record<string, ChartStateEntry>;
-  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value. */
-  chartInlineFilters?: Record<number, Record<string, string | number | boolean | undefined>>;
+  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value(s). */
+  chartInlineFilters?: Record<number, InlineFilterSelection>;
   css?: string;
   preselectNativeFilters?: JsonObject;
   autoRefreshStatus?: AutoRefreshStatus;
@@ -479,11 +483,12 @@ export default function dashboardStateReducer(
       const { chartId, filterId, value } = action as unknown as {
         chartId: number;
         filterId: string;
-        value: string | number | boolean | undefined;
+        value: InlineFilterSelectionValue | undefined;
       };
       const existing = state.chartInlineFilters?.[chartId] || {};
       const next = { ...existing };
-      if (value === undefined) {
+      // An empty multi-select is the same as a cleared filter.
+      if (value === undefined || (Array.isArray(value) && value.length === 0)) {
         delete next[filterId];
       } else {
         next[filterId] = value;

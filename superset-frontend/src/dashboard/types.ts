@@ -43,6 +43,7 @@ import Subject from 'src/types/Subject';
 import { TagType } from 'src/components/Tag/TagType';
 import { ChartState } from '../explore/types';
 import { AutoRefreshStatus } from './types/autoRefresh';
+import type { InlineFilterSelection } from './components/InlineFilters/types';
 
 export type { Dashboard } from 'src/types/Dashboard';
 
@@ -146,11 +147,8 @@ export type DashboardState = {
     data: JsonObject;
   };
   chartStates?: Record<string, JsonObject>;
-  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value. */
-  chartInlineFilters?: Record<
-    number,
-    Record<string, string | number | boolean | undefined>
-  >;
+  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value(s). */
+  chartInlineFilters?: Record<number, InlineFilterSelection>;
   autoRefreshStatus?: AutoRefreshStatus;
   autoRefreshPaused?: boolean;
   autoRefreshPausedByTab?: boolean;

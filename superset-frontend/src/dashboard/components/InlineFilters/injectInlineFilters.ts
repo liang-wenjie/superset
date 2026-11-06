@@ -46,6 +46,9 @@ export function injectInlineFilters(
     .map(cfg => {
       const selected = selection[cfg.id] ?? cfg.defaultValue;
       if (selected === undefined || selected === null) return null;
+      // A cleared multi-select is stored as `undefined`, but guard against an
+      // empty array: `col IN ()` is invalid SQL and must not be injected.
+      if (Array.isArray(selected) && selected.length === 0) return null;
       if (!cfg.column) return null;
       return buildInlineAdhocFilter(cfg, selected);
     })

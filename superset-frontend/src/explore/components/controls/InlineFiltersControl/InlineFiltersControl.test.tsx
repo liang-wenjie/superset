@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { render, screen } from '@superset-ui/core/spec';
+import { render, screen, userEvent } from '@superset-ui/core/spec';
 import InlineFiltersControl from '.';
 
 jest.mock('@superset-ui/core/components', () => {
@@ -68,4 +68,18 @@ test('lets the column popup size to its content instead of the trigger', () => {
   const select = screen.getByTestId('inline-filter-column-select');
   expect(select).toHaveAttribute('data-popup-match', 'false');
   expect(select).toHaveAttribute('data-popup-max-width', '320');
+});
+
+test('the multi-select toggle writes the multi flag into the config', async () => {
+  const onChange = jest.fn();
+  render(<InlineFiltersControl {...props} onChange={onChange} />);
+  const toggle = screen.getByRole('switch', {
+    name: 'Allow multiple values',
+  });
+  expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+  await userEvent.click(toggle);
+  expect(onChange).toHaveBeenCalledWith([
+    expect.objectContaining({ id: 'group-1', multi: true }),
+  ]);
 });

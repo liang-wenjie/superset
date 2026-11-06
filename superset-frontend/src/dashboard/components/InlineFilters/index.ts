@@ -16,10 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-export { ChartInlineFilterBar, INLINE_FILTER_BAR_HEIGHT } from './ChartInlineFilterBar';
+export {
+  ChartInlineFilterBar,
+  INLINE_FILTER_BAR_HEIGHT,
+} from './ChartInlineFilterBar';
 export { DashboardInlineFilterBar } from './DashboardInlineFilterBar';
 export { injectInlineFilters } from './injectInlineFilters';
 export type {
   InlineFilterConfig,
   InlineFilterSelection,
+  InlineFilterSelectionValue,
+  InlineFilterValue,
 } from './types';

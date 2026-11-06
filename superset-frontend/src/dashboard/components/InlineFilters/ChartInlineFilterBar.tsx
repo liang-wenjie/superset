@@ -21,7 +21,12 @@ import { styled } from '@apache-superset/core/theme';
 import { Select } from '@superset-ui/core/components';
 import { JsonObject, SupersetClient } from '@superset-ui/core';
 import { t } from '@apache-superset/core/translation';
-import type { InlineFilterConfig, InlineFilterSelection } from './types';
+import type {
+  InlineFilterConfig,
+  InlineFilterSelection,
+  InlineFilterSelectionValue,
+  InlineFilterValue,
+} from './types';
 
 const BAR_HEIGHT = 28;
 
@@ -92,10 +97,10 @@ export interface ChartInlineFilterBarProps {
   filters: InlineFilterConfig[];
   /** Current selection state per filter id. */
   selection: InlineFilterSelection;
-  /** Called when the user picks a value (or clears the filter). */
+  /** Called when the user picks value(s) (or clears the filter). */
   onSelect: (
     filterId: string,
-    value: string | number | boolean | undefined,
+    value: InlineFilterSelectionValue | undefined,
   ) => void;
   /** Datasource info for fetching distinct column values. */
   datasourceId?: string | number;
@@ -220,6 +225,16 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
       {filters.map(f => {
         const current = selection[f.id];
         const options = distinctCache[f.column] ?? [];
+        const multi = Boolean(f.multi);
+        // Selections saved before the multi toggle existed are scalars; wrap
+        // them in an array so enabling multi never drops the current value.
+        const currentValue = multi
+          ? current === undefined
+            ? []
+            : Array.isArray(current)
+              ? current
+              : [current]
+          : current;
         return (
           <React.Fragment key={f.id}>
             {f.label ? <FilterLabel>{f.label}:</FilterLabel> : null}
@@ -227,13 +242,23 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
               size="small"
               allowClear
               showSearch
+              mode={multi ? 'multiple' : 'single'}
+              oneLine={multi}
               placeholder={t('All')}
-              value={current as never}
+              value={currentValue as never}
               options={options as never}
               popupMatchSelectWidth={getInlineFilterPopupWidth(options)}
-              onChange={(value: never) =>
-                onSelect(f.id, value as string | number | boolean | undefined)
-              }
+              onChange={(value: never) => {
+                if (multi) {
+                  const selected = Array.isArray(value)
+                    ? (value as InlineFilterValue[])
+                    : [];
+                  // An empty IN list is invalid SQL; treat it as cleared.
+                  onSelect(f.id, selected.length > 0 ? selected : undefined);
+                } else {
+                  onSelect(f.id, value as InlineFilterValue | undefined);
+                }
+              }}
             />
           </React.Fragment>
         );
