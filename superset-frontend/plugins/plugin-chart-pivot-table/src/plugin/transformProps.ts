@@ -34,6 +34,8 @@ import {
   ColorSchemeEnum,
   ConditionalFormattingConfig,
   getColorFormatters,
+  getTableStyleConfig,
+  type TableStyleFormData,
 } from '@superset-ui/chart-controls';
 import { DateFormatter, PivotTableQueryFormData, QueryData } from '../types';
 import { getResultAggregation } from './resultAggregation';
@@ -306,5 +308,11 @@ export default function transformProps(chartProps: ChartProps<QueryFormData>) {
     onContextMenu,
     timeGrainSqla,
     allowRenderHtml,
+    tableStyle: getTableStyleConfig(
+      // ChartProps camelCases every key of `formData`, but these controls are
+      // snake_case in the saved chart. Read them from the untouched raw form
+      // data, exactly like the Table chart does.
+      rawFormData as unknown as TableStyleFormData,
+    ),
   };
 }

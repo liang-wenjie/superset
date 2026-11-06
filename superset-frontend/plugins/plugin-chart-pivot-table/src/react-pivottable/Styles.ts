@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { PIVOT_TABLE_STYLE_VARS as STYLE_VARS } from '@superset-ui/chart-controls';
 import { css, styled } from '@apache-superset/core/theme';
 
 export const Styles = styled.div<{
@@ -81,11 +82,37 @@ export const Styles = styled.div<{
 
     table.pvtTable thead tr th,
     table.pvtTable tbody tr th {
-      border-top: 1px solid ${theme.colorSplit};
-      border-left: 1px solid ${theme.colorSplit};
-      font-size: ${theme.fontSizeSM}px;
+      border-top: var(${STYLE_VARS.borderWidth}, 1px) solid
+        var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
+      font-size: var(${STYLE_VARS.headerFontSize}, ${theme.fontSizeSM}px);
       padding: ${theme.sizeUnit}px;
-      font-weight: ${theme.fontWeightNormal};
+      font-weight: var(
+        ${STYLE_VARS.headerFontWeight},
+        ${theme.fontWeightNormal}
+      );
+      color: var(${STYLE_VARS.headerTextColor}, inherit);
+    }
+
+    /* Header vertical separators follow the header underline width. The
+     * header_vertical_line_only toggle emits a body-specific variable so
+     * the same separators in tbody stop inheriting that width. */
+    table.pvtTable thead tr th {
+      border-left: var(
+          ${STYLE_VARS.headerBorderWidth},
+          var(${STYLE_VARS.borderWidth}, 1px)
+        )
+        solid var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
+    }
+
+    table.pvtTable tbody tr th {
+      border-left: var(
+          ${STYLE_VARS.bodyEmphasisLineWidth},
+          var(
+            ${STYLE_VARS.headerBorderWidth},
+            var(${STYLE_VARS.borderWidth}, 1px)
+          )
+        )
+        solid var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
     }
 
     table.pvtTable tbody tr.pvtRowTotals {
@@ -119,10 +146,18 @@ export const Styles = styled.div<{
     table.pvtTable thead tr:last-of-type th,
     table.pvtTable thead tr:first-of-type th.pvtTotalLabel,
     table.pvtTable thead tr:nth-last-of-type(2) th.pvtColLabel,
-    table.pvtTable thead th.pvtSubtotalLabel,
+    table.pvtTable thead th.pvtSubtotalLabel {
+      border-bottom: var(
+          ${STYLE_VARS.headerBorderWidth},
+          var(${STYLE_VARS.borderWidth}, 1px)
+        )
+        solid var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
+    }
+
     table.pvtTable tbody tr:last-of-type th,
     table.pvtTable tbody tr:last-of-type td {
-      border-bottom: 1px solid ${theme.colorSplit};
+      border-bottom: var(${STYLE_VARS.borderWidth}, 1px) solid
+        var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
     }
 
     table.pvtTable
@@ -137,7 +172,8 @@ export const Styles = styled.div<{
 
     table.pvtTable tbody tr td:last-of-type,
     table.pvtTable thead tr th:last-of-type:not(.pvtSubtotalLabel) {
-      border-right: 1px solid ${theme.colorSplit};
+      border-right: var(${STYLE_VARS.borderWidth}, 1px) solid
+        var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
     }
 
     table.pvtTable tr th.active {
@@ -157,8 +193,16 @@ export const Styles = styled.div<{
       color: ${theme.colorPrimaryText};
       padding: ${theme.sizeUnit}px;
       background-color: ${theme.colorBgBase};
-      border-top: 1px solid ${theme.colorSplit};
-      border-left: 1px solid ${theme.colorSplit};
+      border-top: var(${STYLE_VARS.borderWidth}, 1px) solid
+        var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
+      border-left: var(
+          ${STYLE_VARS.bodyEmphasisLineWidth},
+          var(
+            ${STYLE_VARS.headerBorderWidth},
+            var(${STYLE_VARS.borderWidth}, 1px)
+          )
+        )
+        solid var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
       vertical-align: top;
       text-align: right;
     }
@@ -201,7 +245,8 @@ export const Styles = styled.div<{
     }
 
     table.pvtTable tbody tr th.pvtRowLabel.pvtRowLabelLast {
-      border-bottom: 1px solid ${theme.colorSplit};
+      border-bottom: var(${STYLE_VARS.borderWidth}, 1px) solid
+        var(${STYLE_VARS.borderColor}, ${theme.colorSplit});
     }
 
     .pvtTotal,

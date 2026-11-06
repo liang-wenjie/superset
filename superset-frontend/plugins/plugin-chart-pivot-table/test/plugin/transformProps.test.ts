@@ -681,3 +681,45 @@ test('result aggregation wins over the additive fast path for an additive metric
   expect(result.data).toHaveLength(1);
   expect(result.data[0].data).toEqual(additiveResultProps.queriesData[0].data);
 });
+
+test('builds a sanitized tableStyle from the styling controls', () => {
+  const styledChartProps = new ChartProps<QueryFormData>({
+    formData: {
+      ...formData,
+      header_text_bold: true,
+      header_font_size: '16',
+      header_text_color: '#123456',
+      border_color: 'red; background: url(evil)',
+      border_width: '2',
+      header_border_width: '4',
+      header_vertical_line_only: true,
+    } as QueryFormData,
+    width: 800,
+    height: 600,
+    queriesData: [
+      {
+        data: [{ name: 'Hulk', sum__num: 1, __timestamp: 599616000000 }],
+        colnames: ['name', 'sum__num', '__timestamp'],
+        coltypes: [1, 0, 2],
+      },
+    ],
+    hooks: { setDataMask },
+    filterState: { selectedFilters: {} },
+    datasource: { verboseMap: {}, columnFormats: {} },
+    theme: supersetTheme,
+  });
+  const result = transformProps(styledChartProps);
+  expect(result.tableStyle).toEqual({
+    headerFontWeight: 'bold',
+    headerFontSize: 16,
+    headerTextColor: '#123456',
+    // The malformed line color is dropped instead of reaching inline CSS.
+    borderWidth: 2,
+    headerBorderWidth: 4,
+    headerVerticalLineOnly: true,
+  });
+});
+
+test('tableStyle is empty when no styling controls are set', () => {
+  expect(transformProps(chartProps).tableStyle).toEqual({});
+});

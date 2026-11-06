@@ -502,3 +502,49 @@ test.each([
     expect(screen.getAllByText('m1').length).toBeGreaterThan(0);
   },
 );
+
+test('injects pivot-prefixed style variables on the outer container', () => {
+  const { container } = renderWithTheme(
+    <PivotTableChart
+      {...createProps({
+        tableStyle: {
+          headerTextColor: '#123456',
+          borderColor: '#abcdef',
+          headerFontWeight: 'bold',
+          headerFontSize: 16,
+          borderWidth: 2,
+          headerBorderWidth: 4,
+          headerVerticalLineOnly: true,
+        },
+      })}
+    />,
+  );
+  // CSS custom properties inherit, so the outer styled div is the only place
+  // they need to be set for the stylesheet in react-pivottable/Styles.ts.
+  const wrapper = container.firstChild as HTMLElement;
+  expect(wrapper.style.getPropertyValue('--pivot-header-text-color')).toBe(
+    '#123456',
+  );
+  expect(wrapper.style.getPropertyValue('--pivot-border-color')).toBe(
+    '#abcdef',
+  );
+  expect(wrapper.style.getPropertyValue('--pivot-header-font-weight')).toBe(
+    'bold',
+  );
+  expect(wrapper.style.getPropertyValue('--pivot-header-font-size')).toBe(
+    '16px',
+  );
+  expect(wrapper.style.getPropertyValue('--pivot-border-width')).toBe('2px');
+  expect(wrapper.style.getPropertyValue('--pivot-header-border-width')).toBe(
+    '4px',
+  );
+  expect(
+    wrapper.style.getPropertyValue('--pivot-body-emphasis-line-width'),
+  ).toBe('var(--pivot-border-width, 1px)');
+});
+
+test('emits no styling variables when no styling is configured', () => {
+  const { container } = renderWithTheme(<PivotTableChart {...createProps()} />);
+  const wrapper = container.firstChild as HTMLElement;
+  expect(wrapper.getAttribute('style') ?? '').not.toContain('--pivot-');
+});

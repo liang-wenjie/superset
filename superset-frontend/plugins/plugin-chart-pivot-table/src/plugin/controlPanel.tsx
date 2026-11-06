@@ -547,6 +547,135 @@ const config: ControlPanelConfig = {
         ],
       ],
     },
+    {
+      label: t('Header & border styling'),
+      expanded: false,
+      controlSetRows: [
+        [
+          {
+            name: 'header_text_bold',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Bold header text'),
+              renderTrigger: true,
+              default: false,
+              description: t(
+                'Use a bold font weight for the column and row headers. Total and subtotal labels keep their own emphasis.',
+              ),
+            },
+          },
+          {
+            name: 'header_font_size',
+            config: {
+              type: 'SelectControl',
+              label: t('Header font size'),
+              renderTrigger: true,
+              default: '',
+              clearable: false,
+              choices: [
+                ['', t('Theme default')],
+                ['12', '12 px'],
+                ['13', '13 px'],
+                ['14', '14 px'],
+                ['16', '16 px'],
+                ['18', '18 px'],
+                ['20', '20 px'],
+                ['24', '24 px'],
+              ],
+              description: t('Font size of the column and row header text.'),
+            },
+          },
+        ],
+        [
+          {
+            name: 'header_text_color',
+            config: {
+              type: 'ColorPickerControl',
+              label: t('Header text color'),
+              renderTrigger: true,
+              outputFormat: 'hex',
+              description: t(
+                'Color of the column and row header text. Leave unset to follow the theme color.',
+              ),
+            },
+          },
+          {
+            name: 'border_color',
+            config: {
+              type: 'ColorPickerControl',
+              label: t('Line color'),
+              renderTrigger: true,
+              outputFormat: 'hex',
+              description: t(
+                'Color of the header underline and all grid lines. Leave unset to follow the theme color.',
+              ),
+            },
+          },
+        ],
+        [
+          {
+            name: 'header_vertical_line_only',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Keep thick vertical lines in header only'),
+              renderTrigger: true,
+              default: false,
+              description: t(
+                'When enabled, the wider vertical separators appear only in the column headers; the data grid keeps the general line width. When disabled, the wider lines extend into the data rows.',
+              ),
+            },
+          },
+          {
+            name: 'header_border_width',
+            config: {
+              type: 'SelectControl',
+              label: t('Header underline width'),
+              renderTrigger: true,
+              default: '',
+              clearable: false,
+              choices: [
+                ['', t('Theme default')],
+                ['0', t('None')],
+                ['1', '1 px'],
+                ['2', '2 px'],
+                ['3', '3 px'],
+                ['4', '4 px'],
+                ['5', '5 px'],
+                ['6', '6 px'],
+              ],
+              description: t(
+                'Width of the header underline and the vertical lines in the column headers. The theme default keeps the original 1 px grid.',
+              ),
+            },
+          },
+        ],
+        [
+          {
+            name: 'border_width',
+            config: {
+              type: 'SelectControl',
+              label: t('Line width'),
+              renderTrigger: true,
+              default: '',
+              clearable: false,
+              choices: [
+                ['', t('Theme default')],
+                ['0', t('None')],
+                ['1', '1 px'],
+                ['2', '2 px'],
+                ['3', '3 px'],
+                ['4', '4 px'],
+                ['5', '5 px'],
+              ],
+              description: t(
+                'Width of the grid lines. The theme default keeps the original 1 px grid.',
+              ),
+            },
+          },
+          null,
+        ],
+      ],
+    },
   ],
   formDataOverrides: formData => {
     const groupbyColumns = getStandardizedControls().controls.columns.filter(

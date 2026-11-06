@@ -30,7 +30,11 @@ import {
   ContextMenuFilters,
   Currency,
 } from '@superset-ui/core';
-import { ColorFormatters } from '@superset-ui/chart-controls';
+import type {
+  ColorFormatters,
+  TableStyleConfig,
+  TableStyleFormData,
+} from '@superset-ui/chart-controls';
 
 export interface PivotTableStylesProps {
   height: number;
@@ -135,9 +139,12 @@ interface PivotTableCustomizeProps {
 
 export type PivotTableQueryFormData = QueryFormData &
   PivotTableStylesProps &
-  PivotTableCustomizeProps;
+  PivotTableCustomizeProps &
+  TableStyleFormData;
 
 export type PivotTableProps = PivotTableStylesProps &
   PivotTableCustomizeProps & {
     data: QueryData[];
+    /** Sanitized style values produced by transformProps. */
+    tableStyle?: TableStyleConfig;
   };

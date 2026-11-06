@@ -41,6 +41,10 @@ import {
   normalizeCurrency,
   NumberFormatter,
 } from '@superset-ui/core';
+import {
+  getTableStyleVariables,
+  PIVOT_TABLE_STYLE_VARS,
+} from '@superset-ui/chart-controls';
 import { styled, useTheme } from '@apache-superset/core/theme';
 import { PivotTable, sortAs } from './react-pivottable';
 import {
@@ -257,9 +261,22 @@ export default function PivotTableChart(props: PivotTableProps) {
     onContextMenu,
     timeGrainSqla,
     allowRenderHtml,
+    tableStyle,
   } = props;
 
   const theme = useTheme();
+
+  // CSS custom properties inherit down the DOM tree, so setting them on the
+  // outer container is enough for the stylesheet in react-pivottable/Styles.ts.
+  const pivotStyleVariables = useMemo(
+    () =>
+      getTableStyleVariables(tableStyle, {
+        variables: PIVOT_TABLE_STYLE_VARS,
+        // The Pivot Table grid is uniformly 1px in the default theme.
+        bodyLineFallback: '1px',
+      }),
+    [tableStyle],
+  );
 
   // Base formatter without currency-awareness (for non-AUTO mode or as fallback)
   const baseFormatter = useMemo(
@@ -742,7 +759,12 @@ export default function PivotTableChart(props: PivotTableProps) {
   );
 
   return (
-    <Styles height={height} width={width} margin={theme.sizeUnit * 4}>
+    <Styles
+      height={height}
+      width={width}
+      margin={theme.sizeUnit * 4}
+      style={pivotStyleVariables}
+    >
       <PivotTableWrapper>
         <PivotTable
           data={unpivotedData}

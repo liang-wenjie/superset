@@ -33,8 +33,11 @@ import type {
   ColorFormatters,
   DataColumnMeta,
   HeaderGroupConfig,
+  RgbaColor,
   ServerPaginationData,
+  TableColorValue,
   TableColumnConfig,
+  TableStyleConfig,
 } from '@superset-ui/chart-controls';
 
 export type { HeaderGroupConfig };
@@ -44,8 +47,11 @@ export type { HeaderGroupConfig };
 export type {
   BasicColorFormatterType,
   DataColumnMeta,
+  RgbaColor,
   ServerPaginationData,
+  TableColorValue,
   TableColumnConfig,
+  TableStyleConfig,
 };
 // Types only re-exported, not used locally - direct re-export
 export type { SearchOption, SortByItem } from '@superset-ui/chart-controls';
@@ -53,32 +59,6 @@ export type { SearchOption, SortByItem } from '@superset-ui/chart-controls';
 export interface TableChartData {
   records: DataRecord[];
   columns: string[];
-}
-
-/**
- * ColorPickerControl emits a hex string when `outputFormat` is `hex`, but
- * charts saved with the default `rgb` output store an rgba object instead.
- * Both shapes have to be accepted so old form_data keeps rendering.
- */
-export interface RgbaColor {
-  r: number;
-  g: number;
-  b: number;
-  a?: number;
-}
-
-export type TableColorValue = string | RgbaColor | null | undefined;
-
-/** Sanitized style values, ready to be turned into CSS custom properties. */
-export interface TableStyleConfig {
-  /** Keep the wider emphasis vertical lines in the header, not in tbody. */
-  headerVerticalLineOnly?: boolean;
-  headerTextColor?: string;
-  headerFontWeight?: 'normal' | 'bold';
-  headerFontSize?: number;
-  borderColor?: string;
-  borderWidth?: number;
-  headerBorderWidth?: number;
 }
 
 export type TableChartFormData = QueryFormData & {
