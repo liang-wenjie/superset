@@ -1072,3 +1072,40 @@ test('row-limit guidance uses the default SQL_MAX_ROW when configuration is abse
   expect(choices.every(([value]) => value <= 100000)).toBe(true);
   expect(mapped).not.toHaveProperty('value');
 });
+
+test('header & border styling controls expose safe defaults', () => {
+  const section = config.controlPanelSections.find(
+    item => item && String(item.label) === 'Header & border styling',
+  );
+  expect(section).toBeDefined();
+
+  const expected: Record<string, { type: string; default?: unknown }> = {
+    header_text_bold: { type: 'CheckboxControl', default: true },
+    header_font_size: { type: 'SelectControl', default: '' },
+    header_text_color: { type: 'ColorPickerControl' },
+    border_color: { type: 'ColorPickerControl' },
+    header_vertical_line_only: { type: 'CheckboxControl', default: false },
+    border_width: { type: 'SelectControl', default: '1' },
+    header_border_width: { type: 'SelectControl', default: '2' },
+  };
+
+  Object.entries(expected).forEach(([name, { type, default: value }]) => {
+    const control = findNamedControl(name);
+    expect(control).not.toBeNull();
+    expect(control?.type).toBe(type);
+    expect(control?.renderTrigger).toBe(true);
+    if (value !== undefined) {
+      expect(control?.default).toBe(value);
+    }
+  });
+
+  // Hex strings can be validated before they reach an inline CSS variable.
+  expect(findNamedControl('header_text_color')?.outputFormat).toBe('hex');
+  expect(findNamedControl('border_color')?.outputFormat).toBe('hex');
+
+  // The header underline is always shown: the show/hide toggle and the
+  // whole-table "header only" toggle from the previous iterations are gone.
+  expect(findNamedControl('show_header_underline')).toBeNull();
+  expect(findNamedControl('header_only_styling')).toBeNull();
+  expect(findNamedControl('header_border_width')?.visibility).toBeUndefined();
+});

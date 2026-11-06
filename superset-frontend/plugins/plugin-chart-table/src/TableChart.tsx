@@ -96,6 +96,7 @@ import DataTable, {
 } from './DataTable';
 import Styles from './Styles';
 import { formatColumnValue } from './utils/formatValue';
+import { getTableStyleVariables, TABLE_STYLE_VARS } from './utils/tableStyle';
 import { PAGE_SIZE_OPTIONS, SERVER_PAGE_SIZE_OPTIONS } from './consts';
 import { updateTableOwnState } from './DataTable/utils/externalAPIs';
 import getScrollBarSize from './DataTable/utils/getScrollBarSize';
@@ -440,6 +441,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
     serverPageLength,
     slice_id,
     columnLabelToNameMap = {},
+    tableStyle,
   } = props;
 
   const comparisonColumns = useMemo(
@@ -475,6 +477,10 @@ export default function TableChart<D extends DataRecord = DataRecord>(
   // recalculated totals to display when the search filter is applied (client-side pagination)
   const [displayedTotals, setDisplayedTotals] = useState<D | undefined>(totals);
   const theme = useTheme();
+  const tableStyleVariables = useMemo(
+    () => getTableStyleVariables(tableStyle),
+    [tableStyle],
+  );
 
   useEffect(() => {
     setDisplayedTotals(totals);
@@ -920,7 +926,8 @@ export default function TableChart<D extends DataRecord = DataRecord>(
 
   const groupingHeaderRowStyles = css`
     th {
-      border-right: 1px solid ${theme.colorSplit};
+      border-right: var(${TABLE_STYLE_VARS.borderWidth}, 1px) solid
+        var(${TABLE_STYLE_VARS.borderColor}, ${theme.colorSplit});
       text-align: center;
     }
     th:first-of-type {
@@ -933,13 +940,15 @@ export default function TableChart<D extends DataRecord = DataRecord>(
 
   const multiLevelHeaderRowStyles = css`
     th {
-      border-right: 1px solid ${theme.colorSplit};
+      border-right: var(${TABLE_STYLE_VARS.borderWidth}, 1px) solid
+        var(${TABLE_STYLE_VARS.borderColor}, ${theme.colorSplit});
     }
     th:first-of-type {
       border-left: none;
     }
     th[data-dimension-separator='true'] {
-      border-right: 2px solid ${theme.colorSplit};
+      border-right: var(${TABLE_STYLE_VARS.headerBorderWidth}, 2px) solid
+        var(${TABLE_STYLE_VARS.borderColor}, ${theme.colorSplit});
     }
     th[data-last-column='true'] {
       border-right: none;
@@ -1775,7 +1784,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
   ]);
 
   return (
-    <Styles>
+    <Styles style={tableStyleVariables}>
       <DataTable<D>
         columns={columns}
         data={data}

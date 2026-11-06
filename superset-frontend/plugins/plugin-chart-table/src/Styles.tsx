@@ -20,6 +20,11 @@ import { css, styled } from '@apache-superset/core/theme';
 
 export default styled.div`
   ${({ theme }) => css`
+    /* The "Header & border styling" controls set CSS custom properties on
+       this container via inline style. Every rule below uses a fallback so
+       charts saved before those controls existed keep their original theme
+       appearance, including condensed tables with a smaller font. */
+
     /* Base table styles */
     padding: ${theme.sizeUnit * 5}px;
     table {
@@ -44,9 +49,13 @@ export default styled.div`
       position: relative;
       background-color: ${theme.colorBgBase};
       text-align: left;
-      border-bottom: 2px solid ${theme.colorSplit};
-      border-right: 1px solid ${theme.colorSplit};
-      color: ${theme.colorText};
+      border-bottom: var(--table-header-border-width, 2px) solid
+        var(--table-border-color, ${theme.colorSplit});
+      border-right: var(--table-border-width, 1px) solid
+        var(--table-border-color, ${theme.colorSplit});
+      color: var(--table-header-text-color, ${theme.colorText});
+      font-weight: var(--table-header-font-weight, bold);
+      font-size: var(--table-header-font-size, inherit);
       vertical-align: bottom;
     }
 
@@ -61,7 +70,7 @@ export default styled.div`
     }
 
     th.is-sorted svg {
-      color: ${theme.colorText};
+      color: var(--table-header-text-color, ${theme.colorText});
       fill-opacity: 1;
     }
 
@@ -73,7 +82,8 @@ export default styled.div`
 
     .table > tbody tr td {
       font-feature-settings: 'tnum' 1;
-      border-top: 1px solid ${theme.colorSplit};
+      border-top: var(--table-border-width, 1px) solid
+        var(--table-border-color, ${theme.colorSplit});
     }
 
     /* Bootstrap-like condensed table styles */
@@ -91,12 +101,14 @@ export default styled.div`
 
     /* Bootstrap-like bordered table styles */
     table.table-bordered {
-      border: 1px solid ${theme.colorSplit};
+      border: var(--table-border-width, 1px) solid
+        var(--table-border-color, ${theme.colorSplit});
     }
 
     table.table-bordered th,
     table.table-bordered td {
-      border: 1px solid ${theme.colorSplit};
+      border: var(--table-border-width, 1px) solid
+        var(--table-border-color, ${theme.colorSplit});
     }
 
     /* Bootstrap-like striped table styles */
@@ -206,8 +218,21 @@ export default styled.div`
       padding: 1em 0.6em;
     }
 
-    .right-border-only {
-      border-right: 2px solid ${theme.colorSplit};
+    /* Emphasis vertical line between dimension/metric column groups. By
+       default it follows the header width in BOTH thead and tbody. The
+       "keep thick vertical lines in header only" toggle emits a body-specific
+       variable so only the tbody copy falls back to the general line width. */
+    thead .right-border-only {
+      border-right: var(--table-header-border-width, 2px) solid
+        var(--table-border-color, ${theme.colorSplit});
+    }
+
+    tbody .right-border-only {
+      border-right: var(
+          --table-body-emphasis-line-width,
+          var(--table-header-border-width, 2px)
+        )
+        solid var(--table-border-color, ${theme.colorSplit});
     }
 
     table .right-border-only:last-child {

@@ -56,3 +56,95 @@ test('renders authorized chart display labels in table headers without changing 
     expect.objectContaining({ name: 'Michael', sum__num: 2467063 }),
   );
 });
+
+test('maps header & border styling controls to CSS variables on the table container', () => {
+  const transformed = transformProps({
+    ...testData.basic,
+    rawFormData: {
+      ...testData.basic.rawFormData,
+      header_text_bold: false,
+      header_text_color: '#ff0000',
+      header_font_size: '18',
+      // Charts saved before the hex output was configured store an rgba object.
+      border_color: { r: 0, g: 0, b: 255, a: 1 },
+      border_width: '3',
+      header_border_width: '4',
+    },
+  });
+
+  expect(transformed.tableStyle).toEqual({
+    headerFontWeight: 'normal',
+    headerTextColor: '#ff0000',
+    headerFontSize: 18,
+    borderColor: 'rgb(0, 0, 255)',
+    borderWidth: 3,
+    headerBorderWidth: 4,
+  });
+
+  const { container } = render(<TableChart {...transformed} sticky={false} />);
+  const wrapper = container.firstElementChild as HTMLElement;
+  expect(wrapper.style.getPropertyValue('--table-header-text-color')).toBe(
+    '#ff0000',
+  );
+  expect(wrapper.style.getPropertyValue('--table-header-font-weight')).toBe(
+    'normal',
+  );
+  expect(wrapper.style.getPropertyValue('--table-header-font-size')).toBe(
+    '18px',
+  );
+  expect(wrapper.style.getPropertyValue('--table-border-color')).toBe(
+    'rgb(0, 0, 255)',
+  );
+  expect(wrapper.style.getPropertyValue('--table-border-width')).toBe('3px');
+  expect(wrapper.style.getPropertyValue('--table-header-border-width')).toBe(
+    '4px',
+  );
+  // Default (original) behavior: the body emphasis line follows the header
+  // width too, so no body-specific variable is emitted.
+  expect(
+    wrapper.style.getPropertyValue('--table-body-emphasis-line-width'),
+  ).toBe('');
+});
+
+test('keeps thick vertical lines in the header only', () => {
+  const transformed = transformProps({
+    ...testData.basic,
+    rawFormData: {
+      ...testData.basic.rawFormData,
+      header_vertical_line_only: true,
+      header_border_width: '4',
+      border_width: '1',
+    },
+  });
+
+  expect(transformed.tableStyle).toEqual({
+    headerVerticalLineOnly: true,
+    headerBorderWidth: 4,
+    borderWidth: 1,
+  });
+
+  const { container } = render(<TableChart {...transformed} sticky={false} />);
+  const wrapper = container.firstElementChild as HTMLElement;
+  // The header keeps the thick line and the underline is still rendered.
+  expect(wrapper.style.getPropertyValue('--table-header-border-width')).toBe(
+    '4px',
+  );
+  const inlineStyle = wrapper.getAttribute('style') ?? '';
+  expect(inlineStyle).toContain('--table-body-emphasis-line-width');
+  expect(inlineStyle).toContain('var(--table-border-width, 2px)');
+});
+
+test('charts without styling controls keep the theme defaults', () => {
+  const transformed = transformProps(testData.basic);
+  expect(transformed.tableStyle).toEqual({});
+
+  const { container } = render(<TableChart {...transformed} sticky={false} />);
+  const wrapper = container.firstElementChild as HTMLElement;
+  expect(wrapper.getAttribute('style') ?? '').not.toContain(
+    '--table-border-color',
+  );
+  // No show/hide toggle: the underline falls back to the theme's 2px line.
+  expect(wrapper.style.getPropertyValue('--table-header-border-width')).toBe(
+    '',
+  );
+});

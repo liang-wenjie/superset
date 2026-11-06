@@ -55,6 +55,32 @@ export interface TableChartData {
   columns: string[];
 }
 
+/**
+ * ColorPickerControl emits a hex string when `outputFormat` is `hex`, but
+ * charts saved with the default `rgb` output store an rgba object instead.
+ * Both shapes have to be accepted so old form_data keeps rendering.
+ */
+export interface RgbaColor {
+  r: number;
+  g: number;
+  b: number;
+  a?: number;
+}
+
+export type TableColorValue = string | RgbaColor | null | undefined;
+
+/** Sanitized style values, ready to be turned into CSS custom properties. */
+export interface TableStyleConfig {
+  /** Keep the wider emphasis vertical lines in the header, not in tbody. */
+  headerVerticalLineOnly?: boolean;
+  headerTextColor?: string;
+  headerFontWeight?: 'normal' | 'bold';
+  headerFontSize?: number;
+  borderColor?: string;
+  borderWidth?: number;
+  headerBorderWidth?: number;
+}
+
 export type TableChartFormData = QueryFormData & {
   align_pn?: boolean;
   color_pn?: boolean;
@@ -74,6 +100,13 @@ export type TableChartFormData = QueryFormData & {
   column_config?: Record<string, TableColumnConfig>;
   allow_rearrange_columns?: boolean;
   header_groups?: HeaderGroupConfig[];
+  header_text_bold?: boolean;
+  header_text_color?: TableColorValue;
+  header_font_size?: string | number | null;
+  border_color?: TableColorValue;
+  border_width?: string | number;
+  header_vertical_line_only?: boolean;
+  header_border_width?: string | number;
 };
 
 export interface TableChartProps extends ChartProps {
@@ -133,4 +166,5 @@ export interface TableChartTransformedProps<D extends DataRecord = DataRecord> {
   // column names for cross-filtering, so that adhoc columns with custom labels
   // emit the correct column name in cross-filter data masks
   columnLabelToNameMap?: Record<string, string>;
+  tableStyle?: TableStyleConfig;
 }

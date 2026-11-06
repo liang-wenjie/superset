@@ -51,6 +51,7 @@ import {
 
 import { isEmpty, merge } from 'lodash-es';
 import isEqualColumns from './utils/isEqualColumns';
+import { getTableStyleConfig } from './utils/tableStyle';
 import {
   BasicColorFormatterType,
   DataColumnMeta,
@@ -869,6 +870,7 @@ const transformProps = (
     serverPageLength,
     slice_id,
     columnLabelToNameMap,
+    tableStyle: getTableStyleConfig(formData),
   };
 };
 
