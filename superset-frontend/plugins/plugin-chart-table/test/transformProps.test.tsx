@@ -20,8 +20,14 @@ import { ChartProps } from '@superset-ui/core';
 import { supersetTheme } from '@apache-superset/core/theme';
 import { render, screen } from '@superset-ui/core/spec';
 import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabels';
+import Styles from '../src/Styles';
 import TableChart from '../src/TableChart';
 import transformProps from '../src/transformProps';
+import {
+  TABLE_FRAME_BODY_CLASS,
+  TABLE_FRAME_FOOTER_CLASS,
+  TABLE_FRAME_HEADER_CLASS,
+} from '../src/utils/tableStyle';
 import testData from './testData';
 
 test('renders authorized chart display labels in table headers without changing data keys', () => {
@@ -228,6 +234,68 @@ test('outer border frame follows header width and the shared line color', () => 
   expect(
     wrapper.style.getPropertyValue('--table-outer-border-color'),
   ).toContain('var(--table-border-color');
+});
+
+test('the frame stylesheet suppresses the sticky inner horizontal edges', () => {
+  render(<Styles />);
+  // Emotion injects through CSSOM (insertRule) in the test environment, so
+  // reading <style> text alone is not enough.
+  const cssText = [
+    ...Array.from(document.head.querySelectorAll('style')).map(
+      style => style.textContent ?? '',
+    ),
+    ...Array.from(document.styleSheets).flatMap(sheet => {
+      try {
+        return Array.from(sheet.cssRules).map(rule => rule.cssText);
+      } catch {
+        return [];
+      }
+    }),
+  ].join('\n');
+
+  // These rules are what stop the header/body seam from getting a second line
+  // when sticky mode clones the table into three separate elements.
+  expect(cssText).toContain(`table.${TABLE_FRAME_HEADER_CLASS}`);
+  expect(cssText).toContain(`table.${TABLE_FRAME_BODY_CLASS}`);
+  expect(cssText).toContain(`table.${TABLE_FRAME_FOOTER_CLASS}`);
+  expect(cssText).toMatch(/border-bottom-width:\s*0/);
+  expect(cssText).toMatch(/border-top-width:\s*0/);
+});
+
+test('showing the outer border does not add another line below the header', () => {
+  const rawFormData = {
+    ...testData.basic.rawFormData,
+    header_border_width: '3',
+  };
+  const withoutBorder = transformProps({
+    ...testData.basic,
+    rawFormData,
+  });
+  const withBorder = transformProps({
+    ...testData.basic,
+    rawFormData: { ...rawFormData, show_outer_border: true },
+  });
+
+  const { container: baseContainer } = render(
+    <TableChart {...withoutBorder} sticky={false} />,
+  );
+  const baseWrapper = baseContainer.firstElementChild as HTMLElement;
+  const { container } = render(<TableChart {...withBorder} sticky={false} />);
+  const wrapper = container.firstElementChild as HTMLElement;
+
+  // The header underline keeps the width the user configured. Turning on the
+  // frame must not widen it or draw a second line at the header seam.
+  expect(wrapper.style.getPropertyValue('--table-header-border-width')).toBe(
+    baseWrapper.style.getPropertyValue('--table-header-border-width'),
+  );
+  expect(wrapper.style.getPropertyValue('--table-header-border-width')).toBe(
+    '3px',
+  );
+  // A non-sticky table is a single element, so it keeps all four frame edges
+  // and must not carry any of the sticky seam classes.
+  const table = container.querySelector('table');
+  expect(table).not.toBeNull();
+  expect(table!.className).not.toContain('dt-table-frame');
 });
 
 test('renders null values as blank when the option is enabled', () => {

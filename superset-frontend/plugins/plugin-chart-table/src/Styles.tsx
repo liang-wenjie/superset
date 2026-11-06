@@ -18,6 +18,10 @@
  */
 import { css, styled } from '@apache-superset/core/theme';
 import {
+  TABLE_FRAME_BODY_CLASS,
+  TABLE_FRAME_BOTTOM_CLASS,
+  TABLE_FRAME_FOOTER_CLASS,
+  TABLE_FRAME_HEADER_CLASS,
   TABLE_OUTER_BORDER_COLOR_VAR,
   TABLE_OUTER_BORDER_VAR,
 } from './utils/tableStyle';
@@ -122,6 +126,25 @@ export default styled.div`
     table.table-bordered td {
       border: var(--table-border-width, 1px) solid
         var(--table-border-color, ${theme.colorSplit});
+    }
+
+    /* Sticky mode splits one logical table into separate header/body/footer
+       <table> elements (see useSticky.tsx). Only the first table's top edge
+       and the last table's bottom edge belong to the outer frame. Suppressing
+       the inner horizontal edges keeps "Show outer border" from drawing extra
+       lines right below the header, on top of the existing header underline.
+       A non-sticky table has none of these classes, so it keeps all four edges. */
+    table.${TABLE_FRAME_HEADER_CLASS} {
+      border-bottom-width: 0;
+    }
+
+    table.${TABLE_FRAME_BODY_CLASS},
+    table.${TABLE_FRAME_FOOTER_CLASS} {
+      border-top-width: 0;
+    }
+
+    table.${TABLE_FRAME_BODY_CLASS}:not(.${TABLE_FRAME_BOTTOM_CLASS}) {
+      border-bottom-width: 0;
     }
 
     /* Bootstrap-like striped table styles */

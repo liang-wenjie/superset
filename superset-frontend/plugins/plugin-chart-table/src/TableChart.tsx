@@ -493,7 +493,9 @@ export default function TableChart<D extends DataRecord = DataRecord>(
       ...variables,
       // All four edges match the header underline width. A 1px frame has no
       // fully opaque pixels on high-DPI screens, which makes it look like a
-      // different, lighter color than the header lines.
+      // different, lighter color than the header lines. Styles.tsx paints
+      // only the outermost edges of the sticky table stack, so enabling the
+      // frame never adds another line below the header.
       [TABLE_OUTER_BORDER_VAR]: `var(${TABLE_STYLE_VARS.headerBorderWidth}, 2px)`,
       // Resolve to the shared line color, so the frame always matches the
       // header underline and the grid separators.
