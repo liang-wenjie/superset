@@ -25,6 +25,40 @@ import type { InlineFilterConfig, InlineFilterSelection } from './types';
 
 const BAR_HEIGHT = 28;
 
+// Distinct values are usually much longer than the compact filter trigger.
+// rc-select sizes the popup to the trigger by default, so every value was
+// truncated to a few characters. A numeric width lets the popup grow with its
+// content while keeping virtual scrolling enabled — `popupMatchSelectWidth={false}`
+// would also auto-size it, but rc-select disables virtualization in that mode,
+// which is expensive on high-cardinality columns (up to FILTER_SELECT_ROW_LIMIT).
+// The estimate only needs to be approximate: antd renders a native `title` on
+// each option, so values beyond the cap remain readable on hover.
+const MIN_POPUP_WIDTH = 140;
+const MAX_POPUP_WIDTH = 300;
+const POPUP_CHROME_WIDTH = 48; // option padding, selected icon, scrollbar
+const FULL_WIDTH_CHAR =
+  /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/;
+
+const estimateLabelWidth = (label: string): number =>
+  Array.from(label).reduce(
+    (width, char) => width + (FULL_WIDTH_CHAR.test(char) ? 14 : 8),
+    0,
+  );
+
+export const getInlineFilterPopupWidth = (
+  options: { label?: string | number | null }[],
+): number => {
+  const longestLabel = options.reduce(
+    (longest, option) =>
+      Math.max(longest, estimateLabelWidth(String(option.label ?? ''))),
+    0,
+  );
+  return Math.min(
+    MAX_POPUP_WIDTH,
+    Math.max(MIN_POPUP_WIDTH, longestLabel + POPUP_CHROME_WIDTH),
+  );
+};
+
 const Container = styled.div`
   display: flex;
   align-items: center;
@@ -40,8 +74,12 @@ const FilterLabel = styled.span`
   flex-shrink: 0;
 `;
 
+// Grow with the selected value instead of showing a fixed 100px box; the bar
+// scrolls horizontally when several filters are configured.
 const StyledSelect = styled(Select)`
-  width: 100px;
+  width: auto;
+  min-width: 110px;
+  max-width: 220px;
   flex-shrink: 0;
 `;
 
@@ -88,11 +126,10 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   const [distinctCache, setDistinctCache] = useState<DistinctCache>({});
 
   // Build extra filters from sibling selections (excluding the current column)
-  const buildExtraFilters = (excludeCol: string) => {
-    return filters
+  const buildExtraFilters = (excludeCol: string) =>
+    filters
       .filter(f => f.column !== excludeCol && selection[f.id] !== undefined)
       .map(f => ({ col: f.column, val: selection[f.id] }));
-  };
 
   // Fetch distinct values for each configured column, re-fetching when
   // sibling selections change so options cascade.
@@ -193,6 +230,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
               placeholder={t('All')}
               value={current as never}
               options={options as never}
+              popupMatchSelectWidth={getInlineFilterPopupWidth(options)}
               onChange={(value: never) =>
                 onSelect(f.id, value as string | number | boolean | undefined)
               }

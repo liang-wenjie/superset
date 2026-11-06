@@ -24,7 +24,10 @@ import ControlHeader from 'src/explore/components/ControlHeader';
 import type { InlineFilterConfig } from 'src/dashboard/components/InlineFilters/types';
 
 let idCounter = 0;
-const nextId = () => `inline_${Date.now()}_${idCounter++}`;
+const nextId = () => {
+  idCounter += 1;
+  return `inline_${Date.now()}_${idCounter}`;
+};
 
 const Container = styled.div`
   display: flex;
@@ -55,7 +58,17 @@ const StyledSelect = styled(Select)`
 
 const StyledInput = styled(Input)`
   flex: 1;
+  min-width: 0;
 `;
+
+// Column names are frequently longer than the narrow control panel. Let the
+// popup grow with its content instead of inheriting the trigger's width (which
+// truncated every option to a couple of characters), and cap it so a single
+// pathological name cannot push the dropdown off the screen. antd still puts a
+// native `title` on every option for names that exceed the cap.
+const POPUP_STYLES = {
+  popup: { root: { maxWidth: 320 } },
+};
 
 const AddButton = styled(Button)`
   align-self: flex-start;
@@ -101,10 +114,7 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
   );
 
   const addGroup = () => {
-    emit([
-      ...groups,
-      { id: nextId(), column: '', label: '' },
-    ]);
+    emit([...groups, { id: nextId(), column: '', label: '' }]);
   };
 
   const removeGroup = (idx: number) => {
@@ -153,7 +163,14 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
                 onChange={(col: string) => updateGroup(idx, { column: col })}
                 showSearch
                 allowClear
+                popupMatchSelectWidth={false}
+                styles={POPUP_STYLES}
               />
+              <Button size="small" danger onClick={() => removeGroup(idx)}>
+                {t('Remove')}
+              </Button>
+            </Row>
+            <Row>
               <StyledInput
                 aria-label={t('Label')}
                 placeholder={t('Label (e.g. Category)')}
@@ -162,9 +179,6 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
                   updateGroup(idx, { label: e.target.value })
                 }
               />
-              <Button size="small" danger onClick={() => removeGroup(idx)}>
-                {t('Remove')}
-              </Button>
             </Row>
           </GroupBlock>
         ))}
