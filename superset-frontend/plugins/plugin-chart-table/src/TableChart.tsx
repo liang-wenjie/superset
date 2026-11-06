@@ -96,7 +96,11 @@ import DataTable, {
 } from './DataTable';
 import Styles from './Styles';
 import { formatColumnValue } from './utils/formatValue';
-import { getTableStyleVariables, TABLE_STYLE_VARS } from './utils/tableStyle';
+import {
+  getTableStyleVariables,
+  TABLE_OUTER_BORDER_VAR,
+  TABLE_STYLE_VARS,
+} from './utils/tableStyle';
 import { PAGE_SIZE_OPTIONS, SERVER_PAGE_SIZE_OPTIONS } from './consts';
 import { updateTableOwnState } from './DataTable/utils/externalAPIs';
 import getScrollBarSize from './DataTable/utils/getScrollBarSize';
@@ -442,6 +446,8 @@ export default function TableChart<D extends DataRecord = DataRecord>(
     slice_id,
     columnLabelToNameMap = {},
     tableStyle,
+    showOuterBorder = false,
+    showNullAsBlank = false,
   } = props;
 
   const comparisonColumns = useMemo(
@@ -477,10 +483,18 @@ export default function TableChart<D extends DataRecord = DataRecord>(
   // recalculated totals to display when the search filter is applied (client-side pagination)
   const [displayedTotals, setDisplayedTotals] = useState<D | undefined>(totals);
   const theme = useTheme();
-  const tableStyleVariables = useMemo(
-    () => getTableStyleVariables(tableStyle),
-    [tableStyle],
-  );
+  const tableStyleVariables = useMemo((): CSSProperties => {
+    const variables = getTableStyleVariables(tableStyle);
+    if (!showOuterBorder) {
+      return variables;
+    }
+    return {
+      ...variables,
+      // The outer frame follows the general line width, keeping it consistent
+      // with the header underline and the grid separators.
+      [TABLE_OUTER_BORDER_VAR]: `var(${TABLE_STYLE_VARS.borderWidth}, 1px)`,
+    } as CSSProperties;
+  }, [tableStyle, showOuterBorder]);
 
   useEffect(() => {
     setDisplayedTotals(totals);
@@ -1234,7 +1248,12 @@ export default function TableChart<D extends DataRecord = DataRecord>(
         columnLabel: label,
         accessor: ((datum: D) => datum[key]) as never,
         Cell: ({ value, row }: { value: DataRecordValue; row: Row<D> }) => {
-          const [isHtml, text] = formatColumnValue(column, value, row.original);
+          const [isHtml, text] = formatColumnValue(
+            column,
+            value,
+            row.original,
+            showNullAsBlank,
+          );
           const html = isHtml && allowRenderHtml ? { __html: text } : undefined;
 
           let backgroundColor;
@@ -1574,7 +1593,14 @@ export default function TableChart<D extends DataRecord = DataRecord>(
           ) : (
             <td key={`footer-total-${i}`} style={sharedStyle}>
               <strong>
-                {formatColumnValue(column, displayedTotals[key])[1]}
+                {
+                  formatColumnValue(
+                    column,
+                    displayedTotals[key],
+                    undefined,
+                    showNullAsBlank,
+                  )[1]
+                }
               </strong>
             </td>
           )
@@ -1611,6 +1637,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
       handleContextMenu,
       allowRearrangeColumns,
       headerGroupBoundaryKeys,
+      showNullAsBlank,
     ],
   );
 

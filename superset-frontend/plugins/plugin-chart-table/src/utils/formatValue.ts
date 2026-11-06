@@ -30,25 +30,29 @@ import { DataColumnMeta } from '../types';
 
 /**
  * Format text for cell value.
+ *
+ * `nullAsBlank` is a chart-wide display option: when enabled, null values are
+ * rendered as an empty string instead of the default `N/A` placeholder.
  */
 function formatValue(
   formatter: DataColumnMeta['formatter'],
   value: DataRecordValue,
   rowData?: Record<string, DataRecordValue>,
   currencyColumn?: string,
+  nullAsBlank = false,
 ): [boolean, string] {
   // render undefined as empty string
   if (value === undefined) {
     return [false, ''];
   }
-  // render null as `N/A`
+  // render null as `N/A`, or as an empty cell when configured
   if (
     value === null ||
     // null values in temporal columns are wrapped in a Date object, so make sure we
     // handle them here too
     (value instanceof DateWithFormatter && value.input === null)
   ) {
-    return [false, 'N/A'];
+    return [false, nullAsBlank ? '' : 'N/A'];
   }
   if (formatter) {
     try {
@@ -72,6 +76,7 @@ export function formatColumnValue(
   column: DataColumnMeta,
   value: DataRecordValue,
   rowData?: Record<string, DataRecordValue>,
+  nullAsBlank = false,
 ) {
   const { dataType, formatter, config = {}, currencyCodeColumn } = column;
   const isNumber = dataType === GenericDataType.Numeric;
@@ -87,5 +92,6 @@ export function formatColumnValue(
     value,
     rowData,
     currencyCodeColumn,
+    nullAsBlank,
   );
 }

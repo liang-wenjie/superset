@@ -840,6 +840,34 @@ const config: ControlPanelConfig = {
         ],
         [
           {
+            name: 'show_outer_border',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Show outer border'),
+              renderTrigger: true,
+              default: false,
+              description: t(
+                'Draw a line around the outside of the table. The line uses the color and width configured under Header & border styling.',
+              ),
+            },
+          },
+        ],
+        [
+          {
+            name: 'show_null_as_blank',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Display null values as blank'),
+              renderTrigger: true,
+              default: false,
+              description: t(
+                'Show an empty cell instead of N/A when a value is null.',
+              ),
+            },
+          },
+        ],
+        [
+          {
             name: 'comparison_color_enabled',
             config: {
               type: 'CheckboxControl',

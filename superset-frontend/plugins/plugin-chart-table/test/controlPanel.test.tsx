@@ -1109,3 +1109,26 @@ test('header & border styling controls expose safe defaults', () => {
   expect(findNamedControl('header_only_styling')).toBeNull();
   expect(findNamedControl('header_border_width')?.visibility).toBeUndefined();
 });
+
+test('visual formatting exposes outer border and blank null value controls', () => {
+  const section = config.controlPanelSections.find(
+    item => item && String(item.label) === 'Visual formatting',
+  );
+  expect(section).toBeDefined();
+
+  const controlNames = section!.controlSetRows.flatMap(row =>
+    row.flatMap(control =>
+      isCustomControlItem(control) ? [control.name] : [],
+    ),
+  );
+  expect(controlNames).toContain('show_outer_border');
+  expect(controlNames).toContain('show_null_as_blank');
+
+  ['show_outer_border', 'show_null_as_blank'].forEach(name => {
+    const control = findNamedControl(name);
+    expect(control?.type).toBe('CheckboxControl');
+    // Both toggles are opt-in so charts saved before they existed are unchanged.
+    expect(control?.default).toBe(false);
+    expect(control?.renderTrigger).toBe(true);
+  });
+});

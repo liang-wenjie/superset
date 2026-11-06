@@ -87,6 +87,8 @@ export type TableChartFormData = QueryFormData & {
   border_width?: string | number;
   header_vertical_line_only?: boolean;
   header_border_width?: string | number;
+  show_outer_border?: boolean;
+  show_null_as_blank?: boolean;
 };
 
 export interface TableChartProps extends ChartProps {
@@ -147,4 +149,6 @@ export interface TableChartTransformedProps<D extends DataRecord = DataRecord> {
   // emit the correct column name in cross-filter data masks
   columnLabelToNameMap?: Record<string, string>;
   tableStyle?: TableStyleConfig;
+  showOuterBorder?: boolean;
+  showNullAsBlank?: boolean;
 }

@@ -148,3 +148,67 @@ test('charts without styling controls keep the theme defaults', () => {
     '',
   );
 });
+
+test('maps visual formatting toggles to transformed props', () => {
+  const transformed = transformProps({
+    ...testData.basic,
+    rawFormData: {
+      ...testData.basic.rawFormData,
+      show_outer_border: true,
+      show_null_as_blank: true,
+    },
+  });
+
+  expect(transformed.showOuterBorder).toBe(true);
+  expect(transformed.showNullAsBlank).toBe(true);
+});
+
+test('visual formatting toggles are off for charts saved without them', () => {
+  const transformed = transformProps(testData.basic);
+
+  expect(transformed.showOuterBorder).toBe(false);
+  expect(transformed.showNullAsBlank).toBe(false);
+});
+
+test('outer border emits its CSS variable only when enabled', () => {
+  const enabled = transformProps({
+    ...testData.basic,
+    rawFormData: {
+      ...testData.basic.rawFormData,
+      show_outer_border: true,
+    },
+  });
+  const enabledRender = render(<TableChart {...enabled} sticky={false} />);
+  const enabledWrapper = enabledRender.container
+    .firstElementChild as HTMLElement;
+  expect(
+    enabledWrapper.style.getPropertyValue('--table-outer-border-width'),
+  ).toBe('var(--table-border-width, 1px)');
+  enabledRender.unmount();
+
+  const { container } = render(
+    <TableChart {...transformProps(testData.basic)} sticky={false} />,
+  );
+  const wrapper = container.firstElementChild as HTMLElement;
+  expect(wrapper.getAttribute('style') ?? '').not.toContain(
+    '--table-outer-border-width',
+  );
+});
+
+test('renders null values as blank when the option is enabled', () => {
+  const transformed = transformProps({
+    ...testData.basic,
+    rawFormData: {
+      ...testData.basic.rawFormData,
+      show_null_as_blank: true,
+    },
+  });
+
+  render(<TableChart {...transformed} sticky={false} />);
+  const firstDataRow = screen.getAllByRole('rowgroup')[1];
+  const cells = firstDataRow.querySelectorAll('td');
+  expect(cells[8].textContent).toBe('');
+  // The cell keeps its null marker so conditional styling still applies.
+  expect(cells[8].classList.contains('dt-is-null')).toBe(true);
+  expect(screen.queryByText('N/A')).not.toBeInTheDocument();
+});

@@ -16,7 +16,11 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { CurrencyFormatter, getNumberFormatter } from '@superset-ui/core';
+import {
+  CurrencyFormatter,
+  DateWithFormatter,
+  getNumberFormatter,
+} from '@superset-ui/core';
 import { GenericDataType } from '@apache-superset/core/common';
 import { formatColumnValue } from '../../src/utils/formatValue';
 import { DataColumnMeta } from '../../src/types';
@@ -172,6 +176,28 @@ test('formatColumnValue handles null values', () => {
 
   const [, nullResult] = formatColumnValue(column, null);
   expect(nullResult).toBe('N/A');
+});
+
+test('formatColumnValue renders null as blank when requested', () => {
+  const column: DataColumnMeta = {
+    key: 'revenue',
+    label: 'Revenue',
+    dataType: GenericDataType.Numeric,
+    formatter: getNumberFormatter(',.2f'),
+    isNumeric: true,
+  };
+
+  const [, blankResult] = formatColumnValue(column, null, undefined, true);
+  expect(blankResult).toBe('');
+
+  // Temporal columns wrap nulls in a DateWithFormatter, so cover that too.
+  const [, wrappedResult] = formatColumnValue(
+    column,
+    new DateWithFormatter(null),
+    undefined,
+    true,
+  );
+  expect(wrappedResult).toBe('');
 });
 
 test('formatColumnValue preserves percentage format for small numbers when d3SmallNumberFormat is null', () => {

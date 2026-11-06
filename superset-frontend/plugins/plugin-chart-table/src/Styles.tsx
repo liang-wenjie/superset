@@ -17,6 +17,7 @@
  * under the License.
  */
 import { css, styled } from '@apache-superset/core/theme';
+import { TABLE_OUTER_BORDER_VAR } from './utils/tableStyle';
 
 export default styled.div`
   ${({ theme }) => css`
@@ -33,6 +34,11 @@ export default styled.div`
       max-width: none;
       margin: 0;
       border-collapse: collapse;
+      /* The "Show outer border" control emits this variable. Without it the
+         frame has zero width, so older charts keep their original look. The
+         frame shares the grid line color and width. */
+      border: var(${TABLE_OUTER_BORDER_VAR}, 0px) solid
+        var(--table-border-color, ${theme.colorSplit});
     }
 
     /* Cell styling */

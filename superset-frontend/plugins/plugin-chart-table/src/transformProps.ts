@@ -562,6 +562,8 @@ const transformProps = (
     comparison_color_scheme: comparisonColorScheme = ColorSchemeEnum.Green,
     comparison_type,
     slice_id,
+    show_outer_border: showOuterBorder = false,
+    show_null_as_blank: showNullAsBlank = false,
   } = formData;
   // Build a mapping from column labels to original column names.
   // When a user creates an adhoc column with a custom label (e.g. sqlExpression: "state",
@@ -871,6 +873,8 @@ const transformProps = (
     slice_id,
     columnLabelToNameMap,
     tableStyle: getTableStyleConfig(formData),
+    showOuterBorder,
+    showNullAsBlank,
   };
 };
 

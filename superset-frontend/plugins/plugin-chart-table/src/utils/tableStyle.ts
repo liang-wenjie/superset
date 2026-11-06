@@ -38,6 +38,13 @@ export {
   normalizeTablePixels as normalizePixels,
 };
 
+/**
+ * The "Show outer border" control sets this variable. The stylesheet falls
+ * back to a zero-width border so charts saved before the control existed keep
+ * their original appearance.
+ */
+export const TABLE_OUTER_BORDER_VAR = '--table-outer-border-width';
+
 export function getTableStyleVariables(
   config: TableStyleConfig | undefined,
 ): CSSProperties {
