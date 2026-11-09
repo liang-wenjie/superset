@@ -302,6 +302,88 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(overflow).toBeLessThan(reference);
   });
 
+  const getAllFontSizes = (
+    value: number,
+    formData: Record<string, unknown> = {},
+  ): number[] => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': value,
+            'SUM(sales)__1 month ago': 90,
+            'SUM(sales)__1 year ago': 80,
+          },
+        ],
+        formData,
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    return graphic.map(element => element.style.fontSize);
+  };
+
+  test('scales the whole tile by one ratio when uniform sizing is enabled', () => {
+    const uniform = {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 12,
+    };
+    const shortTile = getAllFontSizes(7.81, uniform);
+    const longTile = getAllFontSizes(1234567, uniform);
+
+    // Title, big number and both comparison rows all land on the same sizes.
+    expect(longTile).toEqual(shortTile);
+    expect(shortTile).toHaveLength(4);
+
+    const autoSizedTile = getAllFontSizes(7.81);
+    expect(shortTile[0]).toBeLessThan(autoSizedTile[0]);
+    expect(shortTile[1]).toBeLessThan(autoSizedTile[1]);
+    expect(shortTile[2]).toBeLessThan(autoSizedTile[2]);
+    expect(shortTile[3]).toBeLessThan(autoSizedTile[3]);
+  });
+
+  test('scales internal gaps by the same ratio as the tile text', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 7.81,
+            'SUM(sales)__1 month ago': 90,
+            'SUM(sales)__1 year ago': 80,
+          },
+        ],
+        {
+          uniformBigNumberFontSize: true,
+          bigNumberFitChars: 12,
+          bigNumberTop: 50,
+          comparisonTop: 100,
+        },
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    const titleRowHeight = graphic[0].style.fontSize * 1.2;
+    const bigNumberRowHeight = graphic[1].style.fontSize * 1.2;
+    // 50px and 100px gaps at the 12-character scale (~0.364) become 18/36.
+    expect(graphic[1].top - graphic[0].top - titleRowHeight).toBeCloseTo(18);
+    expect(graphic[2].top - graphic[1].top - bigNumberRowHeight).toBeCloseTo(
+      36,
+    );
+  });
+
+  test('applies the detected reference length to every text size', () => {
+    const shortReference = getAllFontSizes(7.81, {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 6,
+    });
+    const longReference = getAllFontSizes(7.81, {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 16,
+    });
+
+    expect(shortReference[0]).toBeGreaterThan(longReference[0]);
+    expect(shortReference[1]).toBeGreaterThan(longReference[1]);
+    expect(shortReference[2]).toBeGreaterThan(longReference[2]);
+  });
+
   test('shrinks a long comparison label to fit a narrow tile', () => {
     const result = transformProps({
       ...buildChartProps(

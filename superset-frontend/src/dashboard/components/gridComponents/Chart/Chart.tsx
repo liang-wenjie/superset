@@ -55,6 +55,7 @@ import { enforceSharedLabelsColorsArray } from 'src/utils/colorScheme';
 import exportPivotExcel from 'src/utils/downloadAsPivotExcel';
 import type { RootState, Datasource, Slice } from 'src/dashboard/types';
 import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabels';
+import { selectBigNumberFitCharsByChartId } from 'src/dashboard/util/bigNumberSizing';
 import {
   convertChartStateToOwnState,
   hasChartStateConverter,
@@ -273,11 +274,8 @@ const Chart = (props: ChartProps) => {
       (state.dashboardInfo?.metadata as JsonObject)
         ?.uniform_big_number_font_size as boolean | undefined,
   );
-  const bigNumberFitChars = useSelector(
-    (state: RootState) =>
-      (state.dashboardInfo?.metadata as JsonObject)?.big_number_fit_chars as
-        | number
-        | undefined,
+  const autoBigNumberFitChars = useSelector((state: RootState) =>
+    selectBigNumberFitCharsByChartId(state).get(String(props.id)),
   );
   const suppressLoadingSpinner = useIsChartAutoRefreshing(props.id);
 
@@ -546,14 +544,19 @@ const Chart = (props: ChartProps) => {
       sharedLabelsColors,
       ownColorScheme,
     });
-    // Dashboard-level styling is injected into every chart's form data so
-    // plugins can read it without reaching into the dashboard store.
-    const dashboardBigNumberSizing = {
-      ...(uniformBigNumberFontSize !== undefined && {
-        uniformBigNumberFontSize,
-      }),
-      ...(bigNumberFitChars !== undefined && { bigNumberFitChars }),
-    };
+    // Only Big Number with YoY & MoM tiles consume this dashboard-level
+    // styling; other viz types keep their form data untouched.
+    const dashboardBigNumberSizing =
+      chart?.form_data?.viz_type === VizType.BigNumberYoyMom
+        ? {
+            ...(uniformBigNumberFontSize !== undefined && {
+              uniformBigNumberFontSize,
+            }),
+            ...(autoBigNumberFitChars !== undefined && {
+              bigNumberFitChars: autoBigNumberFitChars,
+            }),
+          }
+        : {};
     if (
       chart?.form_data?.viz_type !== VizType.Table ||
       !chart.form_data.datasource?.endsWith(`__${DatasourceType.SemanticView}`)
@@ -602,7 +605,7 @@ const Chart = (props: ChartProps) => {
     currentDashboardDatasets,
     props.dashboardId,
     uniformBigNumberFontSize,
-    bigNumberFitChars,
+    autoBigNumberFitChars,
   ]);
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;

@@ -559,7 +559,6 @@ describe('PropertiesModal', () => {
     );
     expect(toggle).not.toBeChecked();
     await userEvent.click(toggle);
-    await screen.findByTestId('dashboard-big-number-fit-chars-field');
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => {
@@ -567,7 +566,8 @@ describe('PropertiesModal', () => {
     });
     const submitted = JSON.parse(props.onSubmit.mock.calls[0][0].jsonMetadata);
     expect(submitted.uniform_big_number_font_size).toBe(true);
-    expect(submitted.big_number_fit_chars).toBe(12);
+    // The reference length is detected at render time, never persisted.
+    expect(submitted).not.toHaveProperty('big_number_fit_chars');
   });
 
   test('preserves certification fields on save without opening Certification section', async () => {

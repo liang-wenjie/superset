@@ -388,16 +388,16 @@ export default function transformProps(
   const graphic: GraphicComponentOption[] = [];
 
   // Auto-positioning keeps the text stack compact and centered, matching the
-  // flex-centered layout used by the other Big Number visualizations.
-  // The title font size follows the shared Subtitle Font Size control:
-  // ratios (<= 1, Tiny 0.125 .. Huge 0.4) are multiplied by the chart
-  // height; legacy numeric values > 1 are absolute pixels.
+  // flex-centered layout used by the other Big Number visualizations. Font
+  // sizes follow the shared controls: ratios (<= 1, Tiny .. Huge) are
+  // multiplied by the chart height; legacy numeric values > 1 are absolute
+  // pixels. These are the unscaled design sizes.
   const hasTitle = !!headerText;
   const titleFontSizeValue =
     typeof titleFontSize === 'number'
       ? titleFontSize
       : Number(titleFontSize) || DEFAULT_TITLE_FONT_SIZE;
-  const titleFontSizePx =
+  const baseTitleFontSizePx =
     titleFontSizeValue <= 1
       ? Math.ceil(titleFontSizeValue * height)
       : Math.ceil(titleFontSizeValue);
@@ -405,46 +405,82 @@ export default function transformProps(
     typeof bigNumberFontSize === 'number'
       ? bigNumberFontSize
       : Number(bigNumberFontSize) || DEFAULT_BIG_NUMBER_FONT_SIZE;
-  const requestedBigNumberFontSizePx =
+  const baseBigNumberFontSizePx =
     bigNumberFontSizeValue <= 1
       ? Math.ceil(bigNumberFontSizeValue * height)
       : Math.ceil(bigNumberFontSizeValue);
+  const comparisonFontSizeValue =
+    typeof comparisonFontSize === 'number'
+      ? comparisonFontSize
+      : Number(comparisonFontSize) || DEFAULT_COMPARISON_FONT_SIZE;
+  const baseComparisonFontSizePx =
+    comparisonFontSizeValue <= 1
+      ? Math.ceil(comparisonFontSizeValue * height)
+      : Math.ceil(comparisonFontSizeValue);
+
   // ECharts graphic text does not wrap or auto-scale, so a long formatted
   // value (e.g. "15,145,470") gets clipped on the right when the tile is
-  // narrow. Shrink the font size proportionally so the whole number fits,
-  // while keeping a floor so it stays readable. The configured left offset
-  // and a symmetric right padding bound the available width, and a small
-  // safety margin absorbs the heuristic width estimation error.
+  // narrow. The configured left offset and a symmetric right padding bound
+  // the available width, and a small safety margin absorbs the heuristic
+  // width estimation error.
   const bigNumberAvailableWidth = Math.max(
     0,
     width - bigNumberLeft - DEFAULT_BIG_NUMBER_LEFT - TEXT_FIT_SAFETY_MARGIN,
   );
-  // Without uniform sizing each tile measures only its own value, so tiles
-  // with short numbers stay large while longer ones shrink. When enabled,
-  // every tile also measures a shared reference text and therefore lands on
-  // the same font size regardless of its configured number format. Keeping
-  // the actual value in the comparison guards against clipping: a value
-  // longer than the reference still shrinks.
+  // The dashboard injects the longest formatted number found among KPI tiles
+  // of the same area. Derive ONE scale from that reference and apply it to
+  // every text size and internal gap in the tile: the title, the big number
+  // and the comparison rows then stay proportional, instead of each shrinking
+  // against its own text. With uniform sizing off, each element keeps its own
+  // auto-fit behaviour.
   const fitChars = Math.max(
     1,
     Math.min(64, Math.floor(bigNumberFitChars) || DEFAULT_BIG_NUMBER_FIT_CHARS),
   );
-  const uniformReferenceWidth = uniformBigNumberFontSize
-    ? estimateTextWidth(
-        '0'.repeat(fitChars),
-        requestedBigNumberFontSizePx,
-        true,
-      )
-    : 0;
-  const estimatedBigNumberWidth = Math.max(
-    estimateTextWidth(bigNumberText, requestedBigNumberFontSizePx, true),
-    uniformReferenceWidth,
+  const referenceBigNumberWidth = estimateTextWidth(
+    '0'.repeat(fitChars),
+    baseBigNumberFontSizePx,
+    true,
+  );
+  const fitScale =
+    bigNumberAvailableWidth / Math.max(1, referenceBigNumberWidth);
+  // The reference is detected from the dashboard query data. If the current
+  // value is longer than that reference (data changed, or a currency symbol
+  // was added by the chart formatter), guard against clipping with a scale
+  // too, so the whole tile still moves together instead of only the number.
+  const actualBigNumberWidth = estimateTextWidth(
+    bigNumberText,
+    baseBigNumberFontSizePx,
+    true,
+  );
+  const overflowScale =
+    bigNumberAvailableWidth > 0 && actualBigNumberWidth > 0
+      ? bigNumberAvailableWidth / actualBigNumberWidth
+      : 1;
+  const uniformScale = uniformBigNumberFontSize
+    ? Math.max(0.1, Math.min(1, fitScale, overflowScale))
+    : 1;
+  const scaleFontSize = (size: number) =>
+    Math.max(1, Math.floor(size * uniformScale));
+  const scaleGap = (gap: number) =>
+    uniformBigNumberFontSize
+      ? Math.max(0, Math.floor(gap * uniformScale))
+      : gap;
+  const titleFontSizePx = scaleFontSize(baseTitleFontSizePx);
+  const requestedBigNumberFontSizePx = scaleFontSize(baseBigNumberFontSizePx);
+  const requestedComparisonFontSizePx = scaleFontSize(baseComparisonFontSizePx);
+
+  const estimatedBigNumberWidth = estimateTextWidth(
+    bigNumberText,
+    requestedBigNumberFontSizePx,
+    true,
   );
   const minBigNumberFontSizePx = Math.max(
     12,
     Math.floor(requestedBigNumberFontSizePx * 0.3),
   );
   const bigNumberFontSizePx =
+    !uniformBigNumberFontSize &&
     bigNumberAvailableWidth > 0 &&
     estimatedBigNumberWidth > bigNumberAvailableWidth
       ? Math.max(
@@ -455,14 +491,6 @@ export default function transformProps(
           ),
         )
       : requestedBigNumberFontSizePx;
-  const comparisonFontSizeValue =
-    typeof comparisonFontSize === 'number'
-      ? comparisonFontSize
-      : Number(comparisonFontSize) || DEFAULT_COMPARISON_FONT_SIZE;
-  const requestedComparisonFontSizePx =
-    comparisonFontSizeValue <= 1
-      ? Math.ceil(comparisonFontSizeValue * height)
-      : Math.ceil(comparisonFontSizeValue);
   // The title is rendered as ECharts graphic text too, so a long title gets
   // clipped on the right on narrow tiles just like the big number and the
   // comparison row. Shrink it against the same available-width rule (the
@@ -474,7 +502,9 @@ export default function transformProps(
   );
   const minTitleFontSizePx = 12;
   let effectiveTitleFontSizePx = titleFontSizePx;
-  if (titleAvailableWidth > 0 && headerText) {
+  // In uniform mode no element shrinks against its own text: every tile of
+  // the same area uses the one reference-derived scale computed above.
+  if (!uniformBigNumberFontSize && titleAvailableWidth > 0 && headerText) {
     const estimatedTitleWidth = estimateTextWidth(headerText, titleFontSizePx);
     if (estimatedTitleWidth > titleAvailableWidth) {
       effectiveTitleFontSizePx = Math.max(
@@ -504,9 +534,11 @@ export default function transformProps(
   }
   const titleRowHeight = effectiveTitleFontSizePx * 1.2;
   const bigNumberRowHeight = bigNumberFontSizePx * 1.2;
-  const titleTopValue = normalizePosition(titleTop);
-  const bigNumberTopValue = normalizePosition(bigNumberTop);
-  const comparisonTopValue = normalizePosition(comparisonTop);
+  // Row heights already follow the scaled font sizes. Scale the configured
+  // internal gaps by the same ratio so spacing stays proportional too.
+  const titleTopValue = scaleGap(normalizePosition(titleTop));
+  const bigNumberTopValue = scaleGap(normalizePosition(bigNumberTop));
+  const comparisonTopValue = scaleGap(normalizePosition(comparisonTop));
   const hasComparison =
     (showComparison1 && !!(comparison1Offset || comparison1Column)) ||
     (showComparison2 && !!(comparison2Offset || comparison2Column));
@@ -525,7 +557,7 @@ export default function transformProps(
   // big_number_left keeps both rows in sync, and the available-width rule
   // stays symmetric with the big number.
   const comparisonLeft = bigNumberLeft;
-  const comparisonGapPx = Math.max(0, Number(comparisonGap) || 0);
+  const comparisonGapPx = scaleGap(Math.max(0, Number(comparisonGap) || 0));
 
   const slotComparisonValue = (
     mode: 'time_shift' | 'metric' | undefined,
@@ -679,6 +711,7 @@ export default function transformProps(
   const minComparisonFontSizePx = 10;
   let comparisonFontSizePx = requestedComparisonFontSizePx;
   if (
+    !uniformBigNumberFontSize &&
     comparisonAvailableWidth > 0 &&
     estimatedComparisonRowWidth > comparisonAvailableWidth
   ) {

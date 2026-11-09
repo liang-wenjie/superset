@@ -187,35 +187,58 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-test('injects dashboard-level big number sizing into the chart form data', () => {
-  setup(
-    {},
-    {
-      dashboardInfo: {
-        ...defaultState.dashboardInfo,
-        metadata: {
-          uniform_big_number_font_size: true,
-          big_number_fit_chars: 14,
-        },
+const kpiSizingState = (enabled: boolean, vizType: VizType) => ({
+  charts: {
+    ...defaultState.charts,
+    [queryId]: {
+      ...defaultState.charts[queryId],
+      form_data: {
+        ...defaultState.charts[queryId].form_data,
+        viz_type: vizType,
+        metric: 'SUM(sales)',
+        y_axis_format: ',.2f',
+      },
+      queriesResponse: [{ data: [{ 'SUM(sales)': 3808637.34 }] }],
+    },
+  },
+  dashboardInfo: {
+    ...defaultState.dashboardInfo,
+    metadata: { uniform_big_number_font_size: enabled },
+  },
+  dashboardLayout: {
+    ...defaultState.dashboardLayout,
+    present: {
+      [`CHART-${queryId}`]: {
+        type: 'CHART',
+        meta: { chartId: queryId, width: 4, height: 3 },
       },
     },
-  );
+  },
+});
+
+test('injects the detected longest KPI number into Big Number charts only', () => {
+  setup({}, kpiSizingState(true, VizType.BigNumberYoyMom));
 
   expect(capturedChartContainerProps.formData).toEqual(
     expect.objectContaining({
       uniformBigNumberFontSize: true,
-      bigNumberFitChars: 14,
+      // "3,808,637.34" is the longest formatted value among same-sized tiles.
+      bigNumberFitChars: 12,
     }),
   );
 });
 
-test('leaves chart form data untouched when dashboard sizing is unset', () => {
-  setup();
-  const formData = capturedChartContainerProps.formData as Record<
+test('does not inject KPI sizing into other viz types or when disabled', () => {
+  setup({}, kpiSizingState(true, VizType.Table));
+  let formData = capturedChartContainerProps.formData as Record<
     string,
     unknown
   >;
   expect(formData).not.toHaveProperty('uniformBigNumberFontSize');
+  expect(formData).not.toHaveProperty('bigNumberFitChars');
+
+  setup({}, kpiSizingState(false, VizType.BigNumberYoyMom));
+  formData = capturedChartContainerProps.formData as Record<string, unknown>;
   expect(formData).not.toHaveProperty('bigNumberFitChars');
 });
 

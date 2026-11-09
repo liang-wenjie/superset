@@ -25,12 +25,7 @@ import {
 } from '@superset-ui/core';
 import { Alert } from '@apache-superset/core/components';
 import { styled } from '@apache-superset/core/theme';
-import {
-  Button,
-  InputNumber,
-  Select,
-  Switch,
-} from '@superset-ui/core/components';
+import { Button, Select, Switch } from '@superset-ui/core/components';
 import { EditorHost } from 'src/core/editors';
 import rison from 'rison';
 import ColorSchemeSelect from 'src/dashboard/components/ColorSchemeSelect';
@@ -76,10 +71,6 @@ const StyledSwitchContainer = styled.div`
   `}
 `;
 
-// Mirrors the BigNumberYoyMom plugin default. Keeping the value here avoids a
-// dashboard-core dependency on a specific chart plugin package.
-export const DEFAULT_BIG_NUMBER_FIT_CHARS = 12;
-
 interface Theme {
   id: number;
   theme_name: string;
@@ -99,7 +90,6 @@ interface StylingSectionProps {
   hasCustomLabelsColor: boolean;
   showChartTimestamps: boolean;
   uniformBigNumberFontSize: boolean;
-  bigNumberFitChars: number;
   jsonMetadata: string;
   onThemeChange: (value: any) => void;
   onColorSchemeChange: (
@@ -109,7 +99,6 @@ interface StylingSectionProps {
   onCustomCssChange: (css: string) => void;
   onShowChartTimestampsChange: (value: boolean) => void;
   onUniformBigNumberFontSizeChange: (value: boolean) => void;
-  onBigNumberFitCharsChange: (value: number) => void;
   onJsonMetadataChange: (value: string) => void;
   addDangerToast?: (message: string) => void;
 }
@@ -122,14 +111,12 @@ const StylingSection = ({
   hasCustomLabelsColor,
   showChartTimestamps,
   uniformBigNumberFontSize,
-  bigNumberFitChars,
   jsonMetadata,
   onThemeChange,
   onColorSchemeChange,
   onCustomCssChange,
   onShowChartTimestampsChange,
   onUniformBigNumberFontSizeChange,
-  onBigNumberFitCharsChange,
   onJsonMetadataChange,
   addDangerToast,
 }: StylingSectionProps) => {
@@ -313,29 +300,10 @@ const StylingSection = ({
         </div>
         <span className="switch-helper">
           {t(
-            'Render every big number KPI tile on this dashboard at the same font size. Each chart keeps its own number format; only the font size is shared.',
+            'Size KPI tiles of the same size by their longest number, then scale the title, value and comparison rows by the same ratio. Each chart keeps its own number format.',
           )}
         </span>
       </StyledSwitchContainer>
-      {uniformBigNumberFontSize && (
-        <ModalFormField
-          label={t('Big number reference length')}
-          testId="dashboard-big-number-fit-chars-field"
-          helperText={t(
-            'Character count of the longest formatted number on this dashboard (e.g. 3,808,637.34 counts as 12). Longer values are shrunk further to avoid clipping.',
-          )}
-        >
-          <InputNumber
-            data-test="dashboard-big-number-fit-chars-input"
-            min={1}
-            max={64}
-            value={bigNumberFitChars}
-            onChange={value =>
-              onBigNumberFitCharsChange(value ?? DEFAULT_BIG_NUMBER_FIT_CHARS)
-            }
-          />
-        </ModalFormField>
-      )}
       {isFeatureEnabled(FeatureFlag.CssTemplates) &&
         cssTemplates.length > 0 && (
           <ModalFormField

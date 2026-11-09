@@ -229,9 +229,10 @@ class DashboardJSONMetadataSchema(Schema):
     cross_filters_enabled = fields.Boolean(dump_default=True)
     # controls visibility of "last queried at" timestamp on charts in dashboard view
     show_chart_timestamps = fields.Boolean(dump_default=False)
-    # dashboard-level sizing for Big Number KPI tiles; the dashboard frontend
-    # injects these into every chart's form data
+    # enables uniform sizing for Big Number KPI tiles; the reference length is
+    # detected from the dashboard data at render time
     uniform_big_number_font_size = fields.Boolean(dump_default=False)
+    # legacy manual reference length, kept so older dashboards still validate
     big_number_fit_chars = fields.Integer(allow_none=True)
     # used for v0 import/export
     import_time = fields.Integer()
