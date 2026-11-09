@@ -30,10 +30,16 @@ import '@fontsource/ibm-plex-mono/600.css';
 
 import { css, useTheme, Global } from '@emotion/react';
 import { useThemeMode } from './utils/themeUtils';
+import {
+  OVERLAY_THUMB_CLASS,
+  VISIBLE_ATTRIBUTE,
+  useAutoHideScrollbars,
+} from './useAutoHideScrollbars';
 
 export const GlobalStyles = () => {
   const theme = useTheme();
   const isDark = useThemeMode();
+  useAutoHideScrollbars();
   return (
     <Global
       key={`global-${theme.colorLink}`}
@@ -140,6 +146,40 @@ export const GlobalStyles = () => {
           .ant-popover-container:has(.ant-popover-title)
           .ant-tabs-tab {
           padding-top: 0;
+        }
+
+        /* Native scrollbars reserve layout space on Windows/Linux. Hide them
+           entirely and draw a floating thumb instead (see
+           useAutoHideScrollbars): it overlays the content, appears only while
+           scrolling, and never reflows the page. */
+        :where(*) {
+          scrollbar-width: none !important;
+        }
+
+        :where(*)::-webkit-scrollbar {
+          width: 0 !important;
+          height: 0 !important;
+        }
+
+        .${OVERLAY_THUMB_CLASS} {
+          position: fixed;
+          top: 0;
+          left: 0;
+          z-index: 10000;
+          border-radius: 999px;
+          background-color: color-mix(
+            in srgb,
+            ${theme.colorText},
+            transparent 50%
+          );
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 180ms ease-out;
+          will-change: transform;
+        }
+
+        .${OVERLAY_THUMB_CLASS}[${VISIBLE_ATTRIBUTE}] {
+          opacity: 1;
         }
       `}
     />

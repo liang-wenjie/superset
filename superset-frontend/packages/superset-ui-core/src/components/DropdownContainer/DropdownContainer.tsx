@@ -29,7 +29,6 @@ import {
   useCallback,
 } from 'react';
 
-import { Global } from '@emotion/react';
 import { t } from '@apache-superset/core/translation';
 import { usePrevious } from '@superset-ui/core';
 import { css, useTheme } from '@apache-superset/core/theme';
@@ -359,88 +358,63 @@ export const DropdownContainer = forwardRef(
           {notOverflowedItems.map(item => item.element)}
         </div>
         {showDropdownButton && (
-          <>
-            <Global
-              styles={css`
-                .ant-popover-container {
-                  /* Some OS versions only show the scroll when hovering. */
-                  /* These settings will make the scroll always visible. */
-                  ::-webkit-scrollbar {
-                    -webkit-appearance: none;
-                    width: 14px;
+          <Popover
+            styles={{
+              // antd v6 renamed the inner content slot `body` -> `container`
+              container: {
+                maxHeight: `${MAX_HEIGHT}px`,
+                overflow: showOverflow ? 'auto' : 'visible',
+              },
+            }}
+            content={popoverContent}
+            trigger="click"
+            open={popoverVisible && !!popoverContent}
+            onOpenChange={visible => {
+              // While a recalculation keeps the trigger mounted but there is
+              // no content yet, ignore open attempts so it stays visible
+              // without opening an empty popover.
+              if (popoverContent) setPopoverVisible(visible);
+            }}
+            placement="bottom"
+            forceRender={forceRender}
+            fresh // This prop prevents caching and stale data for filter scoping.
+          >
+            <Tooltip title={dropdownTriggerTooltip}>
+              <Button
+                buttonStyle="secondary"
+                data-test="dropdown-container-btn"
+                icon={dropdownTriggerIcon}
+                css={css`
+                  padding-left: ${theme.paddingXS}px;
+                  padding-right: ${theme.paddingXXS}px;
+                  gap: ${theme.sizeXXS}px;
+                `}
+              >
+                {dropdownTriggerText}
+                <Badge
+                  count={dropdownTriggerCount ?? overflowingCount}
+                  color={
+                    (dropdownTriggerCount ?? overflowingCount) > 0
+                      ? theme.colorPrimary
+                      : theme.colorTextSecondary
                   }
-                  ::-webkit-scrollbar-thumb {
-                    border-radius: 9px;
-                    background-color: ${theme.colorFillSecondary};
-                    border: 3px solid transparent;
-                    background-clip: content-box;
-                  }
-                  ::-webkit-scrollbar-track {
-                    background-color: ${theme.colorFillQuaternary};
-                    border-left: 1px solid ${theme.colorFillTertiary};
-                  }
-                }
-              `}
-            />
-
-            <Popover
-              styles={{
-                // antd v6 renamed the inner content slot `body` -> `container`
-                container: {
-                  maxHeight: `${MAX_HEIGHT}px`,
-                  overflow: showOverflow ? 'auto' : 'visible',
-                },
-              }}
-              content={popoverContent}
-              trigger="click"
-              open={popoverVisible && !!popoverContent}
-              onOpenChange={visible => {
-                // While a recalculation keeps the trigger mounted but there is
-                // no content yet, ignore open attempts so it stays visible
-                // without opening an empty popover.
-                if (popoverContent) setPopoverVisible(visible);
-              }}
-              placement="bottom"
-              forceRender={forceRender}
-              fresh // This prop prevents caching and stale data for filter scoping.
-            >
-              <Tooltip title={dropdownTriggerTooltip}>
-                <Button
-                  buttonStyle="secondary"
-                  data-test="dropdown-container-btn"
-                  icon={dropdownTriggerIcon}
+                  showZero
                   css={css`
-                    padding-left: ${theme.paddingXS}px;
-                    padding-right: ${theme.paddingXXS}px;
-                    gap: ${theme.sizeXXS}px;
+                    margin-left: ${theme.sizeUnit * 2}px;
                   `}
-                >
-                  {dropdownTriggerText}
-                  <Badge
-                    count={dropdownTriggerCount ?? overflowingCount}
-                    color={
-                      (dropdownTriggerCount ?? overflowingCount) > 0
-                        ? theme.colorPrimary
-                        : theme.colorTextSecondary
+                />
+                <Icons.DownOutlined
+                  iconSize="m"
+                  iconColor={theme.colorIcon}
+                  css={css`
+                    .anticon {
+                      display: flex;
                     }
-                    showZero
-                    css={css`
-                      margin-left: ${theme.sizeUnit * 2}px;
-                    `}
-                  />
-                  <Icons.DownOutlined
-                    iconSize="m"
-                    iconColor={theme.colorIcon}
-                    css={css`
-                      .anticon {
-                        display: flex;
-                      }
-                    `}
-                  />
-                </Button>
-              </Tooltip>
-            </Popover>
-          </>
+                  `}
+                />
+              </Button>
+            </Tooltip>
+          </Popover>
         )}
       </div>
     );

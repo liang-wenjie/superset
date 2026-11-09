@@ -65,3 +65,20 @@ test('#app has no explicit height, so it flex-grows into the space body leaves i
   expect(appRule).toMatch(/flex:\s*1 1 auto/);
   expect(appRule).not.toMatch(/\bheight:\s*100%/);
 });
+
+test('native scrollbars reserve no layout space and the overlay thumb floats', () => {
+  expect(findRule(':where(*)')).toMatch(/scrollbar-width:\s*none/);
+
+  const webkitRule = findRule(':where(*)::-webkit-scrollbar');
+  expect(webkitRule).toMatch(/width:\s*0/);
+  expect(webkitRule).toMatch(/height:\s*0/);
+
+  const thumbRule = findRule('.superset-overlay-scrollbar-thumb');
+  expect(thumbRule).toMatch(/position:\s*fixed/);
+  expect(thumbRule).toMatch(/pointer-events:\s*none/);
+  expect(thumbRule).toMatch(/opacity:\s*0/);
+
+  expect(findRule('.superset-overlay-scrollbar-thumb[data-visible]')).toMatch(
+    /opacity:\s*1/,
+  );
+});
