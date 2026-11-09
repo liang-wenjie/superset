@@ -235,6 +235,73 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(String(bigNumber.style.text).length).toBeGreaterThan(0);
   });
 
+  const getBigNumberFontSize = (
+    value: number,
+    formData: Record<string, unknown> = {},
+  ): number => {
+    const result = transformProps(
+      buildChartProps([{ 'SUM(sales)': value }], formData),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    return graphic[1].style.fontSize;
+  };
+
+  test('keeps the big number font size uniform across tiles when enabled', () => {
+    const uniform = {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 12,
+    };
+    const short = getBigNumberFontSize(7.81, uniform);
+    const long = getBigNumberFontSize(1234567, uniform);
+    // Both values are shorter than the 12-character reference, so both
+    // shrink against the same 980px estimated width (43px at 120px requested).
+    expect(short).toBe(43);
+    expect(long).toBe(43);
+  });
+
+  test('keeps per-tile auto sizing when uniform sizing is disabled', () => {
+    const short = getBigNumberFontSize(7.81);
+    const long = getBigNumberFontSize(1234567);
+    expect(long).toBe(52);
+    expect(short).toBeGreaterThan(long);
+  });
+
+  test('uses the default reference length when none is configured', () => {
+    const withDefault = getBigNumberFontSize(7.81, {
+      uniformBigNumberFontSize: true,
+    });
+    const explicit = getBigNumberFontSize(7.81, {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 12,
+    });
+    expect(withDefault).toBe(43);
+    expect(withDefault).toBe(explicit);
+  });
+
+  test('uses the configured reference length for uniform sizing', () => {
+    const shortReference = getBigNumberFontSize(7.81, {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 6,
+    });
+    const longReference = getBigNumberFontSize(7.81, {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 16,
+    });
+    expect(shortReference).toBeGreaterThan(longReference);
+  });
+
+  test('shrinks values longer than the reference to avoid clipping', () => {
+    const reference = getBigNumberFontSize(7.81, {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 12,
+    });
+    const overflow = getBigNumberFontSize(3808637.34, {
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 12,
+    });
+    expect(overflow).toBeLessThan(reference);
+  });
+
   test('shrinks a long comparison label to fit a narrow tile', () => {
     const result = transformProps({
       ...buildChartProps(

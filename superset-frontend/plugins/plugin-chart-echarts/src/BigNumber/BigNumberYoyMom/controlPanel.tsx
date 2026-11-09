@@ -32,8 +32,10 @@ import {
 import {
   COMPARISON_OFFSET_CHOICES,
   DEFAULT_BIG_NUMBER_COLOR,
+  DEFAULT_BIG_NUMBER_FIT_CHARS,
   DEFAULT_BIG_NUMBER_LEFT,
   DEFAULT_BIG_NUMBER_TOP,
+  DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE,
   DEFAULT_COMPARISON1_LABEL,
   DEFAULT_COMPARISON1_OFFSET,
   DEFAULT_COMPARISON2_LABEL,
@@ -264,6 +266,38 @@ const config: ControlPanelConfig = {
             config: {
               ...headerFontSize.config,
               label: t('Big number font size'),
+            },
+          },
+        ],
+        [
+          {
+            name: 'uniform_big_number_font_size',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Uniform big number font size'),
+              renderTrigger: true,
+              default: DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE,
+              description: t(
+                'Size every tile against the same reference width instead of its own value, so short and long numbers on a dashboard render at the same font size. Each chart keeps its own number format; only the font size is shared.',
+              ),
+            },
+          },
+        ],
+        [
+          {
+            name: 'big_number_fit_chars',
+            config: {
+              type: 'NumberControl',
+              label: t('Reference character count'),
+              min: 1,
+              step: 1,
+              renderTrigger: true,
+              default: DEFAULT_BIG_NUMBER_FIT_CHARS,
+              visibility: ({ controls }) =>
+                controls?.uniform_big_number_font_size?.value === true,
+              description: t(
+                'Character count of the longest formatted number on the dashboard, whatever number format the charts use (e.g. 3,808,637.34 counts as 12). Longer values are shrunk further to avoid clipping; count full-width characters (e.g. 万) as roughly two.',
+              ),
             },
           },
         ],

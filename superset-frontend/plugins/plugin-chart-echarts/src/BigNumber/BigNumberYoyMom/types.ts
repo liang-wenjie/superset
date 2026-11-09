@@ -43,6 +43,8 @@ export type BigNumberYoyMomFormData = QueryFormData & {
   bigNumberColor?: RGBColor;
   bigNumberLeft?: number;
   bigNumberTop?: number;
+  uniformBigNumberFontSize?: boolean;
+  bigNumberFitChars?: number;
   showComparison1?: boolean;
   comparison1Label?: string;
   comparison1Mode?: 'time_shift' | 'metric';

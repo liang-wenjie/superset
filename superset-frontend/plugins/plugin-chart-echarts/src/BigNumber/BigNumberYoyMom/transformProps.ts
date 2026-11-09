@@ -29,6 +29,7 @@ import type { EChartsCoreOption } from 'echarts/core';
 import type { GraphicComponentOption } from 'echarts/components';
 import {
   DEFAULT_BIG_NUMBER_COLOR,
+  DEFAULT_BIG_NUMBER_FIT_CHARS,
   DEFAULT_BIG_NUMBER_FONT_SIZE,
   DEFAULT_BIG_NUMBER_LEFT,
   DEFAULT_COMPARISON1_LABEL,
@@ -45,6 +46,7 @@ import {
   DEFAULT_TITLE_COLOR,
   DEFAULT_TITLE_FONT_SIZE,
   DEFAULT_TITLE_LEFT,
+  DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE,
 } from './constants';
 import {
   BigNumberYoyMomChartProps,
@@ -220,6 +222,11 @@ export default function transformProps(
   const bigNumberLeft =
     pick<number>('bigNumberLeft') ?? DEFAULT_BIG_NUMBER_LEFT;
   const bigNumberTop = pick<number>('bigNumberTop');
+  const uniformBigNumberFontSize =
+    pick<boolean>('uniformBigNumberFontSize') ??
+    DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE;
+  const bigNumberFitChars =
+    pick<number>('bigNumberFitChars') ?? DEFAULT_BIG_NUMBER_FIT_CHARS;
   const showComparison1 = pick<boolean>('showComparison1') ?? true;
   const comparison1Label =
     pick<string>('comparison1Label') ?? t(DEFAULT_COMPARISON1_LABEL);
@@ -410,10 +417,26 @@ export default function transformProps(
     0,
     width - bigNumberLeft - DEFAULT_BIG_NUMBER_LEFT - TEXT_FIT_SAFETY_MARGIN,
   );
-  const estimatedBigNumberWidth = estimateTextWidth(
-    bigNumberText,
-    requestedBigNumberFontSizePx,
-    true,
+  // Without uniform sizing each tile measures only its own value, so tiles
+  // with short numbers stay large while longer ones shrink. When enabled,
+  // every tile also measures a shared reference text and therefore lands on
+  // the same font size regardless of its configured number format. Keeping
+  // the actual value in the comparison guards against clipping: a value
+  // longer than the reference still shrinks.
+  const fitChars = Math.max(
+    1,
+    Math.min(64, Math.floor(bigNumberFitChars) || DEFAULT_BIG_NUMBER_FIT_CHARS),
+  );
+  const uniformReferenceWidth = uniformBigNumberFontSize
+    ? estimateTextWidth(
+        '0'.repeat(fitChars),
+        requestedBigNumberFontSizePx,
+        true,
+      )
+    : 0;
+  const estimatedBigNumberWidth = Math.max(
+    estimateTextWidth(bigNumberText, requestedBigNumberFontSizePx, true),
+    uniformReferenceWidth,
   );
   const minBigNumberFontSizePx = Math.max(
     12,
