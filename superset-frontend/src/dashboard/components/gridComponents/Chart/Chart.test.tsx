@@ -187,6 +187,38 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
+test('injects dashboard-level big number sizing into the chart form data', () => {
+  setup(
+    {},
+    {
+      dashboardInfo: {
+        ...defaultState.dashboardInfo,
+        metadata: {
+          uniform_big_number_font_size: true,
+          big_number_fit_chars: 14,
+        },
+      },
+    },
+  );
+
+  expect(capturedChartContainerProps.formData).toEqual(
+    expect.objectContaining({
+      uniformBigNumberFontSize: true,
+      bigNumberFitChars: 14,
+    }),
+  );
+});
+
+test('leaves chart form data untouched when dashboard sizing is unset', () => {
+  setup();
+  const formData = capturedChartContainerProps.formData as Record<
+    string,
+    unknown
+  >;
+  expect(formData).not.toHaveProperty('uniformBigNumberFontSize');
+  expect(formData).not.toHaveProperty('bigNumberFitChars');
+});
+
 test('shows the loading spinner for a chart that starts loading outside the in-flight auto-refresh batch', () => {
   setupDuringUnrelatedAutoRefresh([queryId + 1], undefined, {
     charts: {

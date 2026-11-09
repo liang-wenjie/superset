@@ -222,6 +222,8 @@ export default function transformProps(
   const bigNumberLeft =
     pick<number>('bigNumberLeft') ?? DEFAULT_BIG_NUMBER_LEFT;
   const bigNumberTop = pick<number>('bigNumberTop');
+  // Dashboard-level styling: the dashboard injects these into every chart's
+  // form data from its json_metadata, so no per-chart control is needed.
   const uniformBigNumberFontSize =
     pick<boolean>('uniformBigNumberFontSize') ??
     DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE;

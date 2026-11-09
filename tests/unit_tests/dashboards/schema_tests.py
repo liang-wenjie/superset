@@ -25,6 +25,7 @@ from superset.dashboards.permalink.schemas import DashboardPermalinkStateSchema
 from superset.dashboards.schemas import (
     DashboardCopySchema,
     DashboardDatasetSchema,
+    DashboardJSONMetadataSchema,
     DashboardPostSchema,
     DashboardPutSchema,
     ImportV1DashboardSchema,
@@ -40,6 +41,17 @@ GUEST_RESTRICTED_FIELDS = [
     "fetch_values_predicate",
     "template_params",
 ]
+
+
+def test_json_metadata_schema_accepts_big_number_sizing() -> None:
+    """Dashboard-level big number sizing can be stored in json_metadata."""
+    errors = DashboardJSONMetadataSchema().validate(
+        {
+            "uniform_big_number_font_size": True,
+            "big_number_fit_chars": 12,
+        }
+    )
+    assert errors == {}
 
 
 def _dataset_payload() -> dict[str, Any]:

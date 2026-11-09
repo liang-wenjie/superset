@@ -529,6 +529,47 @@ describe('PropertiesModal', () => {
     });
   });
 
+  test('persists dashboard-level big number sizing in the submitted JSON metadata', async () => {
+    const put = jest.spyOn(SupersetCore.SupersetClient, 'put');
+    put.mockResolvedValue({
+      json: { result: { dashboard_title: 'dashboard_title' } },
+    } as any);
+    mockedIsFeatureEnabled.mockReturnValue(false);
+    const props = createProps();
+    props.onlyApply = false;
+    const propsWithDashboardInfo = {
+      ...props,
+      dashboardInfo: {
+        ...dashboardInfo,
+        metadata: JSON.parse(mockedJsonMetadata),
+        json_metadata: mockedJsonMetadata,
+      },
+    };
+    render(<PropertiesModal {...propsWithDashboardInfo} />, {
+      useRedux: true,
+    });
+    await screen.findByTestId('dashboard-edit-properties-form');
+
+    const stylingHeader = screen
+      .getByText('Styling')
+      .closest('.ant-collapse-header');
+    await userEvent.click(stylingHeader!);
+    const toggle = await screen.findByTestId(
+      'dashboard-uniform-big-number-switch',
+    );
+    expect(toggle).not.toBeChecked();
+    await userEvent.click(toggle);
+    await screen.findByTestId('dashboard-big-number-fit-chars-field');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(props.onSubmit).toHaveBeenCalledTimes(1);
+    });
+    const submitted = JSON.parse(props.onSubmit.mock.calls[0][0].jsonMetadata);
+    expect(submitted.uniform_big_number_font_size).toBe(true);
+    expect(submitted.big_number_fit_chars).toBe(12);
+  });
+
   test('preserves certification fields on save without opening Certification section', async () => {
     const saved = jest.spyOn(dashboardInfoActions, 'dashboardSaveSucceeded');
     // Accordion Collapse only mounts the active panel, so certifiedBy /

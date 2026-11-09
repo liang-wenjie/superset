@@ -268,6 +268,17 @@ const Chart = (props: ChartProps) => {
       (state.dashboardInfo?.metadata as JsonObject)?.show_chart_timestamps ??
       false,
   );
+  const uniformBigNumberFontSize = useSelector(
+    (state: RootState) =>
+      (state.dashboardInfo?.metadata as JsonObject)
+        ?.uniform_big_number_font_size as boolean | undefined,
+  );
+  const bigNumberFitChars = useSelector(
+    (state: RootState) =>
+      (state.dashboardInfo?.metadata as JsonObject)?.big_number_fit_chars as
+        | number
+        | undefined,
+  );
   const suppressLoadingSpinner = useIsChartAutoRefreshing(props.id);
 
   const isCached: boolean[] = useMemo(
@@ -535,11 +546,19 @@ const Chart = (props: ChartProps) => {
       sharedLabelsColors,
       ownColorScheme,
     });
+    // Dashboard-level styling is injected into every chart's form data so
+    // plugins can read it without reaching into the dashboard store.
+    const dashboardBigNumberSizing = {
+      ...(uniformBigNumberFontSize !== undefined && {
+        uniformBigNumberFontSize,
+      }),
+      ...(bigNumberFitChars !== undefined && { bigNumberFitChars }),
+    };
     if (
       chart?.form_data?.viz_type !== VizType.Table ||
       !chart.form_data.datasource?.endsWith(`__${DatasourceType.SemanticView}`)
     ) {
-      return filteredFormData;
+      return { ...filteredFormData, ...dashboardBigNumberSizing };
     }
 
     // Saved dashboard form data may predate the current semantic view schema.
@@ -561,6 +580,7 @@ const Chart = (props: ChartProps) => {
       : undefined;
     return {
       ...filteredFormData,
+      ...dashboardBigNumberSizing,
       temporal_columns_lookup: temporalColumnsLookup,
     };
   }, [
@@ -581,6 +601,8 @@ const Chart = (props: ChartProps) => {
     ownColorScheme,
     currentDashboardDatasets,
     props.dashboardId,
+    uniformBigNumberFontSize,
+    bigNumberFitChars,
   ]);
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;

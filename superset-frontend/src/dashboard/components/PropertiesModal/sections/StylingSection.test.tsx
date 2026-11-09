@@ -80,12 +80,16 @@ const defaultProps = {
   customCss: '',
   hasCustomLabelsColor: false,
   showChartTimestamps: false,
+  uniformBigNumberFontSize: false,
+  bigNumberFitChars: 12,
   jsonMetadata: '{}',
   onJsonMetadataChange: jest.fn(),
   onThemeChange: jest.fn(),
   onColorSchemeChange: jest.fn(),
   onCustomCssChange: jest.fn(),
   onShowChartTimestampsChange: jest.fn(),
+  onUniformBigNumberFontSizeChange: jest.fn(),
+  onBigNumberFitCharsChange: jest.fn(),
   addDangerToast: jest.fn(),
 };
 
@@ -193,6 +197,54 @@ test('calls onShowChartTimestampsChange when switch is toggled', async () => {
   await userEvent.click(timestampSwitch);
   expect(onShowChartTimestampsChange).toHaveBeenCalled();
   expect(onShowChartTimestampsChange.mock.calls[0][0]).toBe(true);
+});
+
+test('renders the uniform big number font size field without the reference input by default', () => {
+  render(<StylingSection {...defaultProps} />);
+  expect(
+    screen.getByTestId('dashboard-uniform-big-number-field'),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByTestId('dashboard-uniform-big-number-switch'),
+  ).not.toBeChecked();
+  expect(
+    screen.queryByTestId('dashboard-big-number-fit-chars-field'),
+  ).not.toBeInTheDocument();
+});
+
+test('calls onUniformBigNumberFontSizeChange when the switch is toggled', async () => {
+  const onUniformBigNumberFontSizeChange = jest.fn();
+  render(
+    <StylingSection
+      {...defaultProps}
+      onUniformBigNumberFontSizeChange={onUniformBigNumberFontSizeChange}
+    />,
+  );
+  await userEvent.click(
+    screen.getByTestId('dashboard-uniform-big-number-switch'),
+  );
+  expect(onUniformBigNumberFontSizeChange.mock.calls[0][0]).toBe(true);
+});
+
+test('shows the reference length input only when uniform sizing is enabled', () => {
+  const { rerender } = render(
+    <StylingSection {...defaultProps} uniformBigNumberFontSize={false} />,
+  );
+  expect(
+    screen.queryByTestId('dashboard-big-number-fit-chars-field'),
+  ).not.toBeInTheDocument();
+
+  rerender(
+    <StylingSection
+      {...defaultProps}
+      uniformBigNumberFontSize
+      bigNumberFitChars={14}
+    />,
+  );
+  expect(
+    screen.getByTestId('dashboard-big-number-fit-chars-field'),
+  ).toBeInTheDocument();
+  expect(screen.getByDisplayValue('14')).toBeInTheDocument();
 });
 
 test('does not show CSS template select when feature flag is disabled', () => {

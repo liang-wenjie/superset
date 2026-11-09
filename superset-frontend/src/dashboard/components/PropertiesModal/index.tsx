@@ -66,6 +66,7 @@ import { validateRefreshFrequency } from '../RefreshFrequency';
 import {
   BasicInfoSection,
   AccessSection,
+  DEFAULT_BIG_NUMBER_FIT_CHARS,
   StylingSection,
   RefreshSection,
   AsyncModeSection,
@@ -155,6 +156,11 @@ const PropertiesModal = ({
   const [asyncMode, setAsyncMode] = useState<AsyncModeOverride>('default');
   const [selectedThemeId, setSelectedThemeId] = useState<number | null>(null);
   const [showChartTimestamps, setShowChartTimestamps] = useState(false);
+  const [uniformBigNumberFontSize, setUniformBigNumberFontSize] =
+    useState(false);
+  const [bigNumberFitChars, setBigNumberFitChars] = useState(
+    DEFAULT_BIG_NUMBER_FIT_CHARS,
+  );
   const [themes, setThemes] = useState<
     Array<{
       id: number;
@@ -238,6 +244,8 @@ const PropertiesModal = ({
         'map_label_colors',
         'color_scheme_domain',
         'show_chart_timestamps',
+        'uniform_big_number_font_size',
+        'big_number_fit_chars',
         // Edited via the async-mode dropdown, not the raw JSON editor, so the
         // dropdown is the single source of truth (mirrors show_chart_timestamps).
         'async_mode',
@@ -249,6 +257,12 @@ const PropertiesModal = ({
         (metadata?.async_mode as AsyncModeOverride | undefined) || 'default',
       );
       setShowChartTimestamps(metadata?.show_chart_timestamps ?? false);
+      setUniformBigNumberFontSize(
+        metadata?.uniform_big_number_font_size ?? false,
+      );
+      setBigNumberFitChars(
+        metadata?.big_number_fit_chars ?? DEFAULT_BIG_NUMBER_FIT_CHARS,
+      );
       originalDashboardMetadata.current = metadata;
     },
     [form],
@@ -398,12 +412,18 @@ const PropertiesModal = ({
       jsonMetadataObj.async_mode = asyncMode;
     }
     jsonMetadataObj.show_chart_timestamps = Boolean(showChartTimestamps);
+    jsonMetadataObj.uniform_big_number_font_size = Boolean(
+      uniformBigNumberFontSize,
+    );
+    jsonMetadataObj.big_number_fit_chars = bigNumberFitChars;
     const customLabelColors = jsonMetadataObj.label_colors || {};
     const updatedDashboardMetadata = {
       ...originalDashboardMetadata.current,
       label_colors: customLabelColors,
       color_scheme: updatedColorScheme,
       show_chart_timestamps: showChartTimestamps,
+      uniform_big_number_font_size: uniformBigNumberFontSize,
+      big_number_fit_chars: bigNumberFitChars,
     };
 
     originalDashboardMetadata.current = updatedDashboardMetadata;
@@ -840,11 +860,15 @@ const PropertiesModal = ({
                   customCss={customCss}
                   hasCustomLabelsColor={hasCustomLabelsColor}
                   showChartTimestamps={showChartTimestamps}
+                  uniformBigNumberFontSize={uniformBigNumberFontSize}
+                  bigNumberFitChars={bigNumberFitChars}
                   jsonMetadata={jsonMetadata}
                   onThemeChange={handleThemeChange}
                   onColorSchemeChange={onColorSchemeChange}
                   onCustomCssChange={handleCustomCssChange}
                   onShowChartTimestampsChange={setShowChartTimestamps}
+                  onUniformBigNumberFontSizeChange={setUniformBigNumberFontSize}
+                  onBigNumberFitCharsChange={setBigNumberFitChars}
                   onJsonMetadataChange={setJsonMetadata}
                   addDangerToast={addDangerToast}
                 />
