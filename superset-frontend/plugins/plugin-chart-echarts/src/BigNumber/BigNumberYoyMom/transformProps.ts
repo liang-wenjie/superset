@@ -128,13 +128,17 @@ const numericWidthPerPx = (text: string): number =>
     return width + 0.62;
   }, 0);
 
-// The dashboard reference text cannot know about prefixes added by the chart
-// formatter (currency symbols, percent signs), so leave a little headroom.
-const ADAPTIVE_WIDTH_HEADROOM = 1.05;
-
-// Used only until the dashboard query data is available. Twelve digits is a
-// conservative stand-in that keeps long values from overflowing on first paint.
-const FALLBACK_REFERENCE_NUMBER = '000000000000';
+// A same-area tile's font size comes from the tile width, not from the data:
+// an eight-character number (e.g. "0,000.00") is the design capacity. Every
+// KPI tile of that size uses the very same font size, so nothing shrinks on
+// its own and short numbers simply have a little more breathing room. Keeping
+// this capacity short (rather than using the longest number on the dashboard)
+// is what lets every tile grow a little bigger and fill more of its width.
+const TYPICAL_BIG_NUMBER_TEXT = '0,000.00';
+// Only a small right padding is needed. The legacy auto-fit reserved a
+// symmetric margin plus a conservative headroom, which left a lot of empty
+// space on the right of every number and made the whole tile look too small.
+const UNIFORM_RIGHT_PADDING = 4;
 
 /**
  * Read a comparison value column from a result row. Saved metrics are plain
@@ -252,12 +256,6 @@ export default function transformProps(
     pick<boolean>('uniformBigNumberFontSize') ??
     DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE;
   const uniformBigNumberFontSizePx = pick<number>('uniformBigNumberFontSizePx');
-  // Widest formatted number among the KPI tiles of the same area, injected by
-  // the dashboard. Explore (no dashboard state) falls back to this tile's own
-  // value, which degenerates into the ordinary per-tile fit.
-  const uniformBigNumberReferenceText = pick<string>(
-    'uniformBigNumberReferenceText',
-  );
   const showComparison1 = pick<boolean>('showComparison1') ?? true;
   const comparison1Label =
     pick<string>('comparison1Label') ?? t(DEFAULT_COMPARISON1_LABEL);
@@ -458,12 +456,13 @@ export default function transformProps(
   );
   // Uniform sizing keeps the configured font size as an UPPER BOUND: the
   // dashboard may set one absolute pixel size, and when it is unset the
-  // chart's own big_number_font_size (or the plugin default) wins. The tile
-  // then adapts down only when the widest number of its area would not fit,
-  // so long values are never clipped and short values never blow up. ONE
-  // ratio derived from that final size is applied to every text size and
-  // internal gap, so tiles of the same area stay identical and the title /
-  // comparison rows stay proportional. With uniform sizing off, every element
+  // chart's own big_number_font_size (or the plugin default) wins. The actual
+  // size comes from the TILE WIDTH: every KPI tile of the same size gets the
+  // largest font that still fits the eight-character design number, so tiles
+  // of one area share exactly one big-number size and one comparison size.
+  // The value rendered on a tile never feeds back into that tile's font size:
+  // no tile shrinks on its own. ONE ratio derived from that size is applied to
+  // every text size and internal gap. With uniform sizing off, each element
   // keeps its own auto-fit behaviour.
   const configuredBigNumberFontSizePx =
     typeof uniformBigNumberFontSizePx === 'number' &&
@@ -471,18 +470,14 @@ export default function transformProps(
     uniformBigNumberFontSizePx > 0
       ? Math.ceil(uniformBigNumberFontSizePx)
       : baseBigNumberFontSizePx;
-  const referenceText =
-    uniformBigNumberReferenceText ??
-    (uniformBigNumberFontSize ? FALLBACK_REFERENCE_NUMBER : bigNumberText);
+  const uniformAvailableWidth = Math.max(
+    0,
+    width - bigNumberLeft - UNIFORM_RIGHT_PADDING,
+  );
+  const typicalWidthPerPx = numericWidthPerPx(TYPICAL_BIG_NUMBER_TEXT);
   const adaptiveBigNumberFontSizePx =
-    bigNumberAvailableWidth > 0
-      ? Math.floor(
-          bigNumberAvailableWidth /
-            // Reserve one extra character for a currency symbol or percent
-            // sign the dashboard reference text cannot know about.
-            ((numericWidthPerPx(referenceText) + 0.62) *
-              ADAPTIVE_WIDTH_HEADROOM),
-        )
+    uniformAvailableWidth > 0
+      ? Math.floor(uniformAvailableWidth / Math.max(1, typicalWidthPerPx))
       : configuredBigNumberFontSizePx;
   const effectiveBigNumberFontSizePx = Math.max(
     8,
@@ -492,7 +487,7 @@ export default function transformProps(
     ? effectiveBigNumberFontSizePx / Math.max(1, baseBigNumberFontSizePx)
     : 1;
   // Keep the smaller labels readable on very narrow tiles; the big number
-  // itself has no artificial floor so it can always fit the reference text.
+  // itself has no artificial floor so it can always fit the design number.
   const scaleFontSize = (size: number, minSize = 1) =>
     Math.max(minSize, Math.floor(size * uniformScale));
   const scaleGap = (gap: number) =>
@@ -541,7 +536,7 @@ export default function transformProps(
   const minTitleFontSizePx = 12;
   let effectiveTitleFontSizePx = titleFontSizePx;
   // In uniform mode no element shrinks against its own text: every tile of
-  // the same area uses the one reference-derived scale computed above.
+  // the same area uses the one tile-width-derived scale computed above.
   if (!uniformBigNumberFontSize && titleAvailableWidth > 0 && headerText) {
     const estimatedTitleWidth = estimateTextWidth(headerText, titleFontSizePx);
     if (estimatedTitleWidth > titleAvailableWidth) {

@@ -55,7 +55,6 @@ import { enforceSharedLabelsColorsArray } from 'src/utils/colorScheme';
 import exportPivotExcel from 'src/utils/downloadAsPivotExcel';
 import type { RootState, Datasource, Slice } from 'src/dashboard/types';
 import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabels';
-import { selectBigNumberReferenceTextByChartId } from 'src/dashboard/util/bigNumberSizing';
 import {
   convertChartStateToOwnState,
   hasChartStateConverter,
@@ -278,9 +277,6 @@ const Chart = (props: ChartProps) => {
     (state: RootState) =>
       (state.dashboardInfo?.metadata as JsonObject)
         ?.uniform_big_number_font_size_px as number | undefined,
-  );
-  const uniformBigNumberReferenceText = useSelector((state: RootState) =>
-    selectBigNumberReferenceTextByChartId(state).get(String(props.id)),
   );
   const suppressLoadingSpinner = useIsChartAutoRefreshing(props.id);
 
@@ -560,9 +556,6 @@ const Chart = (props: ChartProps) => {
             ...(uniformBigNumberFontSizePx !== undefined && {
               uniformBigNumberFontSizePx,
             }),
-            ...(uniformBigNumberReferenceText !== undefined && {
-              uniformBigNumberReferenceText,
-            }),
           }
         : {};
     if (
@@ -614,7 +607,6 @@ const Chart = (props: ChartProps) => {
     props.dashboardId,
     uniformBigNumberFontSize,
     uniformBigNumberFontSizePx,
-    uniformBigNumberReferenceText,
   ]);
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;

@@ -238,31 +238,24 @@ describe('BigNumberYoyMom transformProps', () => {
   const getBigNumberFontSize = (
     value: number,
     formData: Record<string, unknown> = {},
+    chartSize: { width?: number; height?: number } = {},
   ): number => {
-    const result = transformProps(
-      buildChartProps([{ 'SUM(sales)': value }], formData),
-    );
+    const result = transformProps({
+      ...buildChartProps([{ 'SUM(sales)': value }], formData),
+      ...chartSize,
+    });
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     return graphic[1].style.fontSize;
   };
 
-  // Simulates the dashboard-injected widest number of an area. The short
-  // reference leaves plenty of room, so configured sizes are honoured as-is;
-  // the long one forces the adaptive cap to kick in.
-  const shortReference = '88.3';
-  const longReference = '15,145,470.00';
-
   test('keeps the big number font size uniform across tiles when enabled', () => {
-    const uniform = {
-      uniformBigNumberFontSize: true,
-      uniformBigNumberReferenceText: shortReference,
-    };
+    const uniform = { uniformBigNumberFontSize: true };
     const short = getBigNumberFontSize(7.81, uniform);
     const long = getBigNumberFontSize(1234567, uniform);
-    // The 400px tile can hold the reference at the default 0.4 * 300 = 120px,
-    // so every tile uses that same size instead of per-tile auto-fit.
-    expect(short).toBe(120);
-    expect(long).toBe(120);
+    // One size for every tile of this width, derived from the tile width and
+    // the eight-character design number. The value plays no part in it.
+    expect(short).toBe(92);
+    expect(long).toBe(92);
   });
 
   test('keeps per-tile auto sizing when uniform sizing is disabled', () => {
@@ -276,14 +269,12 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(
       getBigNumberFontSize(7.81, {
         uniformBigNumberFontSize: true,
-        uniformBigNumberReferenceText: shortReference,
         uniformBigNumberFontSizePx: 48,
       }),
     ).toBe(48);
     expect(
       getBigNumberFontSize(7.81, {
         uniformBigNumberFontSize: true,
-        uniformBigNumberReferenceText: shortReference,
         uniformBigNumberFontSizePx: 80,
       }),
     ).toBe(80);
@@ -293,49 +284,51 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(
       getBigNumberFontSize(7.81, {
         uniformBigNumberFontSize: true,
-        uniformBigNumberReferenceText: shortReference,
         bigNumberFontSize: 60,
       }),
     ).toBe(60);
   });
 
-  test('does not shrink the configured size for long values', () => {
+  test('never shrinks a tile for its own long value', () => {
     const uniform = {
       uniformBigNumberFontSize: true,
-      uniformBigNumberReferenceText: shortReference,
       uniformBigNumberFontSizePx: 48,
     };
     expect(getBigNumberFontSize(7.81, uniform)).toBe(48);
     expect(getBigNumberFontSize(3808637.34, uniform)).toBe(48);
   });
 
-  test('adapts down to fit the widest number of the area', () => {
-    const adaptive = getBigNumberFontSize(3808637.34, {
-      uniformBigNumberFontSize: true,
-      uniformBigNumberReferenceText: longReference,
-    });
-    // The default 120px would clip a 13-character number in a 400px tile.
-    expect(adaptive).toBeLessThan(120);
-    expect(adaptive).toBeGreaterThan(20);
+  test('derives the size from the tile width, never from the value', () => {
+    const uniform = { uniformBigNumberFontSize: true };
+    const wide = getBigNumberFontSize(7.81, uniform, { width: 800 });
+    const normal = getBigNumberFontSize(7.81, uniform);
+    const narrow = getBigNumberFontSize(7.81, uniform, { width: 240 });
 
+    // Wider tiles get a bigger shared size. Sizing for the longest number on
+    // the dashboard used to drag every tile down to ~44px, leaving a lot of
+    // empty space on the right; the tile-width capacity fills much more of it.
+    expect(wide).toBeGreaterThan(normal);
+    expect(normal).toBeGreaterThan(70);
+    expect(normal).toBeGreaterThan(narrow);
+    // A long value no longer shrinks its own tile.
+    expect(getBigNumberFontSize(3808637.34, uniform, { width: 240 })).toBe(
+      narrow,
+    );
+
+    // The whole value is still rendered, not truncated at the canvas edge.
     const result = transformProps(
-      buildChartProps([{ 'SUM(sales)': 3808637.34 }], {
-        uniformBigNumberFontSize: true,
-        uniformBigNumberReferenceText: longReference,
-      }),
+      buildChartProps([{ 'SUM(sales)': 3808637.34 }], uniform),
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
-    // The whole value is rendered, not truncated at the canvas edge.
     expect(graphic[1].style.text).toBe('$3,808,637.34');
   });
 
   test('adapts a narrow tile down from its default size', () => {
-    // A 200px tile cannot hold a 13-character number at the default
-    // 0.4 * 120 = 48px font, which is what caused the KPI cards to clip.
+    // A 200px tile cannot hold the default 0.4 * 120 = 48px font even with a
+    // short value: the shared size follows the tile width, not the data.
     const result = transformProps({
       ...buildChartProps([{ 'SUM(sales)': 9457.13 }], {
         uniformBigNumberFontSize: true,
-        uniformBigNumberReferenceText: longReference,
       }),
       width: 200,
       height: 120,
@@ -371,7 +364,6 @@ describe('BigNumberYoyMom transformProps', () => {
   test('scales the whole tile by one ratio when uniform sizing is enabled', () => {
     const uniform = {
       uniformBigNumberFontSize: true,
-      uniformBigNumberReferenceText: shortReference,
       uniformBigNumberFontSizePx: 48,
     };
     const shortTile = getAllFontSizes(7.81, uniform);
@@ -400,7 +392,6 @@ describe('BigNumberYoyMom transformProps', () => {
         ],
         {
           uniformBigNumberFontSize: true,
-          uniformBigNumberReferenceText: shortReference,
           uniformBigNumberFontSizePx: 48,
           bigNumberTop: 50,
           comparisonTop: 100,
@@ -421,12 +412,10 @@ describe('BigNumberYoyMom transformProps', () => {
   test('applies the dashboard size to every text size in the tile', () => {
     const smaller = getAllFontSizes(7.81, {
       uniformBigNumberFontSize: true,
-      uniformBigNumberReferenceText: shortReference,
       uniformBigNumberFontSizePx: 24,
     });
     const larger = getAllFontSizes(7.81, {
       uniformBigNumberFontSize: true,
-      uniformBigNumberReferenceText: shortReference,
       uniformBigNumberFontSizePx: 48,
     });
 

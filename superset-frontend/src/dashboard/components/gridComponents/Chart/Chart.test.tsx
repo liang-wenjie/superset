@@ -232,8 +232,6 @@ test('injects the dashboard big number font size into Big Number charts only', (
     expect.objectContaining({
       uniformBigNumberFontSize: true,
       uniformBigNumberFontSizePx: 48,
-      // Shared widest number among same-area KPI tiles drives the adaptive cap.
-      uniformBigNumberReferenceText: '3,808,637.34',
     }),
   );
 });
@@ -246,8 +244,6 @@ test('leaves the optional size unset so charts fall back to their own default', 
   >;
   expect(formData.uniformBigNumberFontSize).toBe(true);
   expect(formData).not.toHaveProperty('uniformBigNumberFontSizePx');
-  // The reference text is still injected so tiles can adapt to their content.
-  expect(formData.uniformBigNumberReferenceText).toBe('3,808,637.34');
 });
 
 test('does not inject KPI sizing into other viz types', () => {
@@ -258,7 +254,6 @@ test('does not inject KPI sizing into other viz types', () => {
   >;
   expect(formData).not.toHaveProperty('uniformBigNumberFontSize');
   expect(formData).not.toHaveProperty('uniformBigNumberFontSizePx');
-  expect(formData).not.toHaveProperty('uniformBigNumberReferenceText');
 });
 
 test('shows the loading spinner for a chart that starts loading outside the in-flight auto-refresh batch', () => {
