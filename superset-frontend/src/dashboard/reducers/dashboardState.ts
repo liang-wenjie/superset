@@ -19,9 +19,10 @@
 /* eslint-disable camelcase */
 import { JsonObject } from '@superset-ui/core';
 import type {
+  InlineFilterChangeValue,
   InlineFilterSelection,
-  InlineFilterSelectionValue,
 } from '../components/InlineFilters/types';
+import { isEmptyInlineFilterValue } from '../components/InlineFilters/types';
 import {
   ADD_SLICE,
   ON_CHANGE,
@@ -483,16 +484,14 @@ export default function dashboardStateReducer(
       const { chartId, filterId, value } = action as unknown as {
         chartId: number;
         filterId: string;
-        value: InlineFilterSelectionValue | undefined;
+        value: InlineFilterChangeValue;
       };
       const existing = state.chartInlineFilters?.[chartId] || {};
       const next = { ...existing };
-      // An empty multi-select is the same as a cleared filter.
-      if (value === undefined || (Array.isArray(value) && value.length === 0)) {
-        delete next[filterId];
-      } else {
-        next[filterId] = value;
-      }
+      // Keep an explicit clear as `null` instead of deleting the key: a
+      // missing key means "never touched, apply the default value", while an
+      // explicit clear must stay cleared.
+      next[filterId] = isEmptyInlineFilterValue(value) ? null : value;
       return {
         ...state,
         chartInlineFilters: {

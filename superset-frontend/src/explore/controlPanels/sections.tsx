@@ -21,6 +21,10 @@ import {
   ControlPanelSectionConfig,
   ControlSubSectionHeader,
 } from '@superset-ui/chart-controls';
+import {
+  getInlineFiltersControlProps,
+  INLINE_FILTERS_CONTROL_DESCRIPTION,
+} from 'src/explore/controlUtils/inlineFiltersControlProps';
 
 export const datasourceAndVizType: ControlPanelSectionConfig = {
   controlSetRows: [
@@ -104,7 +108,26 @@ export const inlineFilters: ControlPanelSectionConfig = {
     'Quick-filter dropdowns rendered at the top-left of the chart. Picking a value re-queries this chart only.',
   ),
   expanded: true,
-  controlSetRows: [['inline_filters']],
+  // Do not use the plain 'inline_filters' string shortcut here. That resolves
+  // through @superset-ui/chart-controls' sharedControls, whose
+  // `mapStateToProps` only provides `columns`. The dialog also needs
+  // datasourceId/Type (for the column-values endpoint behind "Default value")
+  // and metrics (for "Sort metric"), and it needs them recomputed after the
+  // datasource metadata arrives asynchronously. Overriding here keeps the
+  // effective config in the app source, independent of the shared-control
+  // package's compiled output.
+  controlSetRows: [
+    [
+      {
+        name: 'inline_filters',
+        override: {
+          description: INLINE_FILTERS_CONTROL_DESCRIPTION,
+          shouldMapStateToProps: () => true,
+          mapStateToProps: getInlineFiltersControlProps,
+        },
+      },
+    ],
+  ],
 };
 
 export const NVD3TimeSeries: ControlPanelSectionConfig[] = [

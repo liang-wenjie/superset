@@ -16,19 +16,37 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { styled } from '@apache-superset/core/theme';
-import { Select } from '@superset-ui/core/components';
-import { JsonObject, SupersetClient } from '@superset-ui/core';
+import { Input, Select, Tooltip } from '@superset-ui/core/components';
+import {
+  JsonObject,
+  QueryObjectFilterClause,
+  SupersetClient,
+} from '@superset-ui/core';
 import { t } from '@apache-superset/core/translation';
 import type {
+  InlineFilterChangeValue,
   InlineFilterConfig,
+  InlineFilterOption,
   InlineFilterSelection,
   InlineFilterSelectionValue,
   InlineFilterValue,
 } from './types';
+import {
+  getInlineFilterDependencies,
+  isEmptyInlineFilterValue,
+  isInlineFilterInput,
+  isInlineFilterInverse,
+  isInlineFilterMulti,
+  normalizeInlineFilterValue,
+  resolveInlineFilterValue,
+  sortInlineFilterOptions,
+} from './types';
+import { fetchInlineSortMetricOptions } from './sortMetricOptions';
 
 const BAR_HEIGHT = 28;
+const SEARCH_DEBOUNCE_MS = 250;
 
 // Distinct values are usually much longer than the compact filter trigger.
 // rc-select sizes the popup to the trigger by default, so every value was
@@ -63,6 +81,111 @@ export const getInlineFilterPopupWidth = (
     Math.max(MIN_POPUP_WIDTH, longestLabel + POPUP_CHROME_WIDTH),
   );
 };
+
+/**
+ * Sorted options for a filter. Mirrors the dashboard Select filter: sort the
+ * values, then `options[0]` is the "first filter value" used by
+ * `defaultToFirstItem` and by required-filter fallbacks. Values returned by
+ * the sort-metric query are already ordered by the backend and must be kept
+ * as-is, otherwise a plain value sort would discard the metric ordering.
+ */
+export const getInlineFilterOptions = (
+  config: InlineFilterConfig,
+  cached: { label: string; value: string }[] = [],
+  alreadySorted = false,
+): InlineFilterOption[] => {
+  const raw =
+    cached.length > 0
+      ? cached
+      : (config.options ?? []).map(option => ({
+          label: option.label,
+          value: option.value,
+        }));
+  return alreadySorted
+    ? raw
+    : sortInlineFilterOptions(raw, config.sortAscending !== false);
+};
+
+/**
+ * Value a filter falls back to when it is cleared or has no selection yet.
+ * `defaultToFirstItem` takes precedence over a concrete default (the two are
+ * mutually exclusive in the config UI); otherwise use the default, and only
+ * then the first sorted option.
+ */
+export const getInlineFilterFallbackValue = (
+  config: InlineFilterConfig,
+  options: InlineFilterOption[] = [],
+): InlineFilterSelectionValue | null => {
+  if (!config.defaultToFirstItem) {
+    const fromDefault = normalizeInlineFilterValue(
+      config.defaultValue,
+      isInlineFilterMulti(config),
+    );
+    if (fromDefault !== null) return fromDefault;
+  }
+  const [first] = options;
+  if (!first) return null;
+  return isInlineFilterMulti(config) ? [first.value] : first.value;
+};
+
+export interface InlineValuesQueryParams {
+  extraFilters?: { col: string; val: InlineFilterSelectionValue }[];
+  whereAdhoc?: JsonObject[];
+  legacyFilters?: JsonObject[];
+  search?: string;
+}
+
+/**
+ * Query string for the column-values endpoint. `q` enables server-side
+ * substring search (essential on high-cardinality columns where only one page
+ * of values is loaded), while `extra_filters` cascades sibling selections and
+ * `chart_filters` inherits the chart's own WHERE clauses.
+ */
+export const buildInlineValuesQuery = ({
+  extraFilters = [],
+  whereAdhoc = [],
+  legacyFilters = [],
+  search = '',
+}: InlineValuesQueryParams): string => {
+  const params = new URLSearchParams();
+  if (extraFilters.length > 0) {
+    params.set('extra_filters', JSON.stringify(extraFilters));
+  }
+  if (whereAdhoc.length > 0 || legacyFilters.length > 0) {
+    params.set(
+      'chart_filters',
+      JSON.stringify({ adhoc_filters: whereAdhoc, filters: legacyFilters }),
+    );
+  }
+  if (search) {
+    params.set('q', search);
+  }
+  return params.toString();
+};
+
+interface InlineExtraFilterEntry {
+  col: string;
+  val: InlineFilterSelectionValue;
+  inverse: boolean;
+}
+
+/** Convert sibling selections into `/api/v1/chart/data` WHERE clauses. */
+export const toInlineQueryFilters = (
+  entries: InlineExtraFilterEntry[],
+): QueryObjectFilterClause[] =>
+  entries.map(({ col, val, inverse }) =>
+    Array.isArray(val)
+      ? {
+          col,
+          op: (inverse ? 'NOT IN' : 'IN') as 'IN' | 'NOT IN',
+          val,
+        }
+      : {
+          col,
+          op: (inverse ? '!=' : '==') as '==' | '!=',
+          val,
+        },
+  );
 
 const Container = styled.div`
   display: flex;
@@ -108,8 +231,18 @@ const StyledSelect = styled(Select)`
   }
 `;
 
-interface DistinctCache {
-  [column: string]: { label: string; value: string }[];
+// Free-text filters use the same compact trigger as the dropdown variants.
+const StyledInput = styled(Input)`
+  width: 160px;
+  min-width: 110px;
+  max-width: 220px;
+  flex-shrink: 0;
+`;
+
+interface OptionsCacheEntry {
+  options: { label: string; value: string }[];
+  /** True when the order came from a sort-metric query (do not re-sort). */
+  byMetric: boolean;
 }
 
 export interface ChartInlineFilterBarProps {
@@ -117,11 +250,11 @@ export interface ChartInlineFilterBarProps {
   filters: InlineFilterConfig[];
   /** Current selection state per filter id. */
   selection: InlineFilterSelection;
-  /** Called when the user picks value(s) (or clears the filter). */
-  onSelect: (
-    filterId: string,
-    value: InlineFilterSelectionValue | undefined,
-  ) => void;
+  /**
+   * Called when the user picks value(s) or clears the filter. Clearing sends
+   * `null`, which is distinct from a missing selection key.
+   */
+  onSelect: (filterId: string, value: InlineFilterChangeValue) => void;
   /** Datasource info for fetching distinct column values. */
   datasourceId?: string | number;
   datasourceType?: string;
@@ -148,51 +281,103 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   chartAdhocFilters,
   chartLegacyFilters,
 }) => {
-  const [distinctCache, setDistinctCache] = useState<DistinctCache>({});
+  const [optionsCache, setOptionsCache] = useState<
+    Record<string, OptionsCacheEntry>
+  >({});
+  const [searchTerms, setSearchTerms] = useState<Record<string, string>>({});
+  const [inputDrafts, setInputDrafts] = useState<Record<string, string>>({});
+  const searchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {},
+  );
+  const inputTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Build extra filters from sibling selections (excluding the current column)
-  const buildExtraFilters = (excludeCol: string) =>
-    filters
-      .filter(f => f.column !== excludeCol && selection[f.id] !== undefined)
-      .map(f => ({ col: f.column, val: selection[f.id] }));
+  // Stable string keys keep the effects below from re-running on every
+  // render: the parent may hand us freshly built arrays each time.
+  const filtersKey = JSON.stringify(filters);
+  const selectionKey = JSON.stringify(selection);
+  const chartAdhocFiltersKey = JSON.stringify(chartAdhocFilters);
+  const chartLegacyFiltersKey = JSON.stringify(chartLegacyFilters);
+  const searchTermsKey = JSON.stringify(searchTerms);
 
-  // Fetch distinct values for each configured column, re-fetching when
-  // sibling selections change so options cascade.
+  const optionsFor = useCallback(
+    (config: InlineFilterConfig): InlineFilterOption[] => {
+      const entry = optionsCache[config.id];
+      return getInlineFilterOptions(
+        config,
+        entry?.options ?? [],
+        Boolean(entry?.byMetric),
+      );
+    },
+    [optionsCache],
+  );
+
+  // Build extra filters from the configured dependencies (all siblings by
+  // default, or only the ones named in `dependsOn`). Defaults count too,
+  // otherwise a filter that has never been touched would not narrow the values
+  // offered to its siblings.
+  const buildExtraFilters = (
+    config: InlineFilterConfig,
+  ): InlineExtraFilterEntry[] =>
+    getInlineFilterDependencies(config, filters)
+      .filter(f => Boolean(f.column))
+      .map(f => ({
+        col: f.column,
+        val: resolveInlineFilterValue(f, selection, optionsFor(f)),
+        inverse: isInlineFilterInverse(f),
+      }))
+      .filter((entry): entry is InlineExtraFilterEntry => entry.val !== null);
+
+  // Fetch distinct values for each configured filter, re-fetching when
+  // sibling selections or the search box change so options cascade.
   useEffect(() => {
-    if (!datasourceId || !datasourceType) return;
-    const columns = filters.map(f => f.column).filter(Boolean);
-    if (columns.length === 0) return;
+    if (!datasourceId || !datasourceType) return undefined;
+    const active = filters.filter(f => f.column);
+    if (active.length === 0) return undefined;
 
     let cancelled = false;
     Promise.all(
-      columns.map(async col => {
+      active.map(async (f): Promise<readonly [string, OptionsCacheEntry]> => {
+        // A free-text filter has no option list, so skip both the values
+        // endpoint and the sort-metric query entirely.
+        if (isInlineFilterInput(f)) {
+          return [f.id, { options: [], byMetric: false }] as const;
+        }
+        const extra = buildExtraFilters(f);
+        const search = searchTerms[f.id] ?? '';
+        if (f.sortMetric) {
+          try {
+            const metricOptions = await fetchInlineSortMetricOptions({
+              datasourceId,
+              datasourceType,
+              column: f.column,
+              sortMetric: f.sortMetric,
+              sortAscending: f.sortAscending !== false,
+              filters: toInlineQueryFilters(extra),
+            });
+            if (metricOptions.length > 0) {
+              return [
+                f.id,
+                { options: metricOptions, byMetric: true },
+              ] as const;
+            }
+          } catch {
+            // The metric query is optional; fall back to plain values.
+          }
+        }
         try {
-          const extraFilters = buildExtraFilters(col);
-          const params = new URLSearchParams();
-          if (extraFilters.length > 0) {
-            params.set('extra_filters', JSON.stringify(extraFilters));
-          }
-          // Inherit the chart's own WHERE filters so the suggested values match
-          // the rows the chart renders (e.g. only the category a chart-level
-          // filter already selected). Sibling inline selections stay in
-          // extra_filters; the chart's own adhoc_filters never include them.
           const whereAdhoc = (chartAdhocFilters ?? []).filter(
-            f => (f?.clause ?? 'WHERE') === 'WHERE',
+            filter => (filter?.clause ?? 'WHERE') === 'WHERE',
           );
-          if (whereAdhoc.length > 0 || (chartLegacyFilters?.length ?? 0) > 0) {
-            params.set(
-              'chart_filters',
-              JSON.stringify({
-                adhoc_filters: whereAdhoc,
-                filters: chartLegacyFilters ?? [],
-              }),
-            );
-          }
-          const query = params.toString();
+          const query = buildInlineValuesQuery({
+            extraFilters: extra.map(({ col, val }) => ({ col, val })),
+            whereAdhoc,
+            legacyFilters: chartLegacyFilters ?? [],
+            search,
+          });
           const { json } = await SupersetClient.get({
             endpoint:
               `/api/v1/datasource/${datasourceType}/${datasourceId}` +
-              `/column/${encodeURIComponent(col)}/values/${query ? `?${query}` : ''}`,
+              `/column/${encodeURIComponent(f.column)}/values/${query ? `?${query}` : ''}`,
           });
           const values: unknown[] = json?.result ?? [];
           const seen = new Set<string>();
@@ -204,22 +389,17 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
               seen.add(opt.value);
               return true;
             });
-          return [col, options] as const;
+          return [f.id, { options, byMetric: false }] as const;
         } catch {
-          // Keep the same tuple shape as the success branch so the cached
-          // options stay assignable to the mutable DistinctCache values.
-          return [col, [] as { label: string; value: string }[]] as [
-            string,
-            { label: string; value: string }[],
-          ];
+          return [f.id, { options: [], byMetric: false }] as const;
         }
       }),
     ).then(entries => {
       if (cancelled) return;
-      setDistinctCache(prev => {
+      setOptionsCache(prev => {
         const next = { ...prev };
-        entries.forEach(([col, opts]) => {
-          next[col] = opts;
+        entries.forEach(([id, entry]) => {
+          next[id] = entry;
         });
         return next;
       });
@@ -230,56 +410,205 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    JSON.stringify(filters),
+    filtersKey,
     datasourceId,
     datasourceType,
-    JSON.stringify(selection),
-    JSON.stringify(chartAdhocFilters),
-    JSON.stringify(chartLegacyFilters),
+    selectionKey,
+    chartAdhocFiltersKey,
+    chartLegacyFiltersKey,
+    searchTermsKey,
   ]);
+
+  // Resolve dynamic defaults once the (sorted) distinct options have loaded.
+  // Like the dashboard Select filter's `defaultToFirstItem`, the first item is
+  // only seeded while the selection has never been touched: an explicit clear
+  // (`null`) is the equivalent of its `userClearedRef` and must stay cleared.
+  // A required filter still gets a fallback value even after a stray clear.
+  useEffect(() => {
+    filters.forEach(f => {
+      const options = optionsFor(f);
+      const neverTouched = selection[f.id] === undefined;
+      if (f.defaultToFirstItem && neverTouched) {
+        const fallback = getInlineFilterFallbackValue(f, options);
+        if (fallback !== null) onSelect(f.id, fallback);
+        return;
+      }
+      if (
+        f.required &&
+        resolveInlineFilterValue(f, selection, options) === null
+      ) {
+        const fallback = getInlineFilterFallbackValue(f, options);
+        if (fallback !== null) onSelect(f.id, fallback);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey, selectionKey, optionsCache, onSelect]);
+
+  // A free-text box keeps a local draft while typing, so an external reset
+  // (e.g. "clear all filters") must drop that draft to show the new value.
+  useEffect(() => {
+    setInputDrafts(prev => {
+      let changed = false;
+      const next = { ...prev };
+      Object.keys(next).forEach(id => {
+        if (selection[id] === null) {
+          delete next[id];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionKey]);
+
+  useEffect(
+    () => () => {
+      Object.values(searchTimers.current).forEach(timer => clearTimeout(timer));
+      Object.values(inputTimers.current).forEach(timer => clearTimeout(timer));
+    },
+    [],
+  );
+
+  const handleSearch = (filterId: string, text: string) => {
+    const pending = searchTimers.current[filterId];
+    if (pending) clearTimeout(pending);
+    searchTimers.current[filterId] = setTimeout(() => {
+      setSearchTerms(prev =>
+        (prev[filterId] ?? '') === text ? prev : { ...prev, [filterId]: text },
+      );
+    }, SEARCH_DEBOUNCE_MS);
+  };
+
+  const handleInputChange = (config: InlineFilterConfig, text: string) => {
+    setInputDrafts(prev => ({ ...prev, [config.id]: text }));
+    const pending = inputTimers.current[config.id];
+    if (pending) clearTimeout(pending);
+    delete inputTimers.current[config.id];
+    if (config.required && text.trim() === '') {
+      // A required filter must keep a value in the query, but the box itself
+      // has to stay editable: snapping the draft back on every keystroke made
+      // the last character impossible to delete. Keep the last committed
+      // value in the query and let onBlur restore the displayed text.
+      return;
+    }
+    inputTimers.current[config.id] = setTimeout(() => {
+      onSelect(config.id, text.trim() === '' ? null : text);
+    }, SEARCH_DEBOUNCE_MS);
+  };
+
+  // Leaving a required box empty would show nothing while the chart is still
+  // filtered by the last committed value. Restore that value on blur so the
+  // box and the query agree, without interrupting editing mid-keystroke.
+  const handleInputBlur = (
+    config: InlineFilterConfig,
+    committedText: string,
+  ) => {
+    if (!config.required) return;
+    setInputDrafts(prev => {
+      const draft = prev[config.id];
+      return draft !== undefined && draft.trim() === ''
+        ? { ...prev, [config.id]: committedText }
+        : prev;
+    });
+  };
 
   if (!filters || filters.length === 0) return null;
 
   return (
     <Container data-test="chart-inline-filter-bar">
       {filters.map(f => {
-        const current = selection[f.id];
-        const options = distinctCache[f.column] ?? [];
-        const multi = Boolean(f.multi);
-        // Selections saved before the multi toggle existed are scalars; wrap
-        // them in an array so enabling multi never drops the current value.
+        const options = optionsFor(f);
+        const multi = isInlineFilterMulti(f);
+        const inverse = isInlineFilterInverse(f);
+        const isInput = isInlineFilterInput(f);
+        const required = Boolean(f.required);
+        const showSearch = !isInput && f.showSearch !== false;
+        // A missing selection key applies the configured default (including a
+        // dynamic "first sorted value"); an explicit `null` stays cleared.
+        // `resolveInlineFilterValue` also normalizes stale scalar/array values
+        // when the filter type changed.
+        const effective = resolveInlineFilterValue(f, selection, options);
+        const scalarText =
+          effective === null
+            ? ''
+            : String(
+                Array.isArray(effective) ? (effective[0] ?? '') : effective,
+              );
         const currentValue = multi
-          ? current === undefined
+          ? effective === null
             ? []
-            : Array.isArray(current)
-              ? current
-              : [current]
-          : current;
+            : Array.isArray(effective)
+              ? effective
+              : [effective]
+          : (effective ?? undefined);
+        const labelNode = (
+          <FilterLabel>
+            {f.label}
+            {inverse ? t(' (exclude)') : ''}
+            {f.description ? ' ⓘ:' : ':'}
+          </FilterLabel>
+        );
         return (
           <React.Fragment key={f.id}>
-            {f.label ? <FilterLabel>{f.label}:</FilterLabel> : null}
-            <StyledSelect
-              size="small"
-              allowClear
-              showSearch
-              mode={multi ? 'multiple' : 'single'}
-              oneLine={multi}
-              placeholder={t('All')}
-              value={currentValue as never}
-              options={options as never}
-              popupMatchSelectWidth={getInlineFilterPopupWidth(options)}
-              onChange={(value: never) => {
-                if (multi) {
-                  const selected = Array.isArray(value)
-                    ? (value as InlineFilterValue[])
-                    : [];
-                  // An empty IN list is invalid SQL; treat it as cleared.
-                  onSelect(f.id, selected.length > 0 ? selected : undefined);
-                } else {
-                  onSelect(f.id, value as InlineFilterValue | undefined);
+            {f.label ? (
+              f.description ? (
+                <Tooltip title={f.description}>{labelNode}</Tooltip>
+              ) : (
+                labelNode
+              )
+            ) : null}
+            {isInput ? (
+              <StyledInput
+                size="small"
+                aria-label={f.label || f.column}
+                placeholder={
+                  f.matchMode === 'contains'
+                    ? t('Type to search (contains)')
+                    : t('Type an exact value')
                 }
-              }}
-            />
+                value={inputDrafts[f.id] ?? scalarText}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  handleInputChange(f, e.target.value)
+                }
+                onBlur={() => handleInputBlur(f, scalarText)}
+              />
+            ) : (
+              <StyledSelect
+                size="small"
+                allowClear={!required}
+                showSearch={showSearch}
+                onSearch={
+                  showSearch ? text => handleSearch(f.id, text) : undefined
+                }
+                mode={multi ? 'multiple' : 'single'}
+                oneLine={multi}
+                placeholder={
+                  required ? t('Required') : inverse ? t('Exclude') : t('All')
+                }
+                value={currentValue as never}
+                options={options as never}
+                popupMatchSelectWidth={getInlineFilterPopupWidth(options)}
+                onChange={(value: never) => {
+                  const next: InlineFilterChangeValue = multi
+                    ? Array.isArray(value)
+                      ? (value as InlineFilterValue[])
+                      : []
+                    : (value as InlineFilterValue | undefined);
+                  if (required && isEmptyInlineFilterValue(next)) {
+                    const fallback = getInlineFilterFallbackValue(f, options);
+                    if (fallback !== null) {
+                      onSelect(f.id, fallback);
+                    }
+                    // No fallback yet: leave the controlled value alone so the
+                    // select snaps back instead of storing an empty selection.
+                    return;
+                  }
+                  // An empty IN list is invalid SQL; `null` marks an explicit
+                  // clear so the default value is not silently reapplied.
+                  onSelect(f.id, isEmptyInlineFilterValue(next) ? null : next);
+                }}
+              />
+            )}
           </React.Fragment>
         );
       })}

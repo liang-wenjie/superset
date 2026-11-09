@@ -18,7 +18,12 @@
  */
 import { ensureIsArray, JsonObject, QueryFormData } from '@superset-ui/core';
 import type { InlineFilterConfig, InlineFilterSelection } from './types';
-import { buildInlineAdhocFilter } from './types';
+import {
+  buildInlineAdhocFilter,
+  isInlineFilterMulti,
+  normalizeInlineFilterValue,
+  resolveInlineFilterValue,
+} from './types';
 
 /**
  * Returns a new formData with the selected inline-filter values injected as
@@ -29,6 +34,10 @@ import { buildInlineAdhocFilter } from './types';
  * injected into every query section the chart declares. Single-query charts
  * only have `adhoc_filters`; mixed charts also declare `adhoc_filters_b`
  * (Query B), so picking a value filters both series.
+ *
+ * A filter with no entry in `selection` uses its configured `defaultValue`;
+ * an explicitly cleared filter (`null`) does not, so "All" stays reachable.
+ * Required filters keep their default even when a stray clear arrives.
  */
 export function injectInlineFilters(
   formData: QueryFormData,
@@ -44,12 +53,22 @@ export function injectInlineFilters(
 
   const injected = config
     .map(cfg => {
-      const selected = selection[cfg.id] ?? cfg.defaultValue;
-      if (selected === undefined || selected === null) return null;
-      // A cleared multi-select is stored as `undefined`, but guard against an
-      // empty array: `col IN ()` is invalid SQL and must not be injected.
-      if (Array.isArray(selected) && selected.length === 0) return null;
-      if (!cfg.column) return null;
+      let selected = resolveInlineFilterValue(cfg, selection);
+      if (cfg.required && selected === null) {
+        // A required filter must never query on "nothing". The filter bar
+        // normally picks the first available value; fall back to the default
+        // here too so the query stays consistent when the bar is not mounted
+        // (e.g. dashboard edit mode). A dynamic "first item" default cannot be
+        // resolved without the option list, so it is left to the bar.
+        selected = cfg.defaultToFirstItem
+          ? null
+          : normalizeInlineFilterValue(
+              cfg.defaultValue,
+              isInlineFilterMulti(cfg),
+            );
+      }
+      // `col IN ()` is invalid SQL and must not be injected.
+      if (selected === null || !cfg.column) return null;
       return buildInlineAdhocFilter(cfg, selected);
     })
     .filter(Boolean);

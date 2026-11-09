@@ -61,11 +61,12 @@ import {
   ChartInlineFilterBar,
   INLINE_FILTER_BAR_HEIGHT,
   injectInlineFilters,
+  isEmptyInlineFilterValue,
 } from 'src/dashboard/components/InlineFilters';
 import type {
+  InlineFilterChangeValue,
   InlineFilterConfig,
   InlineFilterSelection,
-  InlineFilterSelectionValue,
 } from 'src/dashboard/components/InlineFilters';
 
 const extensionsRegistry = getExtensionsRegistry();
@@ -217,24 +218,17 @@ const ExploreChartPanel = ({
   );
 
   const handleInlineFilterChange = useCallback(
-    (filterId: string, value: InlineFilterSelectionValue | undefined) => {
-      const cleared =
-        value === undefined || (Array.isArray(value) && value.length === 0);
-      setInlineSelection(prev => {
-        const next = { ...prev };
-        if (cleared) {
-          delete next[filterId];
-        } else {
-          next[filterId] = value;
-        }
-        return next;
-      });
+    (filterId: string, value: InlineFilterChangeValue) => {
+      // Keep the cleared state as an explicit `null`. Deleting the key would
+      // make the configured default value reappear on the very next render.
+      const nextValue = isEmptyInlineFilterValue(value) ? null : value;
+      setInlineSelection(prev => ({ ...prev, [filterId]: nextValue }));
       // immediately re-query with the new selection
       requestAnimationFrame(() => {
         actions.postChartFormData(
           injectInlineFilters(formData, inlineConfig, {
             ...inlineSelection,
-            ...(cleared ? {} : { [filterId]: value }),
+            [filterId]: nextValue,
           }),
           true,
           timeout ?? 0,

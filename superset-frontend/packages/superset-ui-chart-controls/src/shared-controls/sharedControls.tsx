@@ -553,6 +553,11 @@ const echart_options: SharedControlConfig<'JSEditorControl'> = {
 };
 
 const inline_filters: SharedControlConfig<'InlineFiltersControl'> = {
+  // This base config only supplies `columns`. Explore renders the control
+  // through an explicit override in `controlPanels/sections.tsx`, which adds
+  // datasourceId/Type, metrics and shouldMapStateToProps (required by the
+  // dialog's "Default value" and "Sort metric" pickers). Keep that override
+  // as the source of truth when changing this control.
   type: 'InlineFiltersControl',
   // The enclosing control panel section already renders a "Chart inline
   // filters" header, so the control itself must not repeat it.

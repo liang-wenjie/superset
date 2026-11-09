@@ -40,6 +40,7 @@ import {
   CLEAR_ALL_CHART_STATES,
   setActiveTab,
   setActiveTabs,
+  setChartInlineFilter,
 } from '../actions/dashboardState';
 import { DashboardState, RootState } from '../types';
 
@@ -350,7 +351,8 @@ describe('DashboardState reducer', () => {
         { sliceIds: [1, 2], filters: {} } as Partial<DashboardState>,
         { type: REMOVE_SLICE, sliceId: 2 },
       ),
-    ).toEqual({ sliceIds: [1], filters: {} });
+      // REMOVE_SLICE also clears that slice's inline-filter selections.
+    ).toEqual({ sliceIds: [1], filters: {}, chartInlineFilters: {} });
   });
 
   test('should toggle fav star', () => {
@@ -641,5 +643,33 @@ describe('DashboardState reducer', () => {
     });
     expect(result.chartStates).toEqual({});
     expect((result as Record<string, unknown>).otherState).toEqual('preserved');
+  });
+
+  test('keeps an explicit inline-filter clear as null', () => {
+    const initState = {
+      chartInlineFilters: { 7: { f1: 'A' } },
+    } as Partial<DashboardState>;
+    const result = typedDashboardStateReducer(
+      initState,
+      setChartInlineFilter(7, 'f1', null),
+    );
+    // Deleting the key would make the configured default reappear on the
+    // next render, so a clear is stored explicitly.
+    expect(result.chartInlineFilters?.[7]).toEqual({ f1: null });
+  });
+
+  test('stores inline-filter selections and normalizes empty arrays to null', () => {
+    const initState = { chartInlineFilters: {} } as Partial<DashboardState>;
+    const selected = typedDashboardStateReducer(
+      initState,
+      setChartInlineFilter(7, 'f1', ['A', 'B']),
+    );
+    expect(selected.chartInlineFilters?.[7]).toEqual({ f1: ['A', 'B'] });
+
+    const cleared = typedDashboardStateReducer(
+      selected,
+      setChartInlineFilter(7, 'f1', []),
+    );
+    expect(cleared.chartInlineFilters?.[7]).toEqual({ f1: null });
   });
 });

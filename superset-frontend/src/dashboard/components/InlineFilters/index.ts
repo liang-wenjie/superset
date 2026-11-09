@@ -22,9 +22,25 @@ export {
 } from './ChartInlineFilterBar';
 export { DashboardInlineFilterBar } from './DashboardInlineFilterBar';
 export { injectInlineFilters } from './injectInlineFilters';
+export {
+  buildInlineAdhocFilter,
+  getInlineFilterDependencies,
+  getInlineFilterType,
+  isEmptyInlineFilterValue,
+  isInlineFilterInput,
+  isInlineFilterInverse,
+  isInlineFilterMulti,
+  normalizeInlineFilterValue,
+  resolveInlineFilterValue,
+  sortInlineFilterOptions,
+} from './types';
 export type {
+  InlineFilterChangeValue,
   InlineFilterConfig,
+  InlineFilterMatchMode,
+  InlineFilterOption,
   InlineFilterSelection,
   InlineFilterSelectionValue,
+  InlineFilterType,
   InlineFilterValue,
 } from './types';

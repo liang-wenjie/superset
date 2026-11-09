@@ -70,6 +70,10 @@ import {
 import { t } from '@apache-superset/core/translation';
 import { datasetLabel } from 'src/features/semanticLayers/label';
 import { formatSelectOptions } from 'src/explore/exploreUtils';
+import {
+  getInlineFiltersControlProps,
+  INLINE_FILTERS_CONTROL_DESCRIPTION,
+} from 'src/explore/controlUtils/inlineFiltersControlProps';
 import { TIME_FILTER_LABELS } from './constants';
 import { StyledColumnOption } from './components/optionRenderers';
 
@@ -504,20 +508,15 @@ export const controls = {
     schemes: () => categoricalSchemeRegistry.getMap(),
   },
 
+  // Legacy mirror of the control config. ControlPanelsContainer renders the
+  // config built in `controlPanels/sections.tsx`, not this object, so both
+  // share one helper rather than becoming two sources of truth.
   inline_filters: {
     type: 'InlineFiltersControl',
-    // The enclosing control panel section already renders a "Chart inline
-    // filters" header, so the control itself must not repeat it.
     label: '',
     default: [],
-    description: t(
-      'Configure quick-filter dropdowns at the top-left of the chart. ' +
-        'Each group binds to a column; picking a value adds a WHERE clause ' +
-        'and re-queries the chart. Turn on "Allow multiple values" to filter ' +
-        'by several values at once.',
-    ),
-    mapStateToProps: (state: ControlState) => ({
-      columns: state.datasource ? state.datasource.columns : [],
-    }),
+    description: INLINE_FILTERS_CONTROL_DESCRIPTION,
+    shouldMapStateToProps: () => true,
+    mapStateToProps: getInlineFiltersControlProps,
   },
 };
