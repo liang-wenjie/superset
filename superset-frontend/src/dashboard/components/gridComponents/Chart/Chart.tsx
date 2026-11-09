@@ -55,7 +55,6 @@ import { enforceSharedLabelsColorsArray } from 'src/utils/colorScheme';
 import exportPivotExcel from 'src/utils/downloadAsPivotExcel';
 import type { RootState, Datasource, Slice } from 'src/dashboard/types';
 import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabels';
-import { selectBigNumberFitCharsByChartId } from 'src/dashboard/util/bigNumberSizing';
 import {
   convertChartStateToOwnState,
   hasChartStateConverter,
@@ -274,8 +273,10 @@ const Chart = (props: ChartProps) => {
       (state.dashboardInfo?.metadata as JsonObject)
         ?.uniform_big_number_font_size as boolean | undefined,
   );
-  const autoBigNumberFitChars = useSelector((state: RootState) =>
-    selectBigNumberFitCharsByChartId(state).get(String(props.id)),
+  const uniformBigNumberFontSizePx = useSelector(
+    (state: RootState) =>
+      (state.dashboardInfo?.metadata as JsonObject)
+        ?.uniform_big_number_font_size_px as number | undefined,
   );
   const suppressLoadingSpinner = useIsChartAutoRefreshing(props.id);
 
@@ -552,8 +553,8 @@ const Chart = (props: ChartProps) => {
             ...(uniformBigNumberFontSize !== undefined && {
               uniformBigNumberFontSize,
             }),
-            ...(autoBigNumberFitChars !== undefined && {
-              bigNumberFitChars: autoBigNumberFitChars,
+            ...(uniformBigNumberFontSizePx !== undefined && {
+              uniformBigNumberFontSizePx,
             }),
           }
         : {};
@@ -605,7 +606,7 @@ const Chart = (props: ChartProps) => {
     currentDashboardDatasets,
     props.dashboardId,
     uniformBigNumberFontSize,
-    autoBigNumberFitChars,
+    uniformBigNumberFontSizePx,
   ]);
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;

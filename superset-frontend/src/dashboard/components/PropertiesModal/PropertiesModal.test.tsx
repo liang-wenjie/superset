@@ -22,6 +22,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from 'spec/helpers/testing-library';
 import fetchMock from 'fetch-mock';
 import * as ColorSchemeSelect from 'src/dashboard/components/ColorSchemeSelect';
@@ -560,14 +561,44 @@ describe('PropertiesModal', () => {
     expect(toggle).not.toBeChecked();
     await userEvent.click(toggle);
 
+    const sizeField = await screen.findByTestId(
+      'dashboard-uniform-big-number-size-field',
+    );
+    const sizeInput = within(sizeField).getByRole('spinbutton');
+    await userEvent.type(sizeInput, '48');
+    await userEvent.tab();
+
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => {
       expect(props.onSubmit).toHaveBeenCalledTimes(1);
     });
     const submitted = JSON.parse(props.onSubmit.mock.calls[0][0].jsonMetadata);
     expect(submitted.uniform_big_number_font_size).toBe(true);
-    // The reference length is detected at render time, never persisted.
+    expect(submitted.uniform_big_number_font_size_px).toBe(48);
+    // The legacy reference length is cleaned up, never persisted.
     expect(submitted).not.toHaveProperty('big_number_fit_chars');
+  });
+
+  test('omits the optional big number size when the input is left empty', async () => {
+    const props = createProps();
+    props.onlyApply = false;
+    render(<PropertiesModal {...props} />, { useRedux: true });
+    await screen.findByTestId('dashboard-edit-properties-form');
+
+    const stylingHeader = screen
+      .getByText('Styling')
+      .closest('.ant-collapse-header');
+    await userEvent.click(stylingHeader!);
+    await userEvent.click(
+      await screen.findByTestId('dashboard-uniform-big-number-switch'),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(props.onSubmit).toHaveBeenCalledTimes(1);
+    });
+    const submitted = JSON.parse(props.onSubmit.mock.calls[0][0].jsonMetadata);
+    expect(submitted.uniform_big_number_font_size).toBe(true);
+    expect(submitted).not.toHaveProperty('uniform_big_number_font_size_px');
   });
 
   test('preserves certification fields on save without opening Certification section', async () => {

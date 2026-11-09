@@ -187,7 +187,11 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-const kpiSizingState = (enabled: boolean, vizType: VizType) => ({
+const kpiSizingState = (
+  enabled: boolean,
+  vizType: VizType,
+  fontSizePx?: number,
+) => ({
   charts: {
     ...defaultState.charts,
     [queryId]: {
@@ -203,7 +207,12 @@ const kpiSizingState = (enabled: boolean, vizType: VizType) => ({
   },
   dashboardInfo: {
     ...defaultState.dashboardInfo,
-    metadata: { uniform_big_number_font_size: enabled },
+    metadata: {
+      uniform_big_number_font_size: enabled,
+      ...(fontSizePx !== undefined && {
+        uniform_big_number_font_size_px: fontSizePx,
+      }),
+    },
   },
   dashboardLayout: {
     ...defaultState.dashboardLayout,
@@ -216,30 +225,35 @@ const kpiSizingState = (enabled: boolean, vizType: VizType) => ({
   },
 });
 
-test('injects the detected longest KPI number into Big Number charts only', () => {
-  setup({}, kpiSizingState(true, VizType.BigNumberYoyMom));
+test('injects the dashboard big number font size into Big Number charts only', () => {
+  setup({}, kpiSizingState(true, VizType.BigNumberYoyMom, 48));
 
   expect(capturedChartContainerProps.formData).toEqual(
     expect.objectContaining({
       uniformBigNumberFontSize: true,
-      // "3,808,637.34" is the longest formatted value among same-sized tiles.
-      bigNumberFitChars: 12,
+      uniformBigNumberFontSizePx: 48,
     }),
   );
 });
 
-test('does not inject KPI sizing into other viz types or when disabled', () => {
-  setup({}, kpiSizingState(true, VizType.Table));
-  let formData = capturedChartContainerProps.formData as Record<
+test('leaves the optional size unset so charts fall back to their own default', () => {
+  setup({}, kpiSizingState(true, VizType.BigNumberYoyMom));
+  const formData = capturedChartContainerProps.formData as Record<
+    string,
+    unknown
+  >;
+  expect(formData.uniformBigNumberFontSize).toBe(true);
+  expect(formData).not.toHaveProperty('uniformBigNumberFontSizePx');
+});
+
+test('does not inject KPI sizing into other viz types', () => {
+  setup({}, kpiSizingState(true, VizType.Table, 48));
+  const formData = capturedChartContainerProps.formData as Record<
     string,
     unknown
   >;
   expect(formData).not.toHaveProperty('uniformBigNumberFontSize');
-  expect(formData).not.toHaveProperty('bigNumberFitChars');
-
-  setup({}, kpiSizingState(false, VizType.BigNumberYoyMom));
-  formData = capturedChartContainerProps.formData as Record<string, unknown>;
-  expect(formData).not.toHaveProperty('bigNumberFitChars');
+  expect(formData).not.toHaveProperty('uniformBigNumberFontSizePx');
 });
 
 test('shows the loading spinner for a chart that starts loading outside the in-flight auto-refresh batch', () => {

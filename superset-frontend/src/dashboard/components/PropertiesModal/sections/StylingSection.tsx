@@ -25,7 +25,12 @@ import {
 } from '@superset-ui/core';
 import { Alert } from '@apache-superset/core/components';
 import { styled } from '@apache-superset/core/theme';
-import { Button, Select, Switch } from '@superset-ui/core/components';
+import {
+  Button,
+  InputNumber,
+  Select,
+  Switch,
+} from '@superset-ui/core/components';
 import { EditorHost } from 'src/core/editors';
 import rison from 'rison';
 import ColorSchemeSelect from 'src/dashboard/components/ColorSchemeSelect';
@@ -90,6 +95,7 @@ interface StylingSectionProps {
   hasCustomLabelsColor: boolean;
   showChartTimestamps: boolean;
   uniformBigNumberFontSize: boolean;
+  uniformBigNumberFontSizePx: number | null;
   jsonMetadata: string;
   onThemeChange: (value: any) => void;
   onColorSchemeChange: (
@@ -99,6 +105,7 @@ interface StylingSectionProps {
   onCustomCssChange: (css: string) => void;
   onShowChartTimestampsChange: (value: boolean) => void;
   onUniformBigNumberFontSizeChange: (value: boolean) => void;
+  onUniformBigNumberFontSizePxChange: (value: number | null) => void;
   onJsonMetadataChange: (value: string) => void;
   addDangerToast?: (message: string) => void;
 }
@@ -111,12 +118,14 @@ const StylingSection = ({
   hasCustomLabelsColor,
   showChartTimestamps,
   uniformBigNumberFontSize,
+  uniformBigNumberFontSizePx,
   jsonMetadata,
   onThemeChange,
   onColorSchemeChange,
   onCustomCssChange,
   onShowChartTimestampsChange,
   onUniformBigNumberFontSizeChange,
+  onUniformBigNumberFontSizePxChange,
   onJsonMetadataChange,
   addDangerToast,
 }: StylingSectionProps) => {
@@ -300,10 +309,28 @@ const StylingSection = ({
         </div>
         <span className="switch-helper">
           {t(
-            'Size KPI tiles of the same size by their longest number, then scale the title, value and comparison rows by the same ratio. Each chart keeps its own number format.',
+            'Render every Big Number KPI tile at one font size and scale its title, comparison rows and spacing by the same ratio. Each chart keeps its own number format.',
           )}
         </span>
       </StyledSwitchContainer>
+      {uniformBigNumberFontSize && (
+        <ModalFormField
+          label={t('Big number font size (px)')}
+          testId="dashboard-uniform-big-number-size-field"
+          helperText={t(
+            'Leave empty to use the size configured on each chart (or its default). Set a value to fix the big number size across the dashboard; if a long number is clipped, lower this value or widen the tiles.',
+          )}
+        >
+          <InputNumber
+            data-test="dashboard-uniform-big-number-size-input"
+            min={8}
+            max={300}
+            placeholder={t('Use chart default')}
+            value={uniformBigNumberFontSizePx}
+            onChange={onUniformBigNumberFontSizePxChange}
+          />
+        </ModalFormField>
+      )}
       {isFeatureEnabled(FeatureFlag.CssTemplates) &&
         cssTemplates.length > 0 && (
           <ModalFormField

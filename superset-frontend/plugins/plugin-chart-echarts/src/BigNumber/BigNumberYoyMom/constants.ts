@@ -33,13 +33,11 @@ export const DEFAULT_BIG_NUMBER_FONT_SIZE = 0.4;
 export const DEFAULT_BIG_NUMBER_COLOR = { r: 51, g: 51, b: 51 }; // #333
 export const DEFAULT_BIG_NUMBER_LEFT = 20;
 export const DEFAULT_BIG_NUMBER_TOP = 0;
-// When uniform sizing is enabled, every tile shrinks against the same
-// reference text instead of its own value. Number formats are defined per
-// chart, so the reference length only needs to cover the longest formatted
-// number on the dashboard (e.g. "3,808,637.34" is 12 characters). The
-// formats themselves are never changed by this setting.
+// When uniform sizing is enabled, every tile uses the dashboard-level font
+// size (or, when unset, the chart's own size / the default above) and scales
+// the rest of the tile by the same ratio. Number formats are defined per
+// chart and are never changed by this setting.
 export const DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE = false;
-export const DEFAULT_BIG_NUMBER_FIT_CHARS = 12;
 
 export const DEFAULT_COMPARISON1_LABEL = 'MoM';
 export const DEFAULT_COMPARISON1_OFFSET = '1 month ago';

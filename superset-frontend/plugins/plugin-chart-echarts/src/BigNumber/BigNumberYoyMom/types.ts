@@ -44,7 +44,7 @@ export type BigNumberYoyMomFormData = QueryFormData & {
   bigNumberLeft?: number;
   bigNumberTop?: number;
   uniformBigNumberFontSize?: boolean;
-  bigNumberFitChars?: number;
+  uniformBigNumberFontSizePx?: number;
   showComparison1?: boolean;
   comparison1Label?: string;
   comparison1Mode?: 'time_shift' | 'metric';

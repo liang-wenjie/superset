@@ -247,16 +247,13 @@ describe('BigNumberYoyMom transformProps', () => {
   };
 
   test('keeps the big number font size uniform across tiles when enabled', () => {
-    const uniform = {
-      uniformBigNumberFontSize: true,
-      bigNumberFitChars: 12,
-    };
+    const uniform = { uniformBigNumberFontSize: true };
     const short = getBigNumberFontSize(7.81, uniform);
     const long = getBigNumberFontSize(1234567, uniform);
-    // Both values are shorter than the 12-character reference, so both
-    // shrink against the same 980px estimated width (43px at 120px requested).
-    expect(short).toBe(43);
-    expect(long).toBe(43);
+    // With no dashboard size set, the plugin default (0.4 * 300 = 120px) is
+    // used for every tile instead of per-tile auto-fit.
+    expect(short).toBe(120);
+    expect(long).toBe(120);
   });
 
   test('keeps per-tile auto sizing when uniform sizing is disabled', () => {
@@ -266,40 +263,37 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(short).toBeGreaterThan(long);
   });
 
-  test('uses the default reference length when none is configured', () => {
-    const withDefault = getBigNumberFontSize(7.81, {
-      uniformBigNumberFontSize: true,
-    });
-    const explicit = getBigNumberFontSize(7.81, {
-      uniformBigNumberFontSize: true,
-      bigNumberFitChars: 12,
-    });
-    expect(withDefault).toBe(43);
-    expect(withDefault).toBe(explicit);
+  test('uses the configured dashboard font size as an absolute pixel value', () => {
+    expect(
+      getBigNumberFontSize(7.81, {
+        uniformBigNumberFontSize: true,
+        uniformBigNumberFontSizePx: 48,
+      }),
+    ).toBe(48);
+    expect(
+      getBigNumberFontSize(7.81, {
+        uniformBigNumberFontSize: true,
+        uniformBigNumberFontSizePx: 80,
+      }),
+    ).toBe(80);
   });
 
-  test('uses the configured reference length for uniform sizing', () => {
-    const shortReference = getBigNumberFontSize(7.81, {
-      uniformBigNumberFontSize: true,
-      bigNumberFitChars: 6,
-    });
-    const longReference = getBigNumberFontSize(7.81, {
-      uniformBigNumberFontSize: true,
-      bigNumberFitChars: 16,
-    });
-    expect(shortReference).toBeGreaterThan(longReference);
+  test('honours the chart own font size when no dashboard size is set', () => {
+    expect(
+      getBigNumberFontSize(7.81, {
+        uniformBigNumberFontSize: true,
+        bigNumberFontSize: 60,
+      }),
+    ).toBe(60);
   });
 
-  test('shrinks values longer than the reference to avoid clipping', () => {
-    const reference = getBigNumberFontSize(7.81, {
+  test('does not shrink the configured size for long values', () => {
+    const uniform = {
       uniformBigNumberFontSize: true,
-      bigNumberFitChars: 12,
-    });
-    const overflow = getBigNumberFontSize(3808637.34, {
-      uniformBigNumberFontSize: true,
-      bigNumberFitChars: 12,
-    });
-    expect(overflow).toBeLessThan(reference);
+      uniformBigNumberFontSizePx: 48,
+    };
+    expect(getBigNumberFontSize(7.81, uniform)).toBe(48);
+    expect(getBigNumberFontSize(3808637.34, uniform)).toBe(48);
   });
 
   const getAllFontSizes = (
@@ -325,14 +319,14 @@ describe('BigNumberYoyMom transformProps', () => {
   test('scales the whole tile by one ratio when uniform sizing is enabled', () => {
     const uniform = {
       uniformBigNumberFontSize: true,
-      bigNumberFitChars: 12,
+      uniformBigNumberFontSizePx: 48,
     };
     const shortTile = getAllFontSizes(7.81, uniform);
     const longTile = getAllFontSizes(1234567, uniform);
 
     // Title, big number and both comparison rows all land on the same sizes.
     expect(longTile).toEqual(shortTile);
-    expect(shortTile).toHaveLength(4);
+    expect(shortTile).toEqual([18, 48, 18, 18]);
 
     const autoSizedTile = getAllFontSizes(7.81);
     expect(shortTile[0]).toBeLessThan(autoSizedTile[0]);
@@ -353,7 +347,7 @@ describe('BigNumberYoyMom transformProps', () => {
         ],
         {
           uniformBigNumberFontSize: true,
-          bigNumberFitChars: 12,
+          uniformBigNumberFontSizePx: 48,
           bigNumberTop: 50,
           comparisonTop: 100,
         },
@@ -362,26 +356,28 @@ describe('BigNumberYoyMom transformProps', () => {
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     const titleRowHeight = graphic[0].style.fontSize * 1.2;
     const bigNumberRowHeight = graphic[1].style.fontSize * 1.2;
-    // 50px and 100px gaps at the 12-character scale (~0.364) become 18/36.
-    expect(graphic[1].top - graphic[0].top - titleRowHeight).toBeCloseTo(18);
+    // The 48px size is 0.4 of the 120px default, so 50/100px gaps become
+    // 20/40px and every text size is scaled by the same 0.4 ratio.
+    expect(graphic[1].top - graphic[0].top - titleRowHeight).toBeCloseTo(20);
     expect(graphic[2].top - graphic[1].top - bigNumberRowHeight).toBeCloseTo(
-      36,
+      40,
     );
   });
 
-  test('applies the detected reference length to every text size', () => {
-    const shortReference = getAllFontSizes(7.81, {
+  test('applies the dashboard size to every text size in the tile', () => {
+    const smaller = getAllFontSizes(7.81, {
       uniformBigNumberFontSize: true,
-      bigNumberFitChars: 6,
+      uniformBigNumberFontSizePx: 48,
     });
-    const longReference = getAllFontSizes(7.81, {
+    const larger = getAllFontSizes(7.81, {
       uniformBigNumberFontSize: true,
-      bigNumberFitChars: 16,
+      uniformBigNumberFontSizePx: 96,
     });
 
-    expect(shortReference[0]).toBeGreaterThan(longReference[0]);
-    expect(shortReference[1]).toBeGreaterThan(longReference[1]);
-    expect(shortReference[2]).toBeGreaterThan(longReference[2]);
+    expect(larger[0]).toBeGreaterThan(smaller[0]);
+    expect(larger[1]).toBeGreaterThan(smaller[1]);
+    expect(larger[2]).toBeGreaterThan(smaller[2]);
+    expect(larger[3]).toBeGreaterThan(smaller[3]);
   });
 
   test('shrinks a long comparison label to fit a narrow tile', () => {

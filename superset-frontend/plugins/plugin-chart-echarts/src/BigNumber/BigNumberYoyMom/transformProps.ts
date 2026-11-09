@@ -29,7 +29,6 @@ import type { EChartsCoreOption } from 'echarts/core';
 import type { GraphicComponentOption } from 'echarts/components';
 import {
   DEFAULT_BIG_NUMBER_COLOR,
-  DEFAULT_BIG_NUMBER_FIT_CHARS,
   DEFAULT_BIG_NUMBER_FONT_SIZE,
   DEFAULT_BIG_NUMBER_LEFT,
   DEFAULT_COMPARISON1_LABEL,
@@ -227,8 +226,7 @@ export default function transformProps(
   const uniformBigNumberFontSize =
     pick<boolean>('uniformBigNumberFontSize') ??
     DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE;
-  const bigNumberFitChars =
-    pick<number>('bigNumberFitChars') ?? DEFAULT_BIG_NUMBER_FIT_CHARS;
+  const uniformBigNumberFontSizePx = pick<number>('uniformBigNumberFontSizePx');
   const showComparison1 = pick<boolean>('showComparison1') ?? true;
   const comparison1Label =
     pick<string>('comparison1Label') ?? t(DEFAULT_COMPARISON1_LABEL);
@@ -427,38 +425,25 @@ export default function transformProps(
     0,
     width - bigNumberLeft - DEFAULT_BIG_NUMBER_LEFT - TEXT_FIT_SAFETY_MARGIN,
   );
-  // The dashboard injects the longest formatted number found among KPI tiles
-  // of the same area. Derive ONE scale from that reference and apply it to
-  // every text size and internal gap in the tile: the title, the big number
-  // and the comparison rows then stay proportional, instead of each shrinking
-  // against its own text. With uniform sizing off, each element keeps its own
-  // auto-fit behaviour.
-  const fitChars = Math.max(
-    1,
-    Math.min(64, Math.floor(bigNumberFitChars) || DEFAULT_BIG_NUMBER_FIT_CHARS),
-  );
-  const referenceBigNumberWidth = estimateTextWidth(
-    '0'.repeat(fitChars),
-    baseBigNumberFontSizePx,
-    true,
-  );
-  const fitScale =
-    bigNumberAvailableWidth / Math.max(1, referenceBigNumberWidth);
-  // The reference is detected from the dashboard query data. If the current
-  // value is longer than that reference (data changed, or a currency symbol
-  // was added by the chart formatter), guard against clipping with a scale
-  // too, so the whole tile still moves together instead of only the number.
-  const actualBigNumberWidth = estimateTextWidth(
-    bigNumberText,
-    baseBigNumberFontSizePx,
-    true,
-  );
-  const overflowScale =
-    bigNumberAvailableWidth > 0 && actualBigNumberWidth > 0
-      ? bigNumberAvailableWidth / actualBigNumberWidth
-      : 1;
+  // Uniform sizing keeps the configured font size: the dashboard may set one
+  // absolute pixel size, and when it is unset the chart's own
+  // big_number_font_size (or the plugin default) wins. ONE ratio derived from
+  // that target is applied to every text size and internal gap, so tiles of
+  // the same area render identically and the title / comparison rows stay
+  // proportional. No width-based auto-fit runs in this mode: the configured
+  // size is the size (lower the dashboard value if a long number is clipped).
+  // With uniform sizing off, every element keeps its own auto-fit behaviour.
+  const configuredBigNumberFontSizePx =
+    typeof uniformBigNumberFontSizePx === 'number' &&
+    Number.isFinite(uniformBigNumberFontSizePx) &&
+    uniformBigNumberFontSizePx > 0
+      ? Math.ceil(uniformBigNumberFontSizePx)
+      : baseBigNumberFontSizePx;
   const uniformScale = uniformBigNumberFontSize
-    ? Math.max(0.1, Math.min(1, fitScale, overflowScale))
+    ? Math.max(
+        0.1,
+        configuredBigNumberFontSizePx / Math.max(1, baseBigNumberFontSizePx),
+      )
     : 1;
   const scaleFontSize = (size: number) =>
     Math.max(1, Math.floor(size * uniformScale));

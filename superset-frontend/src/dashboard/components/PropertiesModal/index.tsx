@@ -157,6 +157,9 @@ const PropertiesModal = ({
   const [showChartTimestamps, setShowChartTimestamps] = useState(false);
   const [uniformBigNumberFontSize, setUniformBigNumberFontSize] =
     useState(false);
+  const [uniformBigNumberFontSizePx, setUniformBigNumberFontSizePx] = useState<
+    number | null
+  >(null);
   const [themes, setThemes] = useState<
     Array<{
       id: number;
@@ -241,6 +244,7 @@ const PropertiesModal = ({
         'color_scheme_domain',
         'show_chart_timestamps',
         'uniform_big_number_font_size',
+        'uniform_big_number_font_size_px',
         'big_number_fit_chars',
         // Edited via the async-mode dropdown, not the raw JSON editor, so the
         // dropdown is the single source of truth (mirrors show_chart_timestamps).
@@ -255,6 +259,11 @@ const PropertiesModal = ({
       setShowChartTimestamps(metadata?.show_chart_timestamps ?? false);
       setUniformBigNumberFontSize(
         metadata?.uniform_big_number_font_size ?? false,
+      );
+      setUniformBigNumberFontSizePx(
+        typeof metadata?.uniform_big_number_font_size_px === 'number'
+          ? metadata.uniform_big_number_font_size_px
+          : null,
       );
       originalDashboardMetadata.current = metadata;
     },
@@ -408,16 +417,29 @@ const PropertiesModal = ({
     jsonMetadataObj.uniform_big_number_font_size = Boolean(
       uniformBigNumberFontSize,
     );
-    // The reference length is detected from the dashboard data at render time,
-    // so it is no longer persisted in the metadata.
+    // An empty size means "use the chart's own font size / the plugin default",
+    // so remove the key instead of persisting null. The legacy reference-length
+    // key is cleaned up too.
+    if (uniformBigNumberFontSizePx === null) {
+      delete jsonMetadataObj.uniform_big_number_font_size_px;
+    } else {
+      jsonMetadataObj.uniform_big_number_font_size_px =
+        uniformBigNumberFontSizePx;
+    }
     delete jsonMetadataObj.big_number_fit_chars;
     const customLabelColors = jsonMetadataObj.label_colors || {};
     const updatedDashboardMetadata = {
-      ...originalDashboardMetadata.current,
+      ...omit(originalDashboardMetadata.current, [
+        'uniform_big_number_font_size_px',
+        'big_number_fit_chars',
+      ]),
       label_colors: customLabelColors,
       color_scheme: updatedColorScheme,
       show_chart_timestamps: showChartTimestamps,
       uniform_big_number_font_size: uniformBigNumberFontSize,
+      ...(uniformBigNumberFontSizePx !== null && {
+        uniform_big_number_font_size_px: uniformBigNumberFontSizePx,
+      }),
     };
 
     originalDashboardMetadata.current = updatedDashboardMetadata;
@@ -855,12 +877,16 @@ const PropertiesModal = ({
                   hasCustomLabelsColor={hasCustomLabelsColor}
                   showChartTimestamps={showChartTimestamps}
                   uniformBigNumberFontSize={uniformBigNumberFontSize}
+                  uniformBigNumberFontSizePx={uniformBigNumberFontSizePx}
                   jsonMetadata={jsonMetadata}
                   onThemeChange={handleThemeChange}
                   onColorSchemeChange={onColorSchemeChange}
                   onCustomCssChange={handleCustomCssChange}
                   onShowChartTimestampsChange={setShowChartTimestamps}
                   onUniformBigNumberFontSizeChange={setUniformBigNumberFontSize}
+                  onUniformBigNumberFontSizePxChange={
+                    setUniformBigNumberFontSizePx
+                  }
                   onJsonMetadataChange={setJsonMetadata}
                   addDangerToast={addDangerToast}
                 />

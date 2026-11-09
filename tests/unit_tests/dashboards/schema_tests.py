@@ -48,10 +48,20 @@ def test_json_metadata_schema_accepts_big_number_sizing() -> None:
     errors = DashboardJSONMetadataSchema().validate(
         {
             "uniform_big_number_font_size": True,
+            "uniform_big_number_font_size_px": 48,
             "big_number_fit_chars": 12,
         }
     )
     assert errors == {}
+
+    # Leaving the optional size unset (None) is valid too: the chart default
+    # is then used instead of a dashboard-wide absolute size.
+    assert (
+        DashboardJSONMetadataSchema().validate(
+            {"uniform_big_number_font_size_px": None}
+        )
+        == {}
+    )
 
 
 def _dataset_payload() -> dict[str, Any]:

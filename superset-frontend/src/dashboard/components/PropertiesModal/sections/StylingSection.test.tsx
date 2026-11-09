@@ -81,6 +81,7 @@ const defaultProps = {
   hasCustomLabelsColor: false,
   showChartTimestamps: false,
   uniformBigNumberFontSize: false,
+  uniformBigNumberFontSizePx: null,
   jsonMetadata: '{}',
   onJsonMetadataChange: jest.fn(),
   onThemeChange: jest.fn(),
@@ -88,6 +89,7 @@ const defaultProps = {
   onCustomCssChange: jest.fn(),
   onShowChartTimestampsChange: jest.fn(),
   onUniformBigNumberFontSizeChange: jest.fn(),
+  onUniformBigNumberFontSizePxChange: jest.fn(),
   addDangerToast: jest.fn(),
 };
 
@@ -197,7 +199,7 @@ test('calls onShowChartTimestampsChange when switch is toggled', async () => {
   expect(onShowChartTimestampsChange.mock.calls[0][0]).toBe(true);
 });
 
-test('renders the uniform big number font size field without a manual reference input', () => {
+test('renders the uniform big number font size switch without a size input while disabled', () => {
   render(<StylingSection {...defaultProps} />);
   expect(
     screen.getByTestId('dashboard-uniform-big-number-field'),
@@ -205,10 +207,26 @@ test('renders the uniform big number font size field without a manual reference 
   expect(
     screen.getByTestId('dashboard-uniform-big-number-switch'),
   ).not.toBeChecked();
-  // The longest number is detected from the dashboard data at render time.
   expect(
-    screen.queryByTestId('dashboard-big-number-fit-chars-field'),
+    screen.queryByTestId('dashboard-uniform-big-number-size-field'),
   ).not.toBeInTheDocument();
+});
+
+test('offers an optional big number font size when uniform sizing is enabled', () => {
+  render(
+    <StylingSection
+      {...defaultProps}
+      uniformBigNumberFontSize
+      uniformBigNumberFontSizePx={48}
+    />,
+  );
+  expect(
+    screen.getByTestId('dashboard-uniform-big-number-size-field'),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByTestId('dashboard-uniform-big-number-size-input'),
+  ).toBeInTheDocument();
+  expect(screen.getByDisplayValue('48')).toBeInTheDocument();
 });
 
 test('calls onUniformBigNumberFontSizeChange when the switch is toggled', async () => {
