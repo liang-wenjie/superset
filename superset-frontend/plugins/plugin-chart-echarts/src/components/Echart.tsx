@@ -165,6 +165,7 @@ function Echart(
     selectedValues = {},
     refs,
     vizType,
+    onRendered,
   }: EchartsProps,
   ref: Ref<EchartsHandler>,
 ) {
@@ -182,6 +183,12 @@ function Echart(
     [selectedValues],
   );
   const previousSelection = useRef<string[]>([]);
+  // Keep the latest callback without re-registering the `finished` listener
+  // that is installed once when the ECharts instance is created.
+  const onRenderedRef = useRef(onRendered);
+  useEffect(() => {
+    onRenderedRef.current = onRendered;
+  }, [onRendered]);
 
   useImperativeHandle(ref, () => ({
     getEchartInstance: () => chartRef.current,
@@ -221,6 +228,7 @@ function Echart(
         // is the only event that guarantees the canvas is fully drawn.
         chartRef.current.on('finished', () => {
           divRef.current?.classList.add(ECHARTS_RENDER_FINISHED_CLASS);
+          onRenderedRef.current?.();
         });
       }
       // did mount

@@ -57,6 +57,8 @@ export interface EchartsProps {
   forceClear?: boolean;
   refs: Refs;
   vizType?: string;
+  /** Called after ECharts finishes painting, including resize and dataZoom. */
+  onRendered?: () => void;
 }
 
 export interface EchartsHandler {

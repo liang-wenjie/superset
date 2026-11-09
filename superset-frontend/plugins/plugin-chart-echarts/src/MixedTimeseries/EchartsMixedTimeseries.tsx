@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AxisType,
   BinaryQueryObjectFilterClause,
@@ -31,9 +31,22 @@ import {
   isHorizontalMixedChart,
 } from './types';
 import Echart from '../components/Echart';
-import { EventHandlers } from '../types';
+import { EchartsHandler, EventHandlers } from '../types';
+import ChartDataTable from '../components/ChartDataTable';
+import {
+  areColumnLayoutsEqual,
+  buildDataTable,
+  computeColumnLayout,
+  DATA_TABLE_FONT_SIZE,
+  getDataTableGridLeft,
+  getDataTableHeight,
+  type ColumnLayout,
+} from '../components/chartDataTableUtils';
 import { formatSeriesName } from '../utils/series';
 import { useLegendEventHandlers } from '../utils/legendEventHandlers';
+
+const MIN_CHART_HEIGHT = 80;
+const EMPTY_COLUMN_LAYOUT: ColumnLayout = { boundaries: [], indexes: [] };
 
 export default function EchartsMixedTimeseries({
   height,
@@ -57,6 +70,88 @@ export default function EchartsMixedTimeseries({
   onLegendStateChanged,
   onLegendScroll,
 }: EchartsMixedTimeseriesChartTransformedProps) {
+  // The table is a per-chart control stored in form_data. Horizontal charts
+  // have a value X axis, so there are no categories to align columns with.
+  const showDataTable =
+    Boolean(formData.showDataTable) && !isHorizontalMixedChart(formData);
+  const echartRef = useRef<EchartsHandler | null>(null);
+
+  const tableData = useMemo(
+    () =>
+      showDataTable
+        ? buildDataTable(
+            echartOptions,
+            formData.yAxisFormat,
+            formData.yAxisFormatSecondary,
+          )
+        : null,
+    [
+      showDataTable,
+      echartOptions,
+      formData.yAxisFormat,
+      formData.yAxisFormatSecondary,
+    ],
+  );
+
+  const [columnLayout, setColumnLayout] =
+    useState<ColumnLayout>(EMPTY_COLUMN_LAYOUT);
+
+  const handleRendered = useCallback(() => {
+    const chart = echartRef.current?.getEchartInstance();
+    if (!chart || !tableData) {
+      return;
+    }
+    const next = computeColumnLayout(chart, tableData.columns, width);
+    setColumnLayout(previous =>
+      areColumnLayoutsEqual(previous, next) ? previous : next,
+    );
+  }, [tableData, width]);
+
+  // `finished` covers repaint, resize and dataZoom. Recompute on size changes
+  // as a safety net for resizes that do not emit a repaint.
+  useEffect(() => {
+    if (!showDataTable) {
+      return undefined;
+    }
+    const frame = requestAnimationFrame(handleRendered);
+    return () => cancelAnimationFrame(frame);
+  }, [showDataTable, handleRendered, width, height]);
+
+  const tableHeight = tableData ? getDataTableHeight(tableData.rows.length) : 0;
+  const chartHeight = Math.max(
+    height - tableHeight,
+    Math.min(MIN_CHART_HEIGHT, height),
+  );
+
+  // Reserve enough room on the left for the longest series name. Raising
+  // grid.left moves the Y axis and the plot area to the right; the table's
+  // legend column then aligns to that new plot edge via computeColumnLayout.
+  const requiredGridLeft = useMemo(
+    () =>
+      showDataTable && tableData
+        ? getDataTableGridLeft(tableData.rows, DATA_TABLE_FONT_SIZE, width)
+        : 0,
+    [showDataTable, tableData, width],
+  );
+
+  const chartOptions = useMemo(() => {
+    if (!requiredGridLeft) {
+      return echartOptions;
+    }
+    const { grid } = echartOptions as { grid?: unknown };
+    if (!grid || typeof grid !== 'object' || Array.isArray(grid)) {
+      return echartOptions;
+    }
+    const gridObject = grid as Record<string, unknown>;
+    const currentLeft =
+      typeof gridObject.left === 'number' ? gridObject.left : 0;
+    const nextLeft = Math.max(currentLeft, requiredGridLeft);
+    if (nextLeft === currentLeft) {
+      return echartOptions;
+    }
+    return { ...echartOptions, grid: { ...gridObject, left: nextLeft } };
+  }, [echartOptions, requiredGridLeft]);
+
   const isFirstQuery = useCallback(
     (seriesIndex: number) => seriesIndex < seriesBreakdown,
     [seriesBreakdown],
@@ -237,14 +332,21 @@ export default function EchartsMixedTimeseries({
   };
 
   return (
-    <Echart
-      refs={refs}
-      height={height}
-      width={width}
-      echartOptions={echartOptions}
-      eventHandlers={eventHandlers}
-      selectedValues={selectedValues}
-      vizType={formData.vizType}
-    />
+    <>
+      <Echart
+        ref={echartRef}
+        refs={refs}
+        height={chartHeight}
+        width={width}
+        echartOptions={chartOptions}
+        eventHandlers={eventHandlers}
+        selectedValues={selectedValues}
+        vizType={formData.vizType}
+        onRendered={showDataTable ? handleRendered : undefined}
+      />
+      {showDataTable && tableData && tableData.rows.length > 0 && (
+        <ChartDataTable width={width} data={tableData} layout={columnLayout} />
+      )}
+    </>
   );
 }

@@ -91,6 +91,8 @@ export type EchartsMixedTimeseriesFormData = QueryFormData & {
   seriesTypeB: EchartsTimeseriesSeriesType;
   showValue: boolean;
   showValueB: boolean;
+  /** Render a series-by-category data table directly below the X axis. */
+  showDataTable?: boolean;
   /**
    * Where the data label sits relative to its data point on query A, applied
    * when `showValue` is on.
@@ -153,6 +155,7 @@ export const DEFAULT_FORM_DATA: EchartsMixedTimeseriesFormData = {
   seriesTypeB: TIMESERIES_DEFAULTS.seriesType,
   showValue: TIMESERIES_DEFAULTS.showValue,
   showValueB: TIMESERIES_DEFAULTS.showValue,
+  showDataTable: false,
   labelPosition: 'auto',
   labelPositionB: 'auto',
   stack: TIMESERIES_DEFAULTS.stack,

@@ -508,6 +508,23 @@ const config: ControlPanelConfig = {
         ...createCustomizeSection(t('Query A'), ''),
         ...createCustomizeSection(t('Query B'), 'B'),
         ['zoomable'],
+        [
+          {
+            name: 'showDataTable',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Show data table below X axis'),
+              description: t(
+                'Render a table under the X axis with one row per series and columns aligned to the X axis categories. Vertical charts only.',
+              ),
+              default: false,
+              renderTrigger: true,
+              disableStash: true,
+              visibility: ({ controls }: ControlPanelsContainerProps) =>
+                controls?.orientation?.value !== OrientationType.Horizontal,
+            },
+          },
+        ],
         [minorTicks],
         [axisTicks],
         [gridlines],
