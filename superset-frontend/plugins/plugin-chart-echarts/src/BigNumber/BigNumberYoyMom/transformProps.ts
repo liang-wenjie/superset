@@ -112,6 +112,31 @@ const estimateTextWidth = (
 const TEXT_FIT_SAFETY_MARGIN = 3;
 
 /**
+ * Width of a formatted number at 1px, in font-size units. The legacy estimate
+ * above charges a flat 0.68 per ASCII character, which overstates digits by
+ * ~20% and separators by ~2x. Adaptive sizing uses these finer factors so it
+ * keeps the biggest font size that still fits the tile.
+ */
+const numericWidthPerPx = (text: string): number =>
+  Array.from(text).reduce((width, char) => {
+    const code = char.charCodeAt(0);
+    if (code > 255) return width + 1;
+    if (char >= '0' && char <= '9') return width + 0.58;
+    if (char === ',' || char === '.' || char === '-' || char === ' ') {
+      return width + 0.3;
+    }
+    return width + 0.62;
+  }, 0);
+
+// The dashboard reference text cannot know about prefixes added by the chart
+// formatter (currency symbols, percent signs), so leave a little headroom.
+const ADAPTIVE_WIDTH_HEADROOM = 1.05;
+
+// Used only until the dashboard query data is available. Twelve digits is a
+// conservative stand-in that keeps long values from overflowing on first paint.
+const FALLBACK_REFERENCE_NUMBER = '000000000000';
+
+/**
  * Read a comparison value column from a result row. Saved metrics are plain
  * column names; adhoc metrics are named by their label, or by the SQL
  * expression itself when no label is set. The backend may normalize
@@ -227,6 +252,12 @@ export default function transformProps(
     pick<boolean>('uniformBigNumberFontSize') ??
     DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE;
   const uniformBigNumberFontSizePx = pick<number>('uniformBigNumberFontSizePx');
+  // Widest formatted number among the KPI tiles of the same area, injected by
+  // the dashboard. Explore (no dashboard state) falls back to this tile's own
+  // value, which degenerates into the ordinary per-tile fit.
+  const uniformBigNumberReferenceText = pick<string>(
+    'uniformBigNumberReferenceText',
+  );
   const showComparison1 = pick<boolean>('showComparison1') ?? true;
   const comparison1Label =
     pick<string>('comparison1Label') ?? t(DEFAULT_COMPARISON1_LABEL);
@@ -425,35 +456,57 @@ export default function transformProps(
     0,
     width - bigNumberLeft - DEFAULT_BIG_NUMBER_LEFT - TEXT_FIT_SAFETY_MARGIN,
   );
-  // Uniform sizing keeps the configured font size: the dashboard may set one
-  // absolute pixel size, and when it is unset the chart's own
-  // big_number_font_size (or the plugin default) wins. ONE ratio derived from
-  // that target is applied to every text size and internal gap, so tiles of
-  // the same area render identically and the title / comparison rows stay
-  // proportional. No width-based auto-fit runs in this mode: the configured
-  // size is the size (lower the dashboard value if a long number is clipped).
-  // With uniform sizing off, every element keeps its own auto-fit behaviour.
+  // Uniform sizing keeps the configured font size as an UPPER BOUND: the
+  // dashboard may set one absolute pixel size, and when it is unset the
+  // chart's own big_number_font_size (or the plugin default) wins. The tile
+  // then adapts down only when the widest number of its area would not fit,
+  // so long values are never clipped and short values never blow up. ONE
+  // ratio derived from that final size is applied to every text size and
+  // internal gap, so tiles of the same area stay identical and the title /
+  // comparison rows stay proportional. With uniform sizing off, every element
+  // keeps its own auto-fit behaviour.
   const configuredBigNumberFontSizePx =
     typeof uniformBigNumberFontSizePx === 'number' &&
     Number.isFinite(uniformBigNumberFontSizePx) &&
     uniformBigNumberFontSizePx > 0
       ? Math.ceil(uniformBigNumberFontSizePx)
       : baseBigNumberFontSizePx;
+  const referenceText =
+    uniformBigNumberReferenceText ??
+    (uniformBigNumberFontSize ? FALLBACK_REFERENCE_NUMBER : bigNumberText);
+  const adaptiveBigNumberFontSizePx =
+    bigNumberAvailableWidth > 0
+      ? Math.floor(
+          bigNumberAvailableWidth /
+            // Reserve one extra character for a currency symbol or percent
+            // sign the dashboard reference text cannot know about.
+            ((numericWidthPerPx(referenceText) + 0.62) *
+              ADAPTIVE_WIDTH_HEADROOM),
+        )
+      : configuredBigNumberFontSizePx;
+  const effectiveBigNumberFontSizePx = Math.max(
+    8,
+    Math.min(configuredBigNumberFontSizePx, adaptiveBigNumberFontSizePx),
+  );
   const uniformScale = uniformBigNumberFontSize
-    ? Math.max(
-        0.1,
-        configuredBigNumberFontSizePx / Math.max(1, baseBigNumberFontSizePx),
-      )
+    ? effectiveBigNumberFontSizePx / Math.max(1, baseBigNumberFontSizePx)
     : 1;
-  const scaleFontSize = (size: number) =>
-    Math.max(1, Math.floor(size * uniformScale));
+  // Keep the smaller labels readable on very narrow tiles; the big number
+  // itself has no artificial floor so it can always fit the reference text.
+  const scaleFontSize = (size: number, minSize = 1) =>
+    Math.max(minSize, Math.floor(size * uniformScale));
   const scaleGap = (gap: number) =>
     uniformBigNumberFontSize
       ? Math.max(0, Math.floor(gap * uniformScale))
       : gap;
-  const titleFontSizePx = scaleFontSize(baseTitleFontSizePx);
-  const requestedBigNumberFontSizePx = scaleFontSize(baseBigNumberFontSizePx);
-  const requestedComparisonFontSizePx = scaleFontSize(baseComparisonFontSizePx);
+  const titleFontSizePx = scaleFontSize(baseTitleFontSizePx, 10);
+  const requestedBigNumberFontSizePx = uniformBigNumberFontSize
+    ? effectiveBigNumberFontSizePx
+    : scaleFontSize(baseBigNumberFontSizePx);
+  const requestedComparisonFontSizePx = scaleFontSize(
+    baseComparisonFontSizePx,
+    10,
+  );
 
   const estimatedBigNumberWidth = estimateTextWidth(
     bigNumberText,

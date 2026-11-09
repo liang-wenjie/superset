@@ -315,10 +315,10 @@ const StylingSection = ({
       </StyledSwitchContainer>
       {uniformBigNumberFontSize && (
         <ModalFormField
-          label={t('Big number font size (px)')}
+          label={t('Big number font size (px, max)')}
           testId="dashboard-uniform-big-number-size-field"
           helperText={t(
-            'Leave empty to use the size configured on each chart (or its default). Set a value to fix the big number size across the dashboard; if a long number is clipped, lower this value or widen the tiles.',
+            'Upper bound for the big number size. Tiles of the same size adapt down together to fit their longest number, then scale the title, comparison rows and spacing by the same ratio. Leave empty to use the size configured on each chart (or its default) as the upper bound.',
           )}
         >
           <InputNumber
