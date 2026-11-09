@@ -215,11 +215,27 @@ export default styled.div`
       height: auto;
     }
 
-    /* Pagination styling */
-    .dt-pagination {
-      text-align: right;
+    /* Pagination styling: page size selector on the left, page numbers on
+       the right, both aligned with the table edges. */
+    .dt-pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: ${theme.sizeUnit * 2}px;
       /* use padding instead of margin so clientHeight can capture it */
       padding: ${theme.paddingXXS}px 0px;
+    }
+
+    .dt-pagination-bar .dt-select-page-size {
+      font-size: ${theme.fontSizeSM}px;
+      color: ${theme.colorTextSecondary};
+      white-space: nowrap;
+    }
+
+    .dt-pagination {
+      text-align: right;
+      margin-left: auto;
     }
 
     .dt-pagination .pagination {

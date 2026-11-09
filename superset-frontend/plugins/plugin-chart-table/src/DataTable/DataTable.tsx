@@ -210,8 +210,9 @@ export default typedMemo(function DataTable<D extends object>({
   const sortByRef = useRef([]); // cache initial `sortby` so sorting doesn't trigger page reset
   const pageSizeRef = useRef([initialPageSize, resultsSize]);
   const hasPagination = initialPageSize > 0 && resultsSize > 0; // pageSize == 0 means no pagination
-  const hasGlobalControl =
-    hasPagination || !!searchInput || renderTimeComparisonDropdown;
+  // The page size selector lives in the bottom pagination bar, so only the
+  // search and time comparison controls still need a row above the table.
+  const hasGlobalControl = !!searchInput || !!renderTimeComparisonDropdown;
   const initialState = {
     ...initialState_,
     // zero length means all pages, the `usePagination` plugin does not
@@ -540,9 +541,10 @@ export default typedMemo(function DataTable<D extends object>({
     setPageSize(initialPageSize);
   }
 
-  const paginationStyle: CSSProperties = sticky.height
-    ? {}
-    : { visibility: 'hidden' };
+  // In sticky mode the bar is revealed once the table has been measured;
+  // without sticky headers there is nothing to wait for, so keep it visible.
+  const paginationStyle: CSSProperties =
+    !doSticky || sticky.height ? {} : { visibility: 'hidden' };
 
   let resultPageCount = pageCount;
   let resultCurrentPageSize = pageSize;
@@ -589,25 +591,12 @@ export default typedMemo(function DataTable<D extends object>({
             wrap
             className="row"
             align="center"
-            justify="space-between"
+            justify="flex-end"
             gap="middle"
             css={(theme: SupersetTheme) => css`
               font-size: ${theme.fontSizeSM}px;
             `}
           >
-            {hasPagination ? (
-              <SelectPageSize
-                total={resultsSize}
-                current={resultCurrentPageSize}
-                options={pageSizeOptions}
-                selectRenderer={
-                  typeof selectPageSize === 'boolean'
-                    ? undefined
-                    : selectPageSize
-                }
-                onChange={setPageSize}
-              />
-            ) : null}
             <Flex wrap align="center" gap="middle">
               {searchInput && (
                 <>
@@ -644,15 +633,30 @@ export default typedMemo(function DataTable<D extends object>({
         </div>
       ) : null}
       {wrapStickyTable ? wrapStickyTable(renderTable) : renderTable()}
-      {hasPagination && resultPageCount > 1 ? (
-        <SimplePagination
+      {hasPagination ? (
+        <div
           ref={paginationRef}
+          className="dt-pagination-bar"
           style={paginationStyle}
-          maxPageItemCount={maxPageItemCount}
-          pageCount={resultPageCount}
-          currentPage={resultCurrentPage}
-          onPageChange={resultOnPageChange}
-        />
+        >
+          <SelectPageSize
+            total={resultsSize}
+            current={resultCurrentPageSize}
+            options={pageSizeOptions}
+            selectRenderer={
+              typeof selectPageSize === 'boolean' ? undefined : selectPageSize
+            }
+            onChange={setPageSize}
+          />
+          {resultPageCount > 1 ? (
+            <SimplePagination
+              maxPageItemCount={maxPageItemCount}
+              pageCount={resultPageCount}
+              currentPage={resultCurrentPage}
+              onPageChange={resultOnPageChange}
+            />
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

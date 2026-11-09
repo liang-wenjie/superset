@@ -3107,6 +3107,83 @@ describe('plugin-chart-table', () => {
       expect(style.marginBottom).toBe('0px');
     });
 
+    test('renders the page size selector on the left of the pagination bar', () => {
+      const data30 = Array.from({ length: 30 }, (_, i) => ({
+        name: `User ${i + 1}`,
+        sum__num: (i + 1) * 100,
+      }));
+      const props = transformProps({
+        ...testData.basic,
+        rawFormData: {
+          ...testData.basic.rawFormData,
+          page_length: 10,
+          metrics: ['sum__num'],
+          groupby: ['name'],
+        },
+        queriesData: [
+          {
+            ...testData.basic.queriesData[0],
+            colnames: ['name', 'sum__num'],
+            coltypes: [GenericDataType.String, GenericDataType.Numeric],
+            data: data30,
+          },
+        ],
+      });
+
+      const { container } = render(
+        <ProviderWrapper>
+          <TableChart {...props} sticky={false} />
+        </ProviderWrapper>,
+      );
+
+      const bar = container.querySelector('.dt-pagination-bar');
+      expect(bar).not.toBeNull();
+      const pageSizeSelector = bar?.querySelector('.dt-select-page-size');
+      const pageNumbers = bar?.querySelector('.dt-pagination');
+      expect(pageSizeSelector).not.toBeNull();
+      expect(pageNumbers).not.toBeNull();
+
+      // DOM order matches the visual left-to-right order of the flex bar.
+      expect(
+        pageSizeSelector!.compareDocumentPosition(pageNumbers!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      // The label and the select sit on the same row and are associated.
+      const label = pageSizeSelector?.querySelector('label');
+      expect(label).toHaveTextContent('Entries per page');
+      expect(label?.getAttribute('for')).toBe('pageSizeSelect');
+      expect(
+        pageSizeSelector?.querySelector('[id="pageSizeSelect"]'),
+      ).not.toBeNull();
+
+      // The selector no longer takes up a row above the table.
+      const topControls = container.querySelector('.dt-controls');
+      expect(topControls?.querySelector('.dt-select-page-size')).toBeFalsy();
+
+      const barStyle = getComputedStyle(bar as HTMLElement);
+      expect(barStyle.display).toBe('flex');
+      expect(barStyle.justifyContent).toBe('space-between');
+    });
+
+    test('keeps the page size selector when there is only one page', () => {
+      const { container } = render(
+        <ProviderWrapper>
+          <TableChart {...transformProps(testData.basic)} sticky={false} />
+        </ProviderWrapper>,
+      );
+
+      expect(
+        container.querySelector('.dt-pagination-bar .dt-select-page-size'),
+      ).not.toBeNull();
+      expect(container.querySelector('.dt-pagination')).toBeNull();
+      expect(
+        getComputedStyle(
+          container.querySelector('.dt-pagination-bar') as HTMLElement,
+        ).visibility,
+      ).not.toBe('hidden');
+    });
+
     test('should build columnLabelToNameMap for adhoc columns with custom labels', () => {
       const result = transformProps({
         ...testData.basic,

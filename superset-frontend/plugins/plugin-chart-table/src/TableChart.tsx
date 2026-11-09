@@ -264,21 +264,6 @@ function SortIcon<D extends object>({ column }: { column: ColumnInstance<D> }) {
   return sortIcon;
 }
 
-/**
- * Label that is visually hidden but accessible
- */
-const VisuallyHidden = styled.label`
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-`;
-
 function SearchInput({
   count,
   value,
@@ -314,18 +299,20 @@ function SelectPageSize({
   const { Option } = Select;
 
   return (
-    <Space direction="vertical" size={4} className="dt-select-page-size">
-      <VisuallyHidden htmlFor="pageSizeSelect">
-        {t('Select page size')}
-      </VisuallyHidden>
-      {t('Entries per page')}
+    <Space
+      direction="horizontal"
+      size={8}
+      align="center"
+      className="dt-select-page-size"
+    >
+      <label htmlFor="pageSizeSelect">{t('Entries per page')}</label>
       <Select<number>
         id="pageSizeSelect"
         value={current}
         onChange={value => onChange(value)}
         size="small"
         css={(theme: SupersetTheme) => css`
-          width: ${theme.sizeUnit * 30}px;
+          width: ${theme.sizeUnit * 18}px;
         `}
         aria-label={t('Show entries per page')}
       >
