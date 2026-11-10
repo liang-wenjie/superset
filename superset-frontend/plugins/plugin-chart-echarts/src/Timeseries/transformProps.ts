@@ -49,6 +49,7 @@ import {
   TimeseriesDataRecord,
   NumberFormats,
 } from '@superset-ui/core';
+import type { QueryFormData } from '@superset-ui/core';
 import { GenericDataType } from '@apache-superset/core/common';
 import { isThemeDark } from '@apache-superset/core/theme';
 import {
@@ -103,6 +104,11 @@ import {
   resolveTemporalTickValues,
 } from '../utils/series';
 import { resolveLegendLayout } from '../utils/legendLayout';
+import {
+  getDimensionColumnNames,
+  getHiddenDimensionLabels,
+  stripDimensionValueLabels,
+} from '../utils/inlineFilterSeriesName';
 import {
   extractAnnotationLabels,
   getAnnotationData,
@@ -486,7 +492,7 @@ export default function transformProps(
   // derived comparison row from a base row whose dimension value happens to read like
   // the offset, and it is gone from `labelMap` by the time the formatters run.
   const derivedComparisonSeries = new Set<string>();
-  const labelMap: { [key: string]: string[] } = Object.entries(
+  const rawLabelMap: { [key: string]: string[] } = Object.entries(
     label_map,
   ).reduce((acc, entry) => {
     if (
@@ -499,6 +505,44 @@ export default function transformProps(
     }
     return { ...acc, [entry[0]]: entry[1] };
   }, {});
+
+  // A single-select inline filter on a groupby dimension already narrows the
+  // query to one value, so the trailing ", <dimension value>" in each series
+  // name is redundant. `ChartProps` camelCases `formData` while `rawFormData`
+  // keeps the original keys; pass both so injected filters are always found.
+  const hiddenDimensionLabels = getHiddenDimensionLabels(
+    formData as unknown as QueryFormData,
+    chartProps.rawFormData as unknown as QueryFormData | undefined,
+  );
+  const dimensionColumns = getDimensionColumnNames(groupBy);
+  // A chart without a declared groupby can still receive suffixed names from
+  // the backend label map; then the selected value is the only reliable match.
+  const hiddenValues =
+    groupBy.length === 0
+      ? hiddenDimensionLabels.map(({ value }) => value)
+      : hiddenDimensionLabels
+          .filter(({ column }) => dimensionColumns.has(column))
+          .map(({ value }) => value);
+  const getDisplayName = (name: string): string =>
+    stripDimensionValueLabels(name, hiddenValues);
+
+  // labelMap is keyed by the backend column name, but cross-filter, drill-by
+  // and tooltip handlers look it up by the rendered series name. Keep the
+  // original keys and add aliases so both spellings resolve after a rename.
+  const labelMap: { [key: string]: string[] } =
+    hiddenValues.length === 0
+      ? rawLabelMap
+      : Object.entries(rawLabelMap).reduce<{ [key: string]: string[] }>(
+          (acc, [name, columns]) => {
+            acc[name] = columns;
+            const displayName = getDisplayName(name);
+            if (displayName !== name && acc[displayName] === undefined) {
+              acc[displayName] = columns;
+            }
+            return acc;
+          },
+          {},
+        );
   const colorScale = CategoricalColorNamespace.getScale(colorScheme as string);
   const forecastRebasedData = rebaseForecastDatum(data, verboseMap);
   let xAxisLabel = getXAxisLabel(chartProps.rawFormData) as string;
@@ -1072,16 +1116,26 @@ export default function transformProps(
       },
     );
     if (transformedSeries) {
+      // Rename only the rendered series. Colors, stack groups, derived-series
+      // detection and legend/filter state were all derived from the original
+      // name above, so they must stay untouched.
+      const displayName = getDisplayName(
+        String(transformedSeries.name ?? entryName),
+      );
+      const namedSeries =
+        displayName === transformedSeries.name
+          ? transformedSeries
+          : ({ ...transformedSeries, name: displayName } as SeriesOption);
       if (stack === StackControlsValue.Stream) {
         // bug in Echarts - `stackStrategy: 'all'` doesn't work with nulls, so we cast them to 0
         series.push({
-          ...transformedSeries,
+          ...namedSeries,
           data: (transformedSeries.data as any).map(
             (row: [string | number, number]) => [row[0], row[1] ?? 0],
           ),
         });
       } else {
-        series.push(transformedSeries);
+        series.push(namedSeries);
       }
     }
   });
@@ -1419,7 +1473,7 @@ export default function transformProps(
               extractForecastSeriesContext(entry.name || '').type ===
               ForecastSeriesEnum.Observation,
           )
-          .map(entry => entry.name || '')
+          .map(entry => getDisplayName(String(entry.name || '')))
           .concat(extractAnnotationLabels(annotationLayers));
 
   const sortedLegendData = [...legendData].sort((a: string, b: string) => {

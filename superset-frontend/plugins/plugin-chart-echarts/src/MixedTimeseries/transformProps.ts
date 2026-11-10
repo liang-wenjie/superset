@@ -131,7 +131,7 @@ import {
   getDimensionColumnNames,
   getHiddenDimensionLabels,
   stripDimensionValueLabels,
-} from './inlineFilterSeriesName';
+} from '../utils/inlineFilterSeriesName';
 
 const getFormatter = (
   customFormatters: Record<string, ValueFormatter>,

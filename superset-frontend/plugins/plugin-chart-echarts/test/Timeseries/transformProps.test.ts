@@ -35,6 +35,7 @@ import {
   SMART_DATE_ID,
   TimeseriesAnnotationLayer,
   ChartDataResponseResult,
+  convertKeysToCamelCase,
   TimeGranularity,
   TooltipTruncationMode,
 } from '@superset-ui/core';
@@ -5271,3 +5272,141 @@ test.each([0, 30])(
     ]);
   },
 );
+
+const inlineFilterConfig = (
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  id: 'f1',
+  column: 'foo',
+  filterType: 'single',
+  ...overrides,
+});
+
+const inlineAdhocFilter = (
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  clause: 'WHERE',
+  expressionType: 'SIMPLE',
+  subject: 'foo',
+  operator: '==',
+  comparator: 'girl',
+  isExtra: true,
+  filterOptionName: 'inline_f1',
+  ...overrides,
+});
+
+const inlineQueriesData: ChartDataResponseResult[] = [
+  createTestQueryData(
+    createTestData([{ 'sum__num, girl': 1 }, { 'sum__num, girl': 3 }]),
+    { label_map: { 'sum__num, girl': ['sum__num', 'girl'] } },
+  ),
+];
+
+const transformWithInlineFilters = ({
+  config = [inlineFilterConfig()],
+  filters = [inlineAdhocFilter()],
+  overrides = {},
+}: {
+  config?: Record<string, unknown>[];
+  filters?: Record<string, unknown>[];
+  overrides?: Partial<EchartsTimeseriesFormData>;
+} = {}) => {
+  const formDataWithInline = {
+    ...formData,
+    ...overrides,
+    inline_filters: config,
+    adhoc_filters: filters,
+  } as unknown as EchartsTimeseriesFormData;
+  const testProps = createTestChartProps({
+    formData: formDataWithInline,
+    queriesData: inlineQueriesData,
+  });
+  // Regression: real `ChartProps` camelCases the top-level formData keys, while
+  // the shared helper writes the raw snake_case object back. Force the real
+  // shape and keep rawFormData free of injected filters, so only the camelCased
+  // copy can satisfy the feature -- otherwise this test would pass dead code.
+  return transformProps({
+    ...testProps,
+    formData: convertKeysToCamelCase(formDataWithInline),
+    rawFormData: formData,
+  } as unknown as EchartsTimeseriesChartProps);
+};
+
+const inlineRenderedNames = (
+  transformed: ReturnType<typeof transformProps>,
+): string[] =>
+  ((transformed.echartOptions.series as SeriesOption[]) ?? []).map(series =>
+    String(series.name),
+  );
+
+const inlineLabelMap = (
+  transformed: ReturnType<typeof transformProps>,
+): Record<string, string[]> =>
+  (transformed as unknown as { labelMap: Record<string, string[]> }).labelMap;
+
+test('single-select inline filter on a groupby hides the dimension label', () => {
+  const transformed = transformWithInlineFilters();
+  expect(inlineRenderedNames(transformed)).toContain('sum__num');
+  expect(inlineRenderedNames(transformed)).not.toContain('sum__num, girl');
+
+  // The ECharts legend and the custom legend both read legendData.
+  expect(transformed.legendData).toContain('sum__num');
+  expect(transformed.legendData).not.toContain('sum__num, girl');
+
+  // Cross-filter / drill-by / tooltip resolve the rendered name through
+  // labelMap, so the stripped alias must resolve as well as the original key
+  // (stack grouping and derived-series detection still use the original).
+  expect(inlineLabelMap(transformed)['sum__num']).toEqual(['sum__num', 'girl']);
+  expect(inlineLabelMap(transformed)['sum__num, girl']).toEqual([
+    'sum__num',
+    'girl',
+  ]);
+});
+
+test('dimension label stays without an injected inline filter value', () => {
+  expect(
+    inlineRenderedNames(transformWithInlineFilters({ filters: [] })),
+  ).toContain('sum__num, girl');
+});
+
+test('dimension label stays for multi-select, input and inverse filters', () => {
+  const multi = transformWithInlineFilters({
+    config: [inlineFilterConfig({ filterType: 'multiple' })],
+    filters: [inlineAdhocFilter({ operator: 'IN', comparator: ['girl'] })],
+  });
+  expect(inlineRenderedNames(multi)).toContain('sum__num, girl');
+
+  const input = transformWithInlineFilters({
+    config: [inlineFilterConfig({ filterType: 'input' })],
+    filters: [inlineAdhocFilter({ operator: 'ILIKE', comparator: '%gir%' })],
+  });
+  expect(inlineRenderedNames(input)).toContain('sum__num, girl');
+
+  const inverse = transformWithInlineFilters({
+    config: [inlineFilterConfig({ inverseSelection: true })],
+    filters: [inlineAdhocFilter({ operator: '!=', comparator: 'girl' })],
+  });
+  expect(inlineRenderedNames(inverse)).toContain('sum__num, girl');
+});
+
+test('dimension label stays when the filter column is not a chart dimension', () => {
+  expect(
+    inlineRenderedNames(
+      transformWithInlineFilters({
+        config: [inlineFilterConfig({ column: 'unrelated' })],
+      }),
+    ),
+  ).toContain('sum__num, girl');
+});
+
+test('charts without inline filters keep their original names and label map', () => {
+  const transformed = transformProps(
+    createTestChartProps({ queriesData: inlineQueriesData }),
+  );
+  expect(inlineRenderedNames(transformed)).toContain('sum__num, girl');
+  expect(inlineLabelMap(transformed)['sum__num, girl']).toEqual([
+    'sum__num',
+    'girl',
+  ]);
+  expect(inlineLabelMap(transformed)['sum__num']).toBeUndefined();
+});

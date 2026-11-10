@@ -21,7 +21,7 @@ import {
   getDimensionColumnNames,
   getHiddenDimensionLabels,
   stripDimensionValueLabels,
-} from '../../src/MixedTimeseries/inlineFilterSeriesName';
+} from '../../src/utils/inlineFilterSeriesName';
 
 const asFormData = (value: Record<string, unknown>): QueryFormData =>
   value as unknown as QueryFormData;
