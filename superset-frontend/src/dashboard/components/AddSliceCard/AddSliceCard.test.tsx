@@ -88,3 +88,30 @@ test('does not render the tooltip with anchors', async () => {
   expect(within(tooltip).queryByRole('link')).not.toBeInTheDocument();
   mock.mockRestore();
 });
+
+test('renders the added badge for a chart already on the dashboard', async () => {
+  globalThis.featureFlags = { [FeatureFlag.Thumbnails]: false };
+  await act(async () => {
+    render(<AddSliceCard {...mockedProps} addedCount={1} />);
+  });
+
+  expect(screen.getByTestId('slice-added-badge')).toHaveTextContent('Added');
+});
+
+test('shows the placement count when a chart was added more than once', async () => {
+  globalThis.featureFlags = { [FeatureFlag.Thumbnails]: false };
+  await act(async () => {
+    render(<AddSliceCard {...mockedProps} addedCount={2} />);
+  });
+
+  expect(screen.getByTestId('slice-added-badge')).toHaveTextContent('Added ×2');
+});
+
+test('does not render the added badge for a chart not on the dashboard', async () => {
+  globalThis.featureFlags = { [FeatureFlag.Thumbnails]: false };
+  await act(async () => {
+    render(<AddSliceCard {...mockedProps} />);
+  });
+
+  expect(screen.queryByTestId('slice-added-badge')).not.toBeInTheDocument();
+});

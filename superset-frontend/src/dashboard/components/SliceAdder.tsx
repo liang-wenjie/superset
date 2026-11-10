@@ -72,9 +72,15 @@ export type SliceAdderProps = {
   errorMessage?: string;
   userId: number;
   selectedSliceIds?: number[];
+  /** Number of layout holders already placed for each chart id. */
+  chartInstanceCounts?: Record<number, number>;
   editMode?: boolean;
   dashboardId: number;
 };
+
+// Stable default so `listRowProps` stays referentially equal between renders
+// when the container does not provide counts.
+const EMPTY_CHART_INSTANCE_COUNTS: Record<number, number> = {};
 
 const KEYS_TO_FILTERS = ['slice_name', 'viz_type', 'datasource_name'];
 const KEYS_TO_SORT = {
@@ -169,7 +175,7 @@ function getFilteredSortedSlices(
 
 export interface SliceListRowProps {
   filteredSlices: Slice[];
-  selectedSliceIdsSet: Set<number>;
+  chartInstanceCounts: Record<number, number>;
   editMode: boolean;
 }
 
@@ -183,12 +189,16 @@ export function SliceListRow({
   index,
   style,
   filteredSlices,
-  selectedSliceIdsSet,
+  chartInstanceCounts,
   editMode,
 }: RowComponentProps<SliceListRowProps>) {
   const cellData = filteredSlices[index];
-
-  const isSelected = selectedSliceIdsSet.has(cellData.slice_id);
+  // A chart may be dropped more than once purely for layout reuse. Every
+  // holder keeps the same chartId, so they share chart data, inline filters
+  // and other chartId-keyed state; only their componentId (position/size)
+  // differs. The badge reports how many holders exist without blocking a
+  // further drag.
+  const addedCount = chartInstanceCounts[cellData.slice_id] ?? 0;
   const type = CHART_TYPE;
   const id = NEW_CHART_ID;
 
@@ -206,7 +216,6 @@ export function SliceListRow({
       }}
       index={index}
       depth={0}
-      disableDragDrop={isSelected}
       editMode={editMode}
       // we must use a custom drag preview within the List because
       // it does not seem to work within a fixed-position container
@@ -225,7 +234,7 @@ export function SliceListRow({
           datasourceUrl={cellData.datasource_url}
           datasourceName={cellData.datasource_name}
           thumbnailUrl={cellData.thumbnail_url}
-          isSelected={isSelected}
+          addedCount={addedCount}
         />
       )}
     </DragDroppable>
@@ -240,6 +249,7 @@ function SliceAdder({
   errorMessage = '',
   userId,
   selectedSliceIds = [],
+  chartInstanceCounts = EMPTY_CHART_INSTANCE_COUNTS,
   editMode = false,
   dashboardId,
 }: SliceAdderProps) {
@@ -387,8 +397,8 @@ function SliceAdder({
   );
 
   const listRowProps = useMemo<SliceListRowProps>(
-    () => ({ filteredSlices, selectedSliceIdsSet, editMode }),
-    [filteredSlices, selectedSliceIdsSet, editMode],
+    () => ({ filteredSlices, chartInstanceCounts, editMode }),
+    [filteredSlices, chartInstanceCounts, editMode],
   );
 
   return (

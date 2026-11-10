@@ -16,25 +16,45 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { createSelector } from '@reduxjs/toolkit';
 import { bindActionCreators, Dispatch, AnyAction } from 'redux';
 import { connect } from 'react-redux';
 import { fetchSlices, updateSlices } from '../actions/sliceEntities';
 import SliceAdder from '../components/SliceAdder';
+import getChartIdsFromLayout from '../util/getChartIdsFromLayout';
 import { RootState } from 'src/dashboard/types';
 
 interface OwnProps {
   height?: number;
 }
 
-function mapStateToProps(
-  { sliceEntities, dashboardInfo, dashboardState }: RootState,
-  ownProps: OwnProps,
-) {
+// Count layout holders per chart id. A chart may be placed more than once,
+// so `dashboardState.sliceIds` (a de-duplicated set of loaded chart data) is
+// not enough to tell the user how many tiles already exist.
+// Explicit signature: an exported createSelector result without one trips
+// TS2883 in composite-project consumers.
+export const selectChartInstanceCounts: (
+  state: RootState,
+) => Record<number, number> = createSelector(
+  (state: RootState) => state.dashboardLayout.present,
+  layout =>
+    getChartIdsFromLayout(layout).reduce<Record<number, number>>(
+      (counts, chartId) => {
+        counts[chartId] = (counts[chartId] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    ),
+);
+
+function mapStateToProps(state: RootState, ownProps: OwnProps) {
+  const { sliceEntities, dashboardInfo, dashboardState } = state;
   return {
     height: ownProps.height,
     userId: +dashboardInfo.userId,
     dashboardId: dashboardInfo.id,
     selectedSliceIds: dashboardState.sliceIds,
+    chartInstanceCounts: selectChartInstanceCounts(state),
     slices: sliceEntities.slices,
     isLoading: sliceEntities.isLoading,
     errorMessage: sliceEntities.errorMessage,

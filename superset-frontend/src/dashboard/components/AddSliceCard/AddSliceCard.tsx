@@ -119,7 +119,8 @@ const MetadataItem: FC<{
 const SliceAddedBadgePlaceholder: FC<{
   showThumbnails?: boolean;
   placeholderRef: (element: HTMLDivElement) => void;
-}> = ({ showThumbnails, placeholderRef }) => (
+  label: string;
+}> = ({ showThumbnails, placeholderRef, label }) => (
   <div
     ref={placeholderRef}
     css={(theme: Theme) => css`
@@ -140,35 +141,37 @@ const SliceAddedBadgePlaceholder: FC<{
       left: ${showThumbnails ? '84px' : 'unset'};
     `}
   >
-    {t('Added')}
+    {label}
   </div>
 );
 
-const SliceAddedBadge: FC<{ placeholder?: HTMLDivElement }> = ({
-  placeholder,
-}) => (
-  <div
-    css={(theme: Theme) => css`
-      /* Display styles */
-      border: 1px solid ${theme.colorBorder};
-      border-radius: ${theme.borderRadius}px;
-      color: ${theme.colorPrimaryText};
-      font-size: ${theme.fontSizeXS}px;
-      letter-spacing: 0.02em;
-      padding: ${theme.sizeUnit / 2}px ${theme.sizeUnit * 2}px;
-      margin-left: ${theme.sizeUnit * 4}px;
-      pointer-events: none;
+const SliceAddedBadge: FC<{
+  placeholder?: HTMLDivElement;
+  label: string;
+}> = ({ placeholder, label }) =>
+  placeholder ? (
+    <div
+      data-test="slice-added-badge"
+      css={(theme: Theme) => css`
+        /* Display styles */
+        border: 1px solid ${theme.colorBorder};
+        border-radius: ${theme.borderRadius}px;
+        color: ${theme.colorPrimaryText};
+        font-size: ${theme.fontSizeXS}px;
+        letter-spacing: 0.02em;
+        padding: ${theme.sizeUnit / 2}px ${theme.sizeUnit * 2}px;
+        margin-left: ${theme.sizeUnit * 4}px;
+        pointer-events: none;
 
-      /* Position styles */
-      display: ${placeholder ? 'unset' : 'none'};
-      position: absolute;
-      top: ${placeholder ? `${placeholder.offsetTop}px` : 'unset'};
-      left: ${placeholder ? `${placeholder.offsetLeft - 2}px` : 'unset'};
-    `}
-  >
-    {t('Added')}
-  </div>
-);
+        /* Position styles */
+        position: absolute;
+        top: ${placeholder.offsetTop}px;
+        left: ${placeholder.offsetLeft - 2}px;
+      `}
+    >
+      {label}
+    </div>
+  ) : null;
 
 const AddSliceCard: FC<{
   datasourceUrl?: string;
@@ -176,7 +179,8 @@ const AddSliceCard: FC<{
   innerRef?:
     | RefObject<HTMLDivElement>
     | ((node: HTMLDivElement | null) => void);
-  isSelected?: boolean;
+  /** How many times this chart is already placed on the dashboard. */
+  addedCount?: number;
   lastModified?: string;
   sliceName: string;
   style?: CSSProperties;
@@ -186,7 +190,7 @@ const AddSliceCard: FC<{
   datasourceUrl,
   datasourceName = '-',
   innerRef,
-  isSelected = false,
+  addedCount = 0,
   lastModified,
   sliceName,
   style = {},
@@ -196,6 +200,14 @@ const AddSliceCard: FC<{
   const showThumbnails = isFeatureEnabled(FeatureFlag.Thumbnails);
   const [sliceAddedBadge, setSliceAddedBadge] = useState<HTMLDivElement>();
   const { mountedPluginMetadata } = usePluginContext();
+  const hasBeenAdded = addedCount > 0;
+  // Reuse the translated "Added" string and append a plain counter, so this
+  // stays localized without introducing a new untranslated message key.
+  const addedLabel = useMemo(() => {
+    if (addedCount === 0) return '';
+    if (addedCount === 1) return t('Added');
+    return `${t('Added')} ×${addedCount}`;
+  }, [addedCount]);
   const vizName = useMemo(
     () => mountedPluginMetadata[visType]?.name || t('Unknown type'),
     [mountedPluginMetadata, visType],
@@ -212,7 +224,7 @@ const AddSliceCard: FC<{
           margin: 0 ${theme.sizeUnit * 3}px ${theme.sizeUnit * 3}px
             ${theme.sizeUnit * 3}px;
           position: relative;
-          cursor: ${isSelected ? 'not-allowed' : 'move'};
+          cursor: move;
           white-space: nowrap;
           overflow: hidden;
           line-height: 1.3;
@@ -221,8 +233,6 @@ const AddSliceCard: FC<{
           &:hover {
             /* background: ${theme.colorFillTertiary}; */
           }
-
-          opacity: ${isSelected ? 0.4 : 'unset'};
         `}
       >
         <div
@@ -245,10 +255,11 @@ const AddSliceCard: FC<{
                 fallback={FALLBACK_THUMBNAIL_URL}
                 position="top"
               />
-              {isSelected && showThumbnails ? (
+              {hasBeenAdded && showThumbnails ? (
                 <SliceAddedBadgePlaceholder
                   placeholderRef={setSliceAddedBadge}
                   showThumbnails={showThumbnails}
+                  label={addedLabel}
                 />
               ) : null}
             </div>
@@ -270,9 +281,10 @@ const AddSliceCard: FC<{
               `}
             >
               <TruncatedTextWithTooltip>{sliceName}</TruncatedTextWithTooltip>
-              {isSelected && !showThumbnails ? (
+              {hasBeenAdded && !showThumbnails ? (
                 <SliceAddedBadgePlaceholder
                   placeholderRef={setSliceAddedBadge}
+                  label={addedLabel}
                 />
               ) : null}
             </div>
@@ -301,7 +313,10 @@ const AddSliceCard: FC<{
           </div>
         </div>
       </div>
-      <SliceAddedBadge placeholder={sliceAddedBadge} />
+      <SliceAddedBadge
+        placeholder={hasBeenAdded ? sliceAddedBadge : undefined}
+        label={addedLabel}
+      />
     </div>
   );
 };

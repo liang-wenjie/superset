@@ -22,7 +22,11 @@ import {
   screen,
   userEvent,
 } from 'spec/helpers/testing-library';
+import type { ReactNode } from 'react';
 import { DatasourceType } from '@superset-ui/core';
+import { CHART_TYPE } from 'src/dashboard/util/componentTypes';
+import { selectChartInstanceCounts } from '../containers/SliceAdder';
+import type { RootState } from '../types';
 import { sliceEntitiesForDashboard as mockSliceEntities } from 'spec/fixtures/mockSliceEntities';
 import { configureStore } from '@reduxjs/toolkit';
 import SliceAdder, {
@@ -49,6 +53,23 @@ jest.mock('@superset-ui/core', () => ({
   ),
 }));
 
+jest.mock('./dnd/DragDroppable', () => ({
+  DragDroppable: ({
+    children,
+    disableDragDrop,
+  }: {
+    children: (props: { dragSourceRef: undefined }) => ReactNode;
+    disableDragDrop?: boolean;
+  }) => (
+    <div
+      data-test="dragdroppable-mock"
+      data-disable-drag-drop={String(disableDragDrop)}
+    >
+      {children({ dragSourceRef: undefined })}
+    </div>
+  ),
+}));
+
 jest.mock('lodash', () => ({
   ...jest.requireActual('lodash'),
   debounce: (fn: Function) => {
@@ -70,6 +91,7 @@ const defaultProps: Omit<SliceAdderProps, 'theme'> = {
   fetchSlices: jest.fn(),
   updateSlices: jest.fn(),
   selectedSliceIds: [127, 128],
+  chartInstanceCounts: {},
   userId: 1,
   dashboardId: 0,
   editMode: false,
@@ -259,7 +281,7 @@ describe('SliceAdder', () => {
           'aria-setsize': filteredSlices.length,
         }}
         filteredSlices={filteredSlices}
-        selectedSliceIdsSet={new Set()}
+        chartInstanceCounts={{}}
         editMode={false}
       />,
       { useDnd: true, store: mockStore },
@@ -280,7 +302,7 @@ describe('SliceAdder', () => {
           'aria-setsize': filteredSlices.length,
         }}
         filteredSlices={filteredSlices}
-        selectedSliceIdsSet={new Set()}
+        chartInstanceCounts={{}}
         editMode={false}
       />,
       { useDnd: true, store: mockStore },
@@ -289,5 +311,62 @@ describe('SliceAdder', () => {
     expect(
       screen.queryByText(filteredSlices[0].slice_name),
     ).not.toBeInTheDocument();
+  });
+
+  test('SliceListRow keeps an already-added chart draggable and reports the count', () => {
+    const filteredSlices = Object.values(mockSliceEntities.slices);
+    const chartId = filteredSlices[0].slice_id;
+    render(
+      <SliceListRow
+        index={0}
+        style={{}}
+        ariaAttributes={{
+          role: 'listitem',
+          'aria-posinset': 1,
+          'aria-setsize': filteredSlices.length,
+        }}
+        filteredSlices={filteredSlices}
+        chartInstanceCounts={{ [chartId]: 2 }}
+        editMode
+      />,
+      { useDnd: true, store: mockStore },
+    );
+
+    // Re-introducing `disableDragDrop={isSelected}` would flip this to
+    // "true" and block dropping the same chart a second time.
+    expect(screen.getByTestId('dragdroppable-mock')).toHaveAttribute(
+      'data-disable-drag-drop',
+      'undefined',
+    );
+    expect(screen.getByTestId('slice-added-badge')).toHaveTextContent(
+      'Added ×2',
+    );
+  });
+
+  test('counts duplicate chart holders in the layout', () => {
+    const state = {
+      dashboardLayout: {
+        present: {
+          'CHART-a': {
+            type: CHART_TYPE,
+            meta: { chartId: 127 },
+            children: [],
+          },
+          'CHART-b': {
+            type: CHART_TYPE,
+            meta: { chartId: 127 },
+            children: [],
+          },
+          'CHART-c': {
+            type: CHART_TYPE,
+            meta: { chartId: 128 },
+            children: [],
+          },
+          ROOT: { type: 'ROOT', meta: {}, children: [] },
+        },
+      },
+    } as unknown as RootState;
+
+    expect(selectChartInstanceCounts(state)).toEqual({ 127: 2, 128: 1 });
   });
 });
