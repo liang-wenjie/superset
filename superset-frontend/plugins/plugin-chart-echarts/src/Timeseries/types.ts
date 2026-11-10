@@ -110,6 +110,8 @@ export type EchartsTimeseriesFormData = QueryFormData & {
   xAxisBounds: [number | undefined | null, number | undefined | null];
   yAxisBounds: [number | undefined | null, number | undefined | null];
   zoomable: boolean;
+  /** Render a series-by-category data table directly below the X axis. */
+  showDataTable?: boolean;
   richTooltip: boolean;
   xAxisLabelRotation: number;
   xAxisLabelInterval: number | string;

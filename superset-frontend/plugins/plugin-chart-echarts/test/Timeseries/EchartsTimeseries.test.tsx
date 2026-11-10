@@ -88,6 +88,7 @@ let mockChart: {
   dispatchAction: jest.Mock;
   setOption: jest.Mock;
   getHeight: jest.Mock;
+  getWidth: jest.Mock;
   convertToPixel: jest.Mock;
   convertFromPixel: jest.Mock;
   getModel: jest.Mock;
@@ -116,6 +117,7 @@ function setupChartMock() {
     dispatchAction: jest.fn(),
     setOption: jest.fn(),
     getHeight: jest.fn(() => 400),
+    getWidth: jest.fn(() => 800),
     // A trivial, invertible mapping so drag pixel deltas translate to
     // predictable x-data-value deltas: pixel = x * PX_PER_UNIT.
     convertToPixel: jest.fn((_finder: unknown, x: number) => x * PX_PER_UNIT),
@@ -940,3 +942,57 @@ test.each([undefined, 'PT6H' as TimeGranularity])(
     ]);
   },
 );
+
+const DATA_TABLE_SERIES = [
+  {
+    name: 'sum__num',
+    type: 'line',
+    queryIndex: 0,
+    yAxisIndex: 0,
+    data: [
+      [1000, 1],
+      [2000, 2],
+    ],
+  },
+];
+
+const renderWithDataTable = (
+  overrides: Partial<TimeseriesChartTransformedProps> = {},
+) =>
+  renderTimeseries({
+    formData: {
+      vizType: 'echarts_timeseries_line',
+      showDataTable: true,
+    } as any,
+    echartOptions: { series: DATA_TABLE_SERIES } as any,
+    ...overrides,
+  });
+
+test('renders the X-axis data table when the per-chart control is on', () => {
+  renderWithDataTable();
+  expect(screen.getByText('sum__num')).toBeInTheDocument();
+  const echartProps = getLatestEchartProps();
+  expect(echartProps.onRendered).toEqual(expect.any(Function));
+  // One 28px row plus the 1px border is taken off the chart height.
+  expect(echartProps.height).toBeLessThan(400);
+});
+
+test('does not render the data table when the control is off', () => {
+  renderTimeseries({
+    formData: { vizType: 'echarts_timeseries_line' } as any,
+    echartOptions: { series: DATA_TABLE_SERIES } as any,
+  });
+  expect(screen.queryByText('sum__num')).not.toBeInTheDocument();
+  expect(getLatestEchartProps().onRendered).toBeUndefined();
+});
+
+test('does not render the data table for horizontal charts', () => {
+  renderWithDataTable({
+    formData: {
+      vizType: 'echarts_timeseries_bar',
+      showDataTable: true,
+      orientation: OrientationType.Horizontal,
+    } as any,
+  });
+  expect(screen.queryByText('sum__num')).not.toBeInTheDocument();
+});

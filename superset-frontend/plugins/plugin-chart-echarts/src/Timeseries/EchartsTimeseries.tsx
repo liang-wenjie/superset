@@ -59,6 +59,18 @@ import { formatSeriesName } from '../utils/series';
 import { getTemporalXAxisDrillByFilter } from '../utils/xAxisDrillByFilter';
 import { useLegendEventHandlers } from '../utils/legendEventHandlers';
 import { ExtraControls } from '../components/ExtraControls';
+import ChartDataTable from '../components/ChartDataTable';
+import {
+  areColumnLayoutsEqual,
+  buildDataTable,
+  computeColumnLayout,
+  DATA_TABLE_FONT_SIZE,
+  getDataTableGridLeft,
+  getDataTableHeight,
+  getGridLabelGutter,
+  resolveDataTableGrid,
+  type ColumnLayout,
+} from '../components/chartDataTableUtils';
 import TimeseriesLegend from './TimeseriesLegend';
 import { TIMESERIES_CONSTANTS, X_AXIS_CROSS_FILTER_SOURCE } from '../constants';
 
@@ -66,6 +78,7 @@ const TIMER_DURATION = 300;
 const MAX_CUSTOM_LEGEND_HEIGHT = 160;
 const MAX_CUSTOM_LEGEND_HEIGHT_RATIO = 0.3;
 const MIN_TIMESERIES_PLOT_HEIGHT = 80;
+const EMPTY_COLUMN_LAYOUT: ColumnLayout = { boundaries: [], indexes: [] };
 // Maximum fraction of chart width that a Left/Right HTML legend may occupy.
 const MAX_CUSTOM_LEGEND_WIDTH_RATIO = 0.4;
 
@@ -146,6 +159,27 @@ export default function EchartsTimeseries({
   onLegendScroll,
 }: TimeseriesChartTransformedProps) {
   const { stack } = formData;
+  // The table is a per-chart control stored in form_data. Horizontal charts
+  // have a value X axis, so there are no categories to align columns with.
+  const showDataTable =
+    Boolean(formData.showDataTable) &&
+    formData.orientation !== OrientationType.Horizontal;
+
+  // Build from the raw transformed options (not the layout-adjusted copy) so
+  // the table height can feed back into the chart height without a cycle.
+  const tableData = useMemo(
+    () =>
+      showDataTable
+        ? buildDataTable(echartOptions, formData.yAxisFormat)
+        : null,
+    [showDataTable, echartOptions, formData.yAxisFormat],
+  );
+  const tableHeight = tableData ? getDataTableHeight(tableData.rows.length) : 0;
+  const [columnLayout, setColumnLayout] =
+    useState<ColumnLayout>(EMPTY_COLUMN_LAYOUT);
+  // `containLabel: true` adds the Y-axis label gutter on top of `grid.left`;
+  // measure it after painting so it is not reserved twice.
+  const [gridLabelGutter, setGridLabelGutter] = useState(0);
   const theme = useTheme();
   const echartRef = useRef<EchartsHandler | null>(null);
   // eslint-disable-next-line no-param-reassign
@@ -839,7 +873,13 @@ export default function EchartsTimeseries({
     [],
   );
 
-  const chartBodyHeight = Math.max(height - extraControlHeight, 0);
+  const contentHeight = showDataTable
+    ? Math.max(
+        height - tableHeight,
+        Math.min(MIN_TIMESERIES_PLOT_HEIGHT, height),
+      )
+    : height;
+  const chartBodyHeight = Math.max(contentHeight - extraControlHeight, 0);
   const isVerticalLegend =
     customLegend?.orientation === LegendOrientation.Left ||
     customLegend?.orientation === LegendOrientation.Right;
@@ -868,6 +908,54 @@ export default function EchartsTimeseries({
       ),
     [chartBodyHeight, echartOptions, formData.zoomable],
   );
+
+  // Reserve room on the left for the longest series name. `grid.left` is
+  // applied to the layout-adjusted options, since the compact-layout branch of
+  // getViableTimeseriesEchartOptions can replace the grid entirely.
+  const requiredGridLeft = useMemo(
+    () =>
+      showDataTable && tableData
+        ? getDataTableGridLeft(
+            tableData.rows,
+            DATA_TABLE_FONT_SIZE,
+            width,
+            gridLabelGutter,
+          )
+        : 0,
+    [showDataTable, tableData, width, gridLabelGutter],
+  );
+  const { chartOptions, appliedGridLeft } = useMemo(
+    () => resolveDataTableGrid(chartEchartOptions, requiredGridLeft),
+    [chartEchartOptions, requiredGridLeft],
+  );
+
+  const handleRendered = useCallback(() => {
+    const chart = echartRef.current?.getEchartInstance?.();
+    if (!chart || !tableData) {
+      return;
+    }
+    const next = computeColumnLayout(chart, tableData.columns, width);
+    setColumnLayout(previous =>
+      areColumnLayoutsEqual(previous, next) ? previous : next,
+    );
+    const gutter = getGridLabelGutter(next.boundaries[0] ?? 0, appliedGridLeft);
+    if (gutter > 0) {
+      setGridLabelGutter(previous =>
+        Math.abs(previous - gutter) < 0.5 ? previous : gutter,
+      );
+    }
+  }, [tableData, width, appliedGridLeft]);
+
+  // `finished` covers repaint, resize and dataZoom. Recompute on size changes
+  // as a safety net for resizes that do not emit a repaint.
+  useEffect(() => {
+    if (!showDataTable) {
+      return undefined;
+    }
+    const frame = requestAnimationFrame(handleRendered);
+    return () => cancelAnimationFrame(frame);
+  }, [showDataTable, handleRendered, width, contentHeight]);
+
   const renderEchart = ({
     chartHeight,
     chartWidth,
@@ -880,12 +968,13 @@ export default function EchartsTimeseries({
       refs={refs}
       height={chartHeight}
       width={chartWidth}
-      echartOptions={chartEchartOptions}
+      echartOptions={chartOptions}
       eventHandlers={eventHandlers}
       queryEventHandlers={queryEventHandlers}
       zrEventHandlers={zrEventHandlers}
       selectedValues={selectedValues}
       vizType={formData.vizType}
+      onRendered={showDataTable ? handleRendered : undefined}
     />
   );
 
@@ -925,6 +1014,9 @@ export default function EchartsTimeseries({
         />
       ) : (
         renderEchart({ chartHeight: chartBodyHeight, chartWidth: width })
+      )}
+      {showDataTable && tableData && tableData.rows.length > 0 && (
+        <ChartDataTable width={width} data={tableData} layout={columnLayout} />
       )}
     </>
   );

@@ -34,7 +34,7 @@ import {
   StackControlOptionsWithoutStream,
 } from './constants';
 import { DEFAULT_FORM_DATA } from './Timeseries/constants';
-import { BarValueLabelPosition } from './Timeseries/types';
+import { BarValueLabelPosition, OrientationType } from './Timeseries/types';
 import { defaultXAxis } from './defaults';
 
 const {
@@ -286,6 +286,30 @@ export const percentageThresholdControl: ControlSetItem = {
       Boolean(!controls?.only_total?.value),
   },
 };
+
+/**
+ * Shared by every Timeseries-family control panel. The table is a per-chart
+ * control stored in form_data, so Explore, dashboards and exports agree.
+ * Horizontal charts have a value X axis and no categories to align to.
+ */
+export const dataTableSection: ControlSetRow[] = [
+  [
+    {
+      name: 'showDataTable',
+      config: {
+        type: 'CheckboxControl',
+        label: t('Show data table below X axis'),
+        description: t(
+          'Render a table under the X axis with one row per series and columns aligned to the X axis categories. Vertical charts only.',
+        ),
+        default: false,
+        renderTrigger: true,
+        visibility: ({ controls }: ControlPanelsContainerProps) =>
+          controls?.orientation?.value !== OrientationType.Horizontal,
+      },
+    },
+  ],
+];
 
 export const showValueSection: ControlSetRow[] = [
   [showValueControl],

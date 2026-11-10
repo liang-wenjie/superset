@@ -64,6 +64,7 @@ import {
 import { DEFAULT_FORM_DATA } from '../../src/Timeseries/constants';
 import { getTimeseriesLegendMaxWidth } from '../../src/Timeseries/EchartsTimeseries';
 import { createEchartsTimeseriesTestChartProps } from '../helpers';
+import { buildDataTable } from '../../src/components/chartDataTableUtils';
 import { BASE_TIMESTAMP, createTestData } from './helpers';
 
 /**
@@ -5409,4 +5410,15 @@ test('charts without inline filters keep their original names and label map', ()
     'girl',
   ]);
   expect(inlineLabelMap(transformed)['sum__num']).toBeUndefined();
+});
+
+test('transformed series actually produce rows for the X-axis data table', () => {
+  // Regression: buildDataTable only accepts series carrying a numeric
+  // queryIndex. Timeseries' transformSeries happens to add one, but a change
+  // there would silently leave the table empty while the control still shows.
+  const transformed = transformProps(createTestChartProps({}));
+  const { columns, rows } = buildDataTable(transformed.echartOptions);
+  expect(columns.length).toBeGreaterThan(0);
+  expect(rows.length).toBeGreaterThan(0);
+  expect(rows[0].cells.some(cell => cell !== '')).toBe(true);
 });

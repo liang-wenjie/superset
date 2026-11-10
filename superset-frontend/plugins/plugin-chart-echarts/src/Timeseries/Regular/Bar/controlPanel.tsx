@@ -54,6 +54,7 @@ import {
   yAxisMinInterval,
   forceMaxInterval,
   colorByPrimaryAxisSection,
+  dataTableSection,
 } from '../../../controls';
 
 import { OrientationType } from '../../types';
@@ -424,6 +425,7 @@ const config: ControlPanelConfig = {
         [gridlines],
         [valueAxisLabels],
         ['zoomable'],
+        ...dataTableSection,
         ...legendSection,
         [<ControlSubSectionHeader>{t('X Axis')}</ControlSubSectionHeader>],
         ...createAxisControl('x'),

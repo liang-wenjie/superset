@@ -48,6 +48,7 @@ import {
   gridlines,
   valueAxisLabels,
   forceMaxInterval,
+  dataTableSection,
 } from '../../controls';
 import { AreaChartStackControlOptions } from '../../constants';
 
@@ -181,6 +182,7 @@ const config: ControlPanelConfig = {
         [gridlines],
         [valueAxisLabels],
         ['zoomable'],
+        ...dataTableSection,
         ...legendSection,
         [<ControlSubSectionHeader>{t('X Axis')}</ControlSubSectionHeader>],
         [

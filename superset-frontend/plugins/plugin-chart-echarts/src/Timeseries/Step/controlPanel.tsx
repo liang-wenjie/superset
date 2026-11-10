@@ -46,6 +46,7 @@ import {
   xAxisLabelRotation,
   xAxisLabelInterval,
   forceMaxInterval,
+  dataTableSection,
 } from '../../controls';
 
 const {
@@ -159,6 +160,7 @@ const config: ControlPanelConfig = {
           },
         ],
         ['zoomable'],
+        ...dataTableSection,
         [minorTicks],
         [axisTicks],
         [gridlines],
