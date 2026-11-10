@@ -45,6 +45,8 @@ export type BigNumberYoyMomFormData = QueryFormData & {
   bigNumberTop?: number;
   uniformBigNumberFontSize?: boolean;
   uniformBigNumberFontSizePx?: number;
+  /** Formatted big numbers of every KPI tile on the dashboard. */
+  uniformBigNumberReferenceTexts?: string[];
   showComparison1?: boolean;
   comparison1Label?: string;
   comparison1Mode?: 'time_shift' | 'metric';

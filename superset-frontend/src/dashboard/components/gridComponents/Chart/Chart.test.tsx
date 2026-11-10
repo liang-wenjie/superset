@@ -232,6 +232,10 @@ test('injects the dashboard big number font size into Big Number charts only', (
     expect.objectContaining({
       uniformBigNumberFontSize: true,
       uniformBigNumberFontSizePx: 48,
+      uniformBigNumberReferenceTexts: expect.arrayContaining([
+        '3,808,637.34',
+        '3808637.34',
+      ]),
     }),
   );
 });
@@ -244,6 +248,9 @@ test('leaves the optional size unset so charts fall back to their own default', 
   >;
   expect(formData.uniformBigNumberFontSize).toBe(true);
   expect(formData).not.toHaveProperty('uniformBigNumberFontSizePx');
+  // The group reference is injected regardless of the optional pixel size:
+  // it is what keeps a long number from being clipped.
+  expect(formData.uniformBigNumberReferenceTexts).toContain('3,808,637.34');
 });
 
 test('does not inject KPI sizing into other viz types', () => {
@@ -254,6 +261,7 @@ test('does not inject KPI sizing into other viz types', () => {
   >;
   expect(formData).not.toHaveProperty('uniformBigNumberFontSize');
   expect(formData).not.toHaveProperty('uniformBigNumberFontSizePx');
+  expect(formData).not.toHaveProperty('uniformBigNumberReferenceTexts');
 });
 
 test('shows the loading spinner for a chart that starts loading outside the in-flight auto-refresh batch', () => {

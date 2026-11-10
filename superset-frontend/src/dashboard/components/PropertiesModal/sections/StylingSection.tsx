@@ -309,7 +309,7 @@ const StylingSection = ({
         </div>
         <span className="switch-helper">
           {t(
-            'Render every Big Number KPI tile at one font size and scale its title, comparison rows and spacing by the same ratio. Each chart keeps its own number format.',
+            'Render every Big Number KPI tile at one font size. All KPI tiles shrink together to fit the longest number on the dashboard, so nothing is clipped, and the title, comparison rows and spacing all follow that shared size. Each chart keeps its own number format.',
           )}
         </span>
       </StyledSwitchContainer>
@@ -318,7 +318,7 @@ const StylingSection = ({
           label={t('Big number font size (px, max)')}
           testId="dashboard-uniform-big-number-size-field"
           helperText={t(
-            'Upper bound for the big number size. Tiles of the same size share one font size derived from the tile width, so the title, comparison rows and spacing all follow the same ratio. Leave empty to use the size configured on each chart (or its default) as the upper bound.',
+            'Upper bound for the big number size. The shared size comes from the tile width and the longest number among all KPI tiles, so a long value shrinks the whole dashboard instead of being clipped. Leave empty to use the size configured on each chart (or its default) as the upper bound.',
           )}
         >
           <InputNumber

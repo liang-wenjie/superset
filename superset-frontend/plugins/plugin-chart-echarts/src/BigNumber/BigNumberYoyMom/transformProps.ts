@@ -53,13 +53,16 @@ import {
   RGBColor,
 } from './types';
 import {
+  MIN_LARGE_TEXT_CONTRAST,
+  MIN_TEXT_CONTRAST,
+  resolveTextColor,
+  toCssColor,
+} from './themeColors';
+import {
   alignToTimeGrain,
   parseTimePointValue,
   shiftPointToOffset,
 } from './timeRange';
-
-const toCssColor = (color?: RGBColor, fallback?: string): string =>
-  color ? `rgb(${color.r}, ${color.g}, ${color.b})` : (fallback ?? '');
 
 const toNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) return null;
@@ -128,16 +131,14 @@ const numericWidthPerPx = (text: string): number =>
     return width + 0.62;
   }, 0);
 
-// A same-area tile's font size comes from the tile width, not from the data:
-// an eight-character number (e.g. "0,000.00") is the design capacity. Every
-// KPI tile of that size uses the very same font size, so nothing shrinks on
-// its own and short numbers simply have a little more breathing room. Keeping
-// this capacity short (rather than using the longest number on the dashboard)
-// is what lets every tile grow a little bigger and fill more of its width.
+// A KPI tile's font size comes from its pixel width (the eight-character
+// design number below is its capacity) BUT is also capped by the widest
+// formatted number of every KPI tile on the dashboard. The dashboard injects
+// those texts so a long number makes all tiles shrink together: none is
+// clipped, and none shrinks on its own and breaks the uniform sizing.
 const TYPICAL_BIG_NUMBER_TEXT = '0,000.00';
-// Only a small right padding is needed. The legacy auto-fit reserved a
-// symmetric margin plus a conservative headroom, which left a lot of empty
-// space on the right of every number and made the whole tile look too small.
+// Only a small right padding is needed, plus the same safety margin the
+// per-tile auto-fit uses to absorb the width-estimation error.
 const UNIFORM_RIGHT_PADDING = 4;
 
 /**
@@ -256,6 +257,12 @@ export default function transformProps(
     pick<boolean>('uniformBigNumberFontSize') ??
     DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE;
   const uniformBigNumberFontSizePx = pick<number>('uniformBigNumberFontSizePx');
+  // All formatted big numbers of every KPI tile on the dashboard. The
+  // dashboard injects the very same list into each one, so they all resolve
+  // to one size and shrink together when a number is long.
+  const uniformBigNumberReferenceTexts = pick<string[]>(
+    'uniformBigNumberReferenceTexts',
+  );
   const showComparison1 = pick<boolean>('showComparison1') ?? true;
   const comparison1Label =
     pick<string>('comparison1Label') ?? t(DEFAULT_COMPARISON1_LABEL);
@@ -309,6 +316,18 @@ export default function transformProps(
     theme?.colorError ?? toCssColor(DEFAULT_COMPARISON_NEGATIVE_COLOR);
   const defaultComparisonZeroColor =
     theme?.colorTextTertiary ?? toCssColor(DEFAULT_COMPARISON_ZERO_COLOR);
+
+  // The control panel saves its light-mode color defaults into form_data, so
+  // on a dark dashboard the big number would be near-black text on a
+  // near-black tile. ECharts graphic text is painted on a canvas, which dark
+  // theme CSS cannot restyle, so fall back to the theme's text tokens when a
+  // configured color has too little contrast against the tile background.
+  // Readable custom colors are kept, and light dashboards are untouched.
+  const resolveColor = (
+    configured: RGBColor | undefined,
+    themeFallback: string,
+    minContrast: number,
+  ): string => resolveTextColor(configured, themeFallback, theme, minContrast);
 
   const { data = [], detected_currency: detectedCurrency } =
     queriesData[0] || {};
@@ -456,14 +475,14 @@ export default function transformProps(
   );
   // Uniform sizing keeps the configured font size as an UPPER BOUND: the
   // dashboard may set one absolute pixel size, and when it is unset the
-  // chart's own big_number_font_size (or the plugin default) wins. The actual
-  // size comes from the TILE WIDTH: every KPI tile of the same size gets the
-  // largest font that still fits the eight-character design number, so tiles
-  // of one area share exactly one big-number size and one comparison size.
-  // The value rendered on a tile never feeds back into that tile's font size:
-  // no tile shrinks on its own. ONE ratio derived from that size is applied to
-  // every text size and internal gap. With uniform sizing off, each element
-  // keeps its own auto-fit behaviour.
+  // chart's own big_number_font_size (or the plugin default) wins. The tile
+  // width sets the design capacity; the widest formatted number of all KPI
+  // tiles then caps it so no tile can clip a value. Every KPI tile receives
+  // the same reference texts, so they all resolve to exactly one size -- a
+  // long number makes the WHOLE dashboard shrink together.
+  // ONE ratio derived from that size is applied to every text size and
+  // internal gap. With uniform sizing off, each element keeps its own
+  // auto-fit behaviour.
   const configuredBigNumberFontSizePx =
     typeof uniformBigNumberFontSizePx === 'number' &&
     Number.isFinite(uniformBigNumberFontSizePx) &&
@@ -472,36 +491,78 @@ export default function transformProps(
       : baseBigNumberFontSizePx;
   const uniformAvailableWidth = Math.max(
     0,
-    width - bigNumberLeft - UNIFORM_RIGHT_PADDING,
+    width - bigNumberLeft - UNIFORM_RIGHT_PADDING - TEXT_FIT_SAFETY_MARGIN,
   );
-  const typicalWidthPerPx = numericWidthPerPx(TYPICAL_BIG_NUMBER_TEXT);
+  const referenceTexts = Array.isArray(uniformBigNumberReferenceTexts)
+    ? uniformBigNumberReferenceTexts.filter(
+        (text): text is string => typeof text === 'string' && text.length > 0,
+      )
+    : [];
+  // The tile's own text is a safety net: the dashboard derives its texts from
+  // the saved number format, while the plugin may add a currency symbol or a
+  // column-level format. On a dashboard this tile's text is already part of
+  // the group list, so including it never changes the shared size.
+  // (The list covers the whole dashboard, not just tiles of one grid size.)
+  const textsToFit = uniformBigNumberFontSize
+    ? [TYPICAL_BIG_NUMBER_TEXT, ...referenceTexts, bigNumberText]
+    : [];
+  const widestWidthPerPx = textsToFit.reduce(
+    (widest, text) => Math.max(widest, numericWidthPerPx(text)),
+    0,
+  );
   const adaptiveBigNumberFontSizePx =
-    uniformAvailableWidth > 0
-      ? Math.floor(uniformAvailableWidth / Math.max(1, typicalWidthPerPx))
+    uniformAvailableWidth > 0 && widestWidthPerPx > 0
+      ? Math.floor(uniformAvailableWidth / widestWidthPerPx)
       : configuredBigNumberFontSizePx;
   const effectiveBigNumberFontSizePx = Math.max(
     8,
     Math.min(configuredBigNumberFontSizePx, adaptiveBigNumberFontSizePx),
   );
+  // Use the plugin default ratio, not each chart's saved control value, as
+  // the base of the shared scale: two tiles that saved different font sizes
+  // still scale their gaps by exactly the same ratio.
+  const uniformBaseFontSizePx = Math.max(
+    1,
+    Math.ceil(DEFAULT_BIG_NUMBER_FONT_SIZE * height),
+  );
   const uniformScale = uniformBigNumberFontSize
-    ? effectiveBigNumberFontSizePx / Math.max(1, baseBigNumberFontSizePx)
+    ? effectiveBigNumberFontSizePx / uniformBaseFontSizePx
     : 1;
   // Keep the smaller labels readable on very narrow tiles; the big number
-  // itself has no artificial floor so it can always fit the design number.
+  // itself has no artificial floor so it can always fit the dashboard's
+  // widest number.
   const scaleFontSize = (size: number, minSize = 1) =>
     Math.max(minSize, Math.floor(size * uniformScale));
   const scaleGap = (gap: number) =>
     uniformBigNumberFontSize
       ? Math.max(0, Math.floor(gap * uniformScale))
       : gap;
-  const titleFontSizePx = scaleFontSize(baseTitleFontSizePx, 10);
+  // Label sizes come from the one shared big-number size. Reading each
+  // chart's saved title/comparison size here is what made the YoY/MoM rows
+  // look different across tiles of the same size.
+  const uniformLabelFontSizePx = (defaultFontSize: number): number =>
+    Math.max(
+      10,
+      Math.round(
+        (effectiveBigNumberFontSizePx * defaultFontSize) /
+          DEFAULT_BIG_NUMBER_FONT_SIZE,
+      ),
+    );
+  const uniformTitleFontSizePx = uniformLabelFontSizePx(
+    DEFAULT_TITLE_FONT_SIZE,
+  );
+  const uniformComparisonFontSizePx = uniformLabelFontSizePx(
+    DEFAULT_COMPARISON_FONT_SIZE,
+  );
+  const titleFontSizePx = uniformBigNumberFontSize
+    ? uniformTitleFontSizePx
+    : scaleFontSize(baseTitleFontSizePx, 10);
   const requestedBigNumberFontSizePx = uniformBigNumberFontSize
     ? effectiveBigNumberFontSizePx
     : scaleFontSize(baseBigNumberFontSizePx);
-  const requestedComparisonFontSizePx = scaleFontSize(
-    baseComparisonFontSizePx,
-    10,
-  );
+  const requestedComparisonFontSizePx = uniformBigNumberFontSize
+    ? uniformComparisonFontSizePx
+    : scaleFontSize(baseComparisonFontSizePx, 10);
 
   const estimatedBigNumberWidth = estimateTextWidth(
     bigNumberText,
@@ -535,8 +596,9 @@ export default function transformProps(
   );
   const minTitleFontSizePx = 12;
   let effectiveTitleFontSizePx = titleFontSizePx;
-  // In uniform mode no element shrinks against its own text: every tile of
-  // the same area uses the one tile-width-derived scale computed above.
+  // In uniform mode no element shrinks against its own text: every KPI tile
+  // uses the one dashboard-derived size computed above, which already
+  // accounts for the longest number on the dashboard.
   if (!uniformBigNumberFontSize && titleAvailableWidth > 0 && headerText) {
     const estimatedTitleWidth = estimateTextWidth(headerText, titleFontSizePx);
     if (estimatedTitleWidth > titleAvailableWidth) {
@@ -576,15 +638,21 @@ export default function transformProps(
     (showComparison1 && !!(comparison1Offset || comparison1Column)) ||
     (showComparison2 && !!(comparison2Offset || comparison2Column));
 
-  const positiveColor = toCssColor(
+  const positiveColor = resolveColor(
     comparisonPositiveColor,
     defaultComparisonPositiveColor,
+    MIN_TEXT_CONTRAST,
   );
-  const negativeColor = toCssColor(
+  const negativeColor = resolveColor(
     comparisonNegativeColor,
     defaultComparisonNegativeColor,
+    MIN_TEXT_CONTRAST,
   );
-  const zeroColor = toCssColor(comparisonZeroColor, defaultComparisonZeroColor);
+  const zeroColor = resolveColor(
+    comparisonZeroColor,
+    defaultComparisonZeroColor,
+    MIN_TEXT_CONTRAST,
+  );
   // The comparison row aligns with the big number: it starts at the same
   // configured left offset (instead of a hard-coded 20) so changing
   // big_number_left keeps both rows in sync, and the available-width rule
@@ -846,7 +914,7 @@ export default function transformProps(
       style: {
         text: headerText,
         fontSize: effectiveTitleFontSizePx,
-        fill: toCssColor(titleColor, defaultTitleColor),
+        fill: resolveColor(titleColor, defaultTitleColor, MIN_TEXT_CONTRAST),
       },
     });
   }
@@ -859,7 +927,11 @@ export default function transformProps(
       text: bigNumberText,
       fontSize: bigNumberFontSizePx,
       fontWeight: 'bold',
-      fill: toCssColor(bigNumberColor, defaultBigNumberColor),
+      fill: resolveColor(
+        bigNumberColor,
+        defaultBigNumberColor,
+        MIN_LARGE_TEXT_CONTRAST,
+      ),
     },
   });
 

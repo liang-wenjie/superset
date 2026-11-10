@@ -55,6 +55,7 @@ import { enforceSharedLabelsColorsArray } from 'src/utils/colorScheme';
 import exportPivotExcel from 'src/utils/downloadAsPivotExcel';
 import type { RootState, Datasource, Slice } from 'src/dashboard/types';
 import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabels';
+import { selectBigNumberReferenceTextsByChartId } from 'src/dashboard/util/bigNumberSizing';
 import {
   convertChartStateToOwnState,
   hasChartStateConverter,
@@ -277,6 +278,12 @@ const Chart = (props: ChartProps) => {
     (state: RootState) =>
       (state.dashboardInfo?.metadata as JsonObject)
         ?.uniform_big_number_font_size_px as number | undefined,
+  );
+  // Every KPI tile on the dashboard receives the same list of formatted big
+  // numbers. The plugin uses it to pick one shared font size that fits the
+  // longest number on the dashboard, so no tile is clipped or shrunk alone.
+  const uniformBigNumberReferenceTexts = useSelector((state: RootState) =>
+    selectBigNumberReferenceTextsByChartId(state).get(String(props.id)),
   );
   const suppressLoadingSpinner = useIsChartAutoRefreshing(props.id);
 
@@ -556,6 +563,9 @@ const Chart = (props: ChartProps) => {
             ...(uniformBigNumberFontSizePx !== undefined && {
               uniformBigNumberFontSizePx,
             }),
+            ...(uniformBigNumberReferenceTexts !== undefined && {
+              uniformBigNumberReferenceTexts,
+            }),
           }
         : {};
     if (
@@ -607,6 +617,7 @@ const Chart = (props: ChartProps) => {
     props.dashboardId,
     uniformBigNumberFontSize,
     uniformBigNumberFontSizePx,
+    uniformBigNumberReferenceTexts,
   ]);
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;

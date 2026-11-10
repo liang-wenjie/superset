@@ -76,6 +76,38 @@ describe('BigNumberYoyMom transformProps', () => {
       datasource: baseDatasource,
     }) as unknown as BigNumberYoyMomChartProps;
 
+  const DARK_THEME = {
+    colorBgContainer: '#141414',
+    colorText: 'rgba(255, 255, 255, 0.88)',
+    colorTextSecondary: 'rgba(255, 255, 255, 0.65)',
+    colorTextTertiary: 'rgba(255, 255, 255, 0.45)',
+    colorSuccess: '#49aa19',
+    colorError: '#dc4446',
+  };
+
+  const LIGHT_THEME = {
+    colorBgContainer: '#ffffff',
+    colorText: '#000000',
+    colorTextSecondary: '#555555',
+    colorTextTertiary: '#888888',
+    colorSuccess: '#52c41a',
+    colorError: '#ff4d4f',
+  };
+
+  const withTheme = (
+    props: BigNumberYoyMomChartProps,
+    theme: Record<string, unknown>,
+  ): BigNumberYoyMomChartProps =>
+    ({ ...props, theme }) as unknown as BigNumberYoyMomChartProps;
+
+  const savedDefaultColors = {
+    titleColor: { r: 102, g: 102, b: 102 },
+    bigNumberColor: { r: 51, g: 51, b: 51 },
+    comparisonPositiveColor: { r: 0, g: 180, b: 42 },
+    comparisonNegativeColor: { r: 245, g: 63, b: 63 },
+    comparisonZeroColor: { r: 102, g: 102, b: 102 },
+  };
+
   test('renders title, big number and both comparisons from data', () => {
     const result = transformProps(
       buildChartProps([
@@ -248,14 +280,49 @@ describe('BigNumberYoyMom transformProps', () => {
     return graphic[1].style.fontSize;
   };
 
-  test('keeps the big number font size uniform across tiles when enabled', () => {
-    const uniform = { uniformBigNumberFontSize: true };
+  // Same width model the plugin uses when it caps the shared font size.
+  const numericWidthPerPx = (text: string): number =>
+    Array.from(text).reduce((width, char) => {
+      if (char.charCodeAt(0) > 255) return width + 1;
+      if (char >= '0' && char <= '9') return width + 0.58;
+      if (',.- '.includes(char)) return width + 0.3;
+      return width + 0.62;
+    }, 0);
+
+  const TILE_WIDTH = 400;
+  // left offset + uniform right padding + safety margin
+  const UNIFORM_AVAILABLE_WIDTH = TILE_WIDTH - 20 - 4 - 3;
+
+  test('keeps one font size and fits the longest number of the group', () => {
+    // The dashboard injects the very same list into every tile of one area.
+    const uniform = {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: [
+        '$3,808,637.34',
+        '3,808,637.34',
+        '$7.81',
+      ],
+    };
     const short = getBigNumberFontSize(7.81, uniform);
-    const long = getBigNumberFontSize(1234567, uniform);
-    // One size for every tile of this width, derived from the tile width and
-    // the eight-character design number. The value plays no part in it.
-    expect(short).toBe(92);
-    expect(long).toBe(92);
+    const long = getBigNumberFontSize(3808637.34, uniform);
+    // Neither tile shrinks on its own: the WHOLE group uses one size.
+    expect(short).toBe(long);
+    // ... and that size was chosen so the longest number is not clipped.
+    expect(numericWidthPerPx('$3,808,637.34') * long).toBeLessThanOrEqual(
+      UNIFORM_AVAILABLE_WIDTH,
+    );
+    expect(numericWidthPerPx('$7.81') * short).toBeLessThanOrEqual(
+      UNIFORM_AVAILABLE_WIDTH,
+    );
+    // A tile with a short number would otherwise keep the width-only size,
+    // which cannot fit the long number of another tile in the same group.
+    const widthOnlyShortTile = getBigNumberFontSize(7.81, {
+      uniformBigNumberFontSize: true,
+    });
+    expect(widthOnlyShortTile).toBeGreaterThan(long);
+    expect(
+      numericWidthPerPx('$3,808,637.34') * widthOnlyShortTile,
+    ).toBeGreaterThan(UNIFORM_AVAILABLE_WIDTH);
   });
 
   test('keeps per-tile auto sizing when uniform sizing is disabled', () => {
@@ -289,38 +356,57 @@ describe('BigNumberYoyMom transformProps', () => {
     ).toBe(60);
   });
 
-  test('never shrinks a tile for its own long value', () => {
+  test('shrinks the whole group together when one tile has a long value', () => {
     const uniform = {
       uniformBigNumberFontSize: true,
       uniformBigNumberFontSizePx: 48,
+      uniformBigNumberReferenceTexts: ['$3,808,637.34', '3,808,637.34'],
     };
-    expect(getBigNumberFontSize(7.81, uniform)).toBe(48);
-    expect(getBigNumberFontSize(3808637.34, uniform)).toBe(48);
+    const shortTile = getBigNumberFontSize(7.81, uniform);
+    const longTile = getBigNumberFontSize(3808637.34, uniform);
+    // No tile shrinks alone: the whole group lands on one size.
+    expect(shortTile).toBe(longTile);
+    // The configured 48px is an upper bound, not a promise: the group fits
+    // the longest number instead of letting that tile clip its value.
+    expect(longTile).toBeLessThanOrEqual(48);
+    expect(numericWidthPerPx('$3,808,637.34') * longTile).toBeLessThanOrEqual(
+      UNIFORM_AVAILABLE_WIDTH,
+    );
   });
 
-  test('derives the size from the tile width, never from the value', () => {
-    const uniform = { uniformBigNumberFontSize: true };
+  test('derives the shared size from tile width and the longest group number', () => {
+    const uniform = {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: ['$7.81'],
+    };
     const wide = getBigNumberFontSize(7.81, uniform, { width: 800 });
     const normal = getBigNumberFontSize(7.81, uniform);
     const narrow = getBigNumberFontSize(7.81, uniform, { width: 240 });
 
-    // Wider tiles get a bigger shared size. Sizing for the longest number on
-    // the dashboard used to drag every tile down to ~44px, leaving a lot of
-    // empty space on the right; the tile-width capacity fills much more of it.
+    // Wider tiles still get a bigger shared size.
     expect(wide).toBeGreaterThan(normal);
-    expect(normal).toBeGreaterThan(70);
     expect(normal).toBeGreaterThan(narrow);
-    // A long value no longer shrinks its own tile.
-    expect(getBigNumberFontSize(3808637.34, uniform, { width: 240 })).toBe(
-      narrow,
-    );
+
+    // A long number elsewhere in the group shrinks this short tile too.
+    const longGroup = {
+      ...uniform,
+      uniformBigNumberReferenceTexts: ['$3,808,637.34'],
+    };
+    const longGroupSize = getBigNumberFontSize(7.81, longGroup);
+    expect(longGroupSize).toBeLessThan(normal);
+    expect(
+      numericWidthPerPx('$3,808,637.34') * longGroupSize,
+    ).toBeLessThanOrEqual(UNIFORM_AVAILABLE_WIDTH);
 
     // The whole value is still rendered, not truncated at the canvas edge.
     const result = transformProps(
-      buildChartProps([{ 'SUM(sales)': 3808637.34 }], uniform),
+      buildChartProps([{ 'SUM(sales)': 3808637.34 }], longGroup),
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     expect(graphic[1].style.text).toBe('$3,808,637.34');
+    expect(
+      numericWidthPerPx('$3,808,637.34') * graphic[1].style.fontSize,
+    ).toBeLessThanOrEqual(UNIFORM_AVAILABLE_WIDTH);
   });
 
   test('adapts a narrow tile down from its default size', () => {
@@ -378,6 +464,42 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(shortTile[1]).toBeLessThan(autoSizedTile[1]);
     expect(shortTile[2]).toBeLessThan(autoSizedTile[2]);
     expect(shortTile[3]).toBeLessThan(autoSizedTile[3]);
+  });
+
+  test('keeps label sizes identical across tiles with different saved controls', () => {
+    const shared = {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberFontSizePx: 48,
+      uniformBigNumberReferenceTexts: ['$3,808,637.34'],
+    };
+    const plain = getAllFontSizes(7.81, shared);
+    const customized = getAllFontSizes(3808637.34, {
+      ...shared,
+      titleFontSize: 0.5,
+      comparisonFontSize: 0.3,
+    });
+
+    // Saved per-chart title/comparison sizes no longer leak into the shared
+    // sizing: this was the reason the YoY/MoM rows looked different per tile.
+    expect(customized).toEqual(plain);
+    expect(plain[2]).toBe(plain[3]);
+  });
+
+  test('scales comparison rows down with the group, not just the big number', () => {
+    const shortGroup = getAllFontSizes(7.81, {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: ['$7.81'],
+    });
+    const longGroup = getAllFontSizes(7.81, {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: ['$3,808,637.34'],
+    });
+
+    expect(longGroup[1]).toBeLessThan(shortGroup[1]);
+    expect(longGroup[0]).toBeLessThan(shortGroup[0]);
+    expect(longGroup[2]).toBeLessThan(shortGroup[2]);
+    expect(longGroup[3]).toBeLessThan(shortGroup[3]);
+    expect(longGroup[2]).toBe(longGroup[3]);
   });
 
   test('scales internal gaps by the same ratio as the tile text', () => {
@@ -981,5 +1103,99 @@ describe('BigNumberYoyMom transformProps', () => {
     // 10% is above the threshold → normal increase styling.
     expect(graphic[3].style.text).toBe('YoY ↓9.09%');
     expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
+  });
+
+  // The control panel persists its light-mode color defaults into form_data.
+  // ECharts graphic text is canvas, so dark theme CSS cannot restyle it: on a
+  // dark tile those dark greys have to be replaced with theme text tokens.
+  test('renders saved default colors with theme tokens on dark dashboards', () => {
+    const result = transformProps(
+      withTheme(
+        buildChartProps(
+          [
+            {
+              'SUM(sales)': 100,
+              'SUM(sales)__1 month ago': 90, // +11.11%, increase color
+              'SUM(sales)__1 year ago': 100, // 0%, no-change color
+            },
+          ],
+          savedDefaultColors,
+        ),
+        DARK_THEME,
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic[0].style.fill).toBe(DARK_THEME.colorTextSecondary);
+    expect(graphic[1].style.fill).toBe(DARK_THEME.colorText);
+    // Readable trend colors keep their hue in dark mode.
+    expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
+    expect(graphic[3].style.fill).toBe(DARK_THEME.colorTextTertiary);
+  });
+
+  test('uses theme tokens when no colors were saved in dark mode', () => {
+    const result = transformProps(
+      withTheme(buildChartProps([{ 'SUM(sales)': 100 }]), DARK_THEME),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic[0].style.fill).toBe(DARK_THEME.colorTextSecondary);
+    expect(graphic[1].style.fill).toBe(DARK_THEME.colorText);
+  });
+
+  test('keeps saved default colors on light dashboards', () => {
+    const result = transformProps(
+      withTheme(
+        buildChartProps(
+          [{ 'SUM(sales)': 100, 'SUM(sales)__1 month ago': 90 }],
+          savedDefaultColors,
+        ),
+        LIGHT_THEME,
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic[0].style.fill).toBe('rgb(102, 102, 102)');
+    expect(graphic[1].style.fill).toBe('rgb(51, 51, 51)');
+    expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
+  });
+
+  test('honors custom colors by contrast on dark dashboards', () => {
+    const readable = transformProps(
+      withTheme(
+        buildChartProps([{ 'SUM(sales)': 100 }], {
+          bigNumberColor: { r: 255, g: 220, b: 0 },
+        }),
+        DARK_THEME,
+      ),
+    );
+    const readableGraphic = readable.echartOptions.graphic as Record<
+      string,
+      any
+    >[];
+    expect(readableGraphic[1].style.fill).toBe('rgb(255, 220, 0)');
+
+    const tooDark = transformProps(
+      withTheme(
+        buildChartProps([{ 'SUM(sales)': 100 }], {
+          bigNumberColor: { r: 30, g: 30, b: 30 },
+        }),
+        DARK_THEME,
+      ),
+    );
+    const tooDarkGraphic = tooDark.echartOptions.graphic as Record<
+      string,
+      any
+    >[];
+    expect(tooDarkGraphic[1].style.fill).toBe(DARK_THEME.colorText);
+  });
+
+  test('uses the dashboard tile background token when configured', () => {
+    const result = transformProps(
+      withTheme(buildChartProps([{ 'SUM(sales)': 100 }], savedDefaultColors), {
+        ...DARK_THEME,
+        colorBgContainer: '#ffffff',
+        dashboardTileBg: '#141414',
+      }),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic[1].style.fill).toBe(DARK_THEME.colorText);
   });
 });
