@@ -300,6 +300,29 @@ describe('Timeseries buildQuery', () => {
       { operation: 'sort', options: { by: 'baz', ascending: true } },
     ]);
   });
+
+  test('does not stack a limit-metric sort on the axis-value sort path', () => {
+    // With `x_axis_sort` naming the axis itself, upstream reorders rows in the
+    // renderer (`{ axisValue: true }`) and `sortOperator` emits the matching
+    // index sort. The timeseries-limit fallback must not add a second,
+    // metric-based sort on top of it.
+    const queryContext = buildQuery({
+      ...formData,
+      metrics: ['bar', 'baz'],
+      x_axis: 'category',
+      x_axis_sort: 'category',
+      x_axis_sort_asc: true,
+      timeseries_limit_metric: 'bar',
+      order_desc: true,
+    });
+    const [query] = queryContext.queries;
+    const sorts = (query.post_processing || []).filter(
+      operator => operator?.operation === 'sort',
+    );
+    expect(sorts).toEqual([
+      { operation: 'sort', options: { ascending: true, is_sort_index: true } },
+    ]);
+  });
 });
 
 describe('queryObject conversion', () => {

@@ -5415,14 +5415,41 @@ const inlineQueriesData: ChartDataResponseResult[] = [
   ),
 ];
 
+// Two displayed metrics pivoted with a time comparison produce
+// `<metric>, <offset>, <dimension>` labels. Upstream recognizes the leading
+// `<metric>, <offset>` part, while the inline-filter feature strips only the
+// trailing dimension value; both must survive in the same rendered name.
+const comparisonInlineQueriesData: ChartDataResponseResult[] = [
+  createTestQueryData(
+    createTestData([
+      {
+        'sum__num, 1 year ago, girl': 1,
+        'sum__num, girl': 3,
+        'count, 1 year ago, girl': 2,
+        'count, girl': 4,
+      },
+    ]),
+    {
+      label_map: {
+        'sum__num, 1 year ago, girl': ['sum__num, 1 year ago', 'girl'],
+        'sum__num, girl': ['sum__num', 'girl'],
+        'count, 1 year ago, girl': ['count, 1 year ago', 'girl'],
+        'count, girl': ['count', 'girl'],
+      },
+    },
+  ),
+];
+
 const transformWithInlineFilters = ({
   config = [inlineFilterConfig()],
   filters = [inlineAdhocFilter()],
   overrides = {},
+  queriesData = inlineQueriesData,
 }: {
   config?: Record<string, unknown>[];
   filters?: Record<string, unknown>[];
   overrides?: Partial<EchartsTimeseriesFormData>;
+  queriesData?: ChartDataResponseResult[];
 } = {}) => {
   const formDataWithInline = {
     ...formData,
@@ -5432,7 +5459,7 @@ const transformWithInlineFilters = ({
   } as unknown as EchartsTimeseriesFormData;
   const testProps = createTestChartProps({
     formData: formDataWithInline,
-    queriesData: inlineQueriesData,
+    queriesData,
   });
   // Regression: real `ChartProps` camelCases the top-level formData keys, while
   // the shared helper writes the raw snake_case object back. Force the real
@@ -5522,6 +5549,37 @@ test('charts without inline filters keep their original names and label map', ()
     'girl',
   ]);
   expect(inlineLabelMap(transformed)['sum__num']).toBeUndefined();
+});
+
+test('time-comparison labels survive inline-filter dimension hiding', () => {
+  const transformed = transformWithInlineFilters({
+    overrides: {
+      metrics: ['sum__num', 'count'],
+      time_compare: ['1 year ago'],
+      comparison_type: ComparisonType.Values,
+    } as unknown as Partial<EchartsTimeseriesFormData>,
+    queriesData: comparisonInlineQueriesData,
+  });
+  const names = inlineRenderedNames(transformed);
+
+  // Only the dimension value selected by the single-select inline filter is
+  // redundant; the upstream `<metric>, <offset>` prefix must stay intact.
+  expect(names).toContain('sum__num, 1 year ago');
+  expect(names).toContain('count, 1 year ago');
+  expect(names.some(name => name.endsWith(', girl'))).toBe(false);
+
+  // Legend, tooltip and drill handlers resolve the stripped name through
+  // labelMap, so both spellings must remain resolvable.
+  expect(transformed.legendData).toContain('sum__num, 1 year ago');
+  const labelMap = inlineLabelMap(transformed);
+  expect(labelMap['sum__num, 1 year ago, girl']).toEqual([
+    'sum__num, 1 year ago',
+    'girl',
+  ]);
+  expect(labelMap['sum__num, 1 year ago']).toEqual([
+    'sum__num, 1 year ago',
+    'girl',
+  ]);
 });
 
 test('transformed series actually produce rows for the X-axis data table', () => {
