@@ -54,21 +54,23 @@ export const getDataTableHeight = (rowCount: number): number =>
     : Math.min(rowCount, DATA_TABLE_MAX_ROWS) * DATA_TABLE_ROW_HEIGHT + 1;
 
 export const DATA_TABLE_FONT_SIZE = 12;
-// Shared with ChartDataTable so the estimated width always matches the DOM
+// Shared with ChartDataTable so the reserved width always matches the DOM
 // instead of drifting when the legend column padding is tuned.
-export const LEGEND_MARKER_WIDTH = 10;
-export const LEGEND_GAP = 6;
-export const LEGEND_PADDING = 6;
-// estimateLabelWidth() only approximates glyph widths. A small buffer keeps
-// ellipsis from clipping long names without widening every chart.
-const LABEL_SAFETY_MARGIN = 4;
-const MIN_GRID_LEFT = 24;
+export const LEGEND_MARKER_WIDTH = 8;
+export const LEGEND_GAP = 4;
+export const LEGEND_PADDING = 4;
+// Only paid when the browser cannot measure text and we fall back to the
+// per-character approximation below.
+const LABEL_SAFETY_MARGIN = 2;
+export const MIN_GRID_LEFT = 8;
 // A very long series name must not eat most of the plotting area.
 const MAX_GRID_LEFT_RATIO = 0.4;
 
+export type LabelWidthMeasure = (text: string, fontSizePx: number) => number;
+
 // Same per-character factors as BigNumberYoyMom's estimateTextWidth: CJK and
 // other non-ASCII glyphs are roughly one em wide, ASCII about 0.62 em.
-const estimateLabelWidth = (text: string, fontSizePx: number): number =>
+const estimateLabelWidth: LabelWidthMeasure = (text, fontSizePx) =>
   Math.ceil(
     Array.from(text).reduce(
       (width, char) => width + (char.charCodeAt(0) > 255 ? 1.1 : 0.62),
@@ -76,12 +78,61 @@ const estimateLabelWidth = (text: string, fontSizePx: number): number =>
     ) * fontSizePx,
   );
 
+let cachedFontFamily: string | undefined;
+
+const resolveFontFamily = (): string => {
+  if (cachedFontFamily !== undefined) {
+    return cachedFontFamily;
+  }
+  if (
+    typeof window === 'undefined' ||
+    !window.getComputedStyle ||
+    !document.body
+  ) {
+    cachedFontFamily = 'sans-serif';
+  } else {
+    cachedFontFamily =
+      window.getComputedStyle(document.body).fontFamily || 'sans-serif';
+  }
+  return cachedFontFamily;
+};
+
+/**
+ * Measure series names with the browser's own font metrics instead of a
+ * per-character approximation. Returns undefined when canvas is unavailable
+ * (SSR, jsdom, hardened browsers) so callers can fall back to the estimate.
+ */
+export function createLabelWidthMeasure(
+  fontSizePx: number,
+): LabelWidthMeasure | undefined {
+  if (typeof document === 'undefined') {
+    return undefined;
+  }
+  try {
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context) {
+      return undefined;
+    }
+    context.font = `${fontSizePx}px ${resolveFontFamily()}`;
+    return (text: string) => {
+      const { width } = context.measureText(text);
+      return Number.isFinite(width) && width > 0
+        ? Math.ceil(width)
+        : estimateLabelWidth(text, fontSizePx);
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Minimum `grid.left` needed so the longest series name fits in the legend
  * column. With `containLabel: true` ECharts already reserves the Y-axis label
  * gutter *on top of* `grid.left`, so that measured gutter is subtracted here —
  * otherwise it is paid for twice and the legend column ends up much wider than
- * its text (most visible after a dimension-value suffix is hidden).
+ * its text (most visible after a dimension-value suffix is hidden). Names are
+ * measured with the browser's font metrics; the per-character approximation is
+ * only a fallback and carries the extra safety margin.
  */
 export function getDataTableGridLeft(
   rows: DataTableRow[],
@@ -89,8 +140,13 @@ export function getDataTableGridLeft(
   chartWidth = 0,
   yAxisLabelGutter = 0,
 ): number {
+  if (rows.length === 0) {
+    return 0;
+  }
+  const exactMeasure = createLabelWidthMeasure(fontSizePx);
+  const measure: LabelWidthMeasure = exactMeasure ?? estimateLabelWidth;
   const longestLabel = rows.reduce(
-    (max, row) => Math.max(max, estimateLabelWidth(row.name, fontSizePx)),
+    (max, row) => Math.max(max, measure(row.name, fontSizePx)),
     0,
   );
   const legendWidth = Math.ceil(
@@ -98,7 +154,7 @@ export function getDataTableGridLeft(
       LEGEND_MARKER_WIDTH +
       LEGEND_GAP +
       LEGEND_PADDING +
-      LABEL_SAFETY_MARGIN,
+      (exactMeasure ? 0 : LABEL_SAFETY_MARGIN),
   );
   const required = Math.max(0, legendWidth - Math.max(0, yAxisLabelGutter));
   const cap =

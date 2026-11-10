@@ -21,6 +21,7 @@ import {
   areColumnLayoutsEqual,
   buildDataTable,
   computeColumnLayout,
+  createLabelWidthMeasure,
   DATA_TABLE_FONT_SIZE,
   getDataTableGridLeft,
   getDataTableHeight,
@@ -28,9 +29,33 @@ import {
   LEGEND_GAP,
   LEGEND_MARKER_WIDTH,
   LEGEND_PADDING,
+  MIN_GRID_LEFT,
   resolveDataTableGrid,
   type ColumnLayout,
 } from './chartDataTableUtils';
+
+type FakeCanvasContext = {
+  font: string;
+  measureText: (text: string) => { width: number };
+};
+
+let canvasSpy: jest.SpyInstance | undefined;
+
+const mockCanvas = (context: FakeCanvasContext | null) => {
+  canvasSpy?.mockRestore();
+  const createElement = document.createElement.bind(document);
+  canvasSpy = jest
+    .spyOn(document, 'createElement')
+    .mockImplementation(((tagName: string) =>
+      tagName === 'canvas'
+        ? ({ getContext: () => context } as unknown as HTMLCanvasElement)
+        : createElement(tagName)) as unknown as typeof document.createElement);
+};
+
+// jsdom has no canvas implementation. Default to an unavailable context so
+// the estimate path is the baseline; individual tests opt into real metrics.
+beforeEach(() => mockCanvas(null));
+afterEach(() => canvasSpy?.mockRestore());
 
 const options = {
   series: [
@@ -219,6 +244,53 @@ const makeRow = (name: string) => ({
   cells: [],
 });
 
+const fakeContext = (): FakeCanvasContext => ({
+  font: '',
+  measureText: (text: string) => ({ width: text.length * 7 }),
+});
+
+test('getDataTableGridLeft measures names with the browser font metrics', () => {
+  const context = fakeContext();
+  mockCanvas(context);
+  const rows = [makeRow('SUM(当月金额)'), makeRow('A')];
+  const width = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660);
+
+  expect(context.font).toContain(`${DATA_TABLE_FONT_SIZE}px`);
+  // 9 characters at 7px plus the real DOM chrome, with no estimate margin.
+  expect(width).toBe(63 + LEGEND_MARKER_WIDTH + LEGEND_GAP + LEGEND_PADDING);
+});
+
+test('getDataTableGridLeft falls back to a conservative estimate without canvas', () => {
+  expect(createLabelWidthMeasure(DATA_TABLE_FONT_SIZE)).toBeUndefined();
+  const rows = [makeRow('SUM(当月金额)')];
+  const fallback = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660);
+  mockCanvas(fakeContext());
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660)).toBeLessThan(
+    fallback,
+  );
+});
+
+test('getDataTableGridLeft reserves no grid space for an empty table', () => {
+  expect(getDataTableGridLeft([], DATA_TABLE_FONT_SIZE, 660)).toBe(0);
+});
+
+test('createLabelWidthMeasure ignores unusable canvas metrics', () => {
+  const context = fakeContext();
+  context.measureText = () => ({ width: Number.NaN });
+  mockCanvas(context);
+  const measure = createLabelWidthMeasure(DATA_TABLE_FONT_SIZE);
+  expect(measure).toBeDefined();
+  expect(measure?.('SUM(当月金额)', DATA_TABLE_FONT_SIZE)).toBeGreaterThan(0);
+});
+
+test('createLabelWidthMeasure survives a canvas that throws', () => {
+  canvasSpy?.mockRestore();
+  canvasSpy = jest.spyOn(document, 'createElement').mockImplementation((() => {
+    throw new Error('canvas blocked');
+  }) as unknown as typeof document.createElement);
+  expect(createLabelWidthMeasure(DATA_TABLE_FONT_SIZE)).toBeUndefined();
+});
+
 test('compact margins still leave room for marker, gap and padding', () => {
   const width = getDataTableGridLeft(
     [makeRow('SUM(当月金额)')],
@@ -242,7 +314,7 @@ test('getDataTableGridLeft grows with the longest series name', () => {
 
   expect(long).toBeGreaterThan(short);
   expect(long).toBeGreaterThan(150);
-  expect(short).toBeGreaterThanOrEqual(24);
+  expect(short).toBeGreaterThanOrEqual(MIN_GRID_LEFT);
 });
 
 test('getDataTableGridLeft caps very long names so the plot stays usable', () => {
@@ -262,7 +334,9 @@ test('getDataTableGridLeft subtracts the Y-axis label gutter', () => {
 
 test('getDataTableGridLeft never shrinks below its floor or below zero', () => {
   const rows = [makeRow('A')];
-  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600, 1000)).toBe(24);
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600, 1000)).toBe(
+    MIN_GRID_LEFT,
+  );
   expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600, -50)).toBe(
     getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600),
   );
