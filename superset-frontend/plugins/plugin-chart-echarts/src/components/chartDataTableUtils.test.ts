@@ -24,6 +24,11 @@ import {
   DATA_TABLE_FONT_SIZE,
   getDataTableGridLeft,
   getDataTableHeight,
+  getGridLabelGutter,
+  LEGEND_GAP,
+  LEGEND_MARKER_WIDTH,
+  LEGEND_PADDING,
+  resolveDataTableGrid,
   type ColumnLayout,
 } from './chartDataTableUtils';
 
@@ -214,6 +219,19 @@ const makeRow = (name: string) => ({
   cells: [],
 });
 
+test('compact margins still leave room for marker, gap and padding', () => {
+  const width = getDataTableGridLeft(
+    [makeRow('SUM(当月金额)')],
+    DATA_TABLE_FONT_SIZE,
+    660,
+  );
+  expect(width).toBeGreaterThan(
+    LEGEND_MARKER_WIDTH + LEGEND_GAP + LEGEND_PADDING,
+  );
+  // ChartDataTable splits LEGEND_PADDING evenly between both sides.
+  expect(LEGEND_PADDING % 2).toBe(0);
+});
+
 test('getDataTableGridLeft grows with the longest series name', () => {
   const short = getDataTableGridLeft([makeRow('A')], DATA_TABLE_FONT_SIZE, 600);
   const long = getDataTableGridLeft(
@@ -230,6 +248,95 @@ test('getDataTableGridLeft grows with the longest series name', () => {
 test('getDataTableGridLeft caps very long names so the plot stays usable', () => {
   const rows = [makeRow('X'.repeat(200))];
   expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 300)).toBe(120);
+});
+
+test('getDataTableGridLeft subtracts the Y-axis label gutter', () => {
+  const rows = [makeRow('SUM(当月金额)')];
+  const uncompensated = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600);
+  const compensated = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600, 36);
+  expect(uncompensated - compensated).toBe(36);
+  // The plot edge ends up at grid.left + gutter, i.e. back at the width the
+  // legend column actually needs, so the text is not clipped.
+  expect(compensated + 36).toBe(uncompensated);
+});
+
+test('getDataTableGridLeft never shrinks below its floor or below zero', () => {
+  const rows = [makeRow('A')];
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600, 1000)).toBe(24);
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600, -50)).toBe(
+    getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 600),
+  );
+});
+
+test('getGridLabelGutter measures the space ECharts reserves for Y labels', () => {
+  expect(getGridLabelGutter(126, 91)).toBe(35);
+  expect(getGridLabelGutter(40, 16)).toBe(24);
+});
+
+test('getGridLabelGutter falls back to 0 for unusable measurements', () => {
+  // A layout fallback left of the configured grid.left, a missing boundary,
+  // and non-finite values all keep the conservative column width.
+  expect(getGridLabelGutter(10, 40)).toBe(0);
+  expect(getGridLabelGutter(0, 0)).toBe(0);
+  expect(getGridLabelGutter(Number.NaN, 20)).toBe(0);
+  expect(getGridLabelGutter(120, Number.POSITIVE_INFINITY)).toBe(0);
+});
+
+test('resolveDataTableGrid raises grid.left without mutating the options', () => {
+  const base = {
+    grid: { containLabel: true, left: 20 },
+  } as EChartsCoreOption;
+  const { chartOptions, appliedGridLeft } = resolveDataTableGrid(base, 91);
+  expect(appliedGridLeft).toBe(91);
+  expect((chartOptions as { grid: { left: number } }).grid.left).toBe(91);
+  expect(
+    (chartOptions as { grid: { containLabel: boolean } }).grid.containLabel,
+  ).toBe(true);
+  expect(base).toEqual({ grid: { containLabel: true, left: 20 } });
+});
+
+test('resolveDataTableGrid keeps the chart padding when no extra room is needed', () => {
+  const base = { grid: { left: 20 } } as EChartsCoreOption;
+  const result = resolveDataTableGrid(base, 10);
+  expect(result.appliedGridLeft).toBe(20);
+  expect(result.chartOptions).toBe(base);
+});
+
+test('resolveDataTableGrid is a no-op for a disabled table or unusable grid', () => {
+  const base = { grid: { left: 20 } } as EChartsCoreOption;
+  expect(resolveDataTableGrid(base, 0)).toEqual({
+    chartOptions: base,
+    appliedGridLeft: 0,
+  });
+  const noGrid = {} as EChartsCoreOption;
+  expect(resolveDataTableGrid(noGrid, 91).chartOptions).toBe(noGrid);
+  const gridArray = { grid: [{ left: 20 }] } as unknown as EChartsCoreOption;
+  expect(resolveDataTableGrid(gridArray, 91).chartOptions).toBe(gridArray);
+});
+
+test('the legend column shrinks to the label width after measuring the gutter', () => {
+  const rows = [makeRow('SUM(当月金额)')];
+  const width = 660;
+  const base = { grid: { left: 20 } } as EChartsCoreOption;
+  const labelWidth = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, width);
+  const first = resolveDataTableGrid(base, labelWidth);
+  // ECharts adds the Y-axis label gutter on top of grid.left.
+  const gutter = getGridLabelGutter(
+    first.appliedGridLeft + 35,
+    first.appliedGridLeft,
+  );
+  expect(gutter).toBe(35);
+  const compensated = getDataTableGridLeft(
+    rows,
+    DATA_TABLE_FONT_SIZE,
+    width,
+    gutter,
+  );
+  const second = resolveDataTableGrid(base, compensated);
+  expect(second.appliedGridLeft).toBeLessThan(first.appliedGridLeft);
+  // The plot edge ends up exactly at the width the series name needs, so the
+  // text stays fully visible while the empty gutter disappears.
+  expect(second.appliedGridLeft + gutter).toBe(labelWidth);
 });
 
 test('getDataTableHeight caps the table at the maximum visible rows', () => {

@@ -22,6 +22,7 @@ import {
   AnnotationSourceType,
   AxisType,
   ComparisonType,
+  convertKeysToCamelCase,
   DataRecord,
   FormulaAnnotationLayer,
   IntervalAnnotationLayer,
@@ -46,6 +47,7 @@ import {
   EchartsMixedTimeseriesProps,
 } from '../../src/MixedTimeseries/types';
 import { createEchartsTimeseriesTestChartProps } from '../helpers';
+import { buildDataTable } from '../../src/components/chartDataTableUtils';
 import type { BarSeriesOption, LineSeriesOption, SeriesOption } from 'echarts';
 
 type LabelFormatterParams = {
@@ -2309,4 +2311,176 @@ test('swapYAxes flips top/bottom value axes when horizontal', () => {
     );
   expect(axisIndices(normal)).toContain(1);
   expect(axisIndices(swapped)).toEqual(axisIndices(normal));
+});
+
+/**
+ * A single-select chart inline filter on the groupby column pins the query to
+ * one dimension value. The ", <value>" suffix is then redundant in the legend,
+ * tooltip and the X-axis data table, so the rendered series names drop it.
+ */
+const inlineFilterConfig = (overrides: Record<string, unknown> = {}) => ({
+  id: 'f1',
+  column: 'gender',
+  filterType: 'single',
+  ...overrides,
+});
+
+const inlineAdhocFilter = (overrides: Record<string, unknown> = {}) => ({
+  filterOptionName: 'inline_f1',
+  expressionType: 'SIMPLE',
+  subject: 'gender',
+  operator: '==',
+  comparator: 'girl',
+  isExtra: true,
+  ...overrides,
+});
+
+const transformWithInlineFilters = ({
+  config = [inlineFilterConfig()],
+  filters = [inlineAdhocFilter()],
+  overrides = {},
+  queriesDataOverride,
+}: {
+  config?: Record<string, unknown>[];
+  filters?: Record<string, unknown>[];
+  overrides?: Partial<EchartsMixedTimeseriesFormData>;
+  queriesDataOverride?: ChartDataResponseResult[];
+} = {}) => {
+  const formDataWithInline = {
+    ...formData,
+    ...overrides,
+    inline_filters: config,
+    adhoc_filters: filters,
+  } as unknown as EchartsMixedTimeseriesFormData;
+  const resolvedQueriesData = queriesDataOverride ?? queriesData;
+  const testProps = createEchartsTimeseriesTestChartProps<
+    EchartsMixedTimeseriesFormData,
+    EchartsMixedTimeseriesProps
+  >({
+    ...MIXED_TIMESERIES_CHART_PROPS_DEFAULTS,
+    defaultQueriesData: resolvedQueriesData,
+    formData: formDataWithInline,
+    queriesData: resolvedQueriesData,
+  });
+  // Regression: real `ChartProps` camelCases `formData` (adhocFilters /
+  // inlineFilters) while `rawFormData` keeps snake_case. The test helper above
+  // writes the raw object back, which used to make these tests pass even when
+  // the plugin only understood snake_case keys. Force the real shape here:
+  // rawFormData is a plain form data without any injected inline filters.
+  return transformProps({
+    ...testProps,
+    formData: convertKeysToCamelCase(formDataWithInline),
+    rawFormData: formData,
+  } as unknown as EchartsMixedTimeseriesProps);
+};
+
+const renderedNames = (
+  transformed: ReturnType<typeof transformProps>,
+): string[] =>
+  ((transformed.echartOptions.series as SeriesOption[]) ?? []).map(series =>
+    String(series.name),
+  );
+
+test('single-select inline filter on a dimension hides its value label everywhere', () => {
+  const transformed = transformWithInlineFilters();
+  const names = renderedNames(transformed);
+
+  // Legend, tooltip and the X-axis data table all read these series names.
+  expect(names).toContain('sum__num');
+  expect(names).not.toContain('sum__num, girl');
+  expect((transformed.echartOptions.legend as any).data).toContain('sum__num');
+  expect((transformed.echartOptions.legend as any).data).not.toContain(
+    'sum__num, girl',
+  );
+
+  // Cross filters / drill resolve the clicked name through the label map, so
+  // the map has to be re-keyed by the stripped name.
+  const { labelMap } = transformed as unknown as {
+    labelMap: Record<string, string[]>;
+  };
+  expect(labelMap['sum__num']).toBeDefined();
+  expect(labelMap['sum__num, girl']).toBeUndefined();
+
+  // The X-axis data table's first column comes straight from series.name.
+  const { rows } = buildDataTable(transformed.echartOptions);
+  expect(rows.map(row => row.name)).toContain('sum__num');
+  expect(rows.map(row => row.name)).not.toContain('sum__num, girl');
+});
+
+test('dimension label stays when the inline filter has no selected value', () => {
+  const names = renderedNames(transformWithInlineFilters({ filters: [] }));
+  expect(names).toContain('sum__num, girl');
+  expect(names).not.toContain('sum__num');
+});
+
+test('dimension label stays for a multi-select inline filter', () => {
+  const names = renderedNames(
+    transformWithInlineFilters({
+      config: [inlineFilterConfig({ filterType: 'multiple' })],
+      filters: [inlineAdhocFilter({ operator: 'IN', comparator: ['girl'] })],
+    }),
+  );
+  expect(names).toContain('sum__num, girl');
+  expect(names).not.toContain('sum__num');
+});
+
+test('dimension label stays for a text-input inline filter', () => {
+  const names = renderedNames(
+    transformWithInlineFilters({
+      config: [inlineFilterConfig({ filterType: 'input' })],
+      filters: [inlineAdhocFilter({ operator: 'ILIKE', comparator: '%gir%' })],
+    }),
+  );
+  expect(names).toContain('sum__num, girl');
+  expect(names).not.toContain('sum__num');
+});
+
+test('dimension label stays for an inverse single-select filter', () => {
+  const names = renderedNames(
+    transformWithInlineFilters({
+      config: [inlineFilterConfig({ inverseSelection: true })],
+      filters: [inlineAdhocFilter({ operator: '!=' })],
+    }),
+  );
+  expect(names).toContain('sum__num, girl');
+  expect(names).not.toContain('sum__num');
+});
+
+test('dimension label stays when the filter column is not a chart dimension', () => {
+  const names = renderedNames(
+    transformWithInlineFilters({
+      config: [inlineFilterConfig({ column: 'country' })],
+    }),
+  );
+  expect(names).toContain('sum__num, girl');
+  expect(names).not.toContain('sum__num');
+});
+
+test('a filter on Query A dimension does not rewrite Query B names', () => {
+  const names = renderedNames(
+    transformWithInlineFilters({ overrides: { groupbyB: ['region'] } }),
+  );
+  // Query A is stripped, Query B keeps its own dimension labels.
+  expect(names).toContain('sum__num');
+  expect(names).toContain('sum__num, girl');
+});
+
+test('dimension label is removed when groupby is empty but names carry a suffix', () => {
+  const rows = [
+    { ds: 599616000000, 'sum__num, girl': 1 },
+    { ds: 599916000000, 'sum__num, girl': 3 },
+  ];
+  const suffixedQueryData = createTestQueryData(rows, {
+    colnames: ['ds', 'sum__num, girl'],
+    coltypes: [GenericDataType.Temporal, GenericDataType.Numeric],
+    label_map: { ds: ['ds'], 'sum__num, girl': ['sum__num', 'girl'] },
+  });
+  const names = renderedNames(
+    transformWithInlineFilters({
+      overrides: { groupby: [], groupbyB: [] },
+      queriesDataOverride: [suffixedQueryData, suffixedQueryData],
+    }),
+  );
+  expect(names).toContain('sum__num');
+  expect(names).not.toContain('sum__num, girl');
 });

@@ -21,6 +21,9 @@ import {
   DATA_TABLE_FONT_SIZE,
   DATA_TABLE_ROW_HEIGHT,
   getDataTableHeight,
+  LEGEND_GAP,
+  LEGEND_MARKER_WIDTH,
+  LEGEND_PADDING,
   type ColumnLayout,
   type DataTable,
 } from './chartDataTableUtils';
@@ -82,12 +85,13 @@ export default function ChartDataTable({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              gap: LEGEND_GAP,
               flex: `0 0 ${legendWidth}px`,
               width: legendWidth,
               minWidth: 0,
-              paddingLeft: 6,
-              paddingRight: 6,
+              // getDataTableGridLeft() budgets LEGEND_PADDING for this pair.
+              paddingLeft: LEGEND_PADDING / 2,
+              paddingRight: LEGEND_PADDING / 2,
               boxSizing: 'border-box',
               overflow: 'hidden',
               whiteSpace: 'nowrap',
@@ -99,9 +103,9 @@ export default function ChartDataTable({
           >
             <span
               style={{
-                flex: '0 0 10px',
-                width: 10,
-                height: row.isLine ? 2 : 10,
+                flex: `0 0 ${LEGEND_MARKER_WIDTH}px`,
+                width: LEGEND_MARKER_WIDTH,
+                height: row.isLine ? 2 : LEGEND_MARKER_WIDTH,
                 backgroundColor: row.color ?? theme.colorTextSecondary,
                 borderRadius: row.isLine ? 0 : 2,
               }}

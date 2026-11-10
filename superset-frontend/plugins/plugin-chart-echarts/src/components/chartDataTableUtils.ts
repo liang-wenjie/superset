@@ -54,10 +54,14 @@ export const getDataTableHeight = (rowCount: number): number =>
     : Math.min(rowCount, DATA_TABLE_MAX_ROWS) * DATA_TABLE_ROW_HEIGHT + 1;
 
 export const DATA_TABLE_FONT_SIZE = 12;
-const LEGEND_MARKER_WIDTH = 10;
-const LEGEND_GAP = 6;
-const LEGEND_PADDING = 12;
-const LABEL_SAFETY_MARGIN = 8;
+// Shared with ChartDataTable so the estimated width always matches the DOM
+// instead of drifting when the legend column padding is tuned.
+export const LEGEND_MARKER_WIDTH = 10;
+export const LEGEND_GAP = 6;
+export const LEGEND_PADDING = 6;
+// estimateLabelWidth() only approximates glyph widths. A small buffer keeps
+// ellipsis from clipping long names without widening every chart.
+const LABEL_SAFETY_MARGIN = 4;
 const MIN_GRID_LEFT = 24;
 // A very long series name must not eat most of the plotting area.
 const MAX_GRID_LEFT_RATIO = 0.4;
@@ -74,30 +78,84 @@ const estimateLabelWidth = (text: string, fontSizePx: number): number =>
 
 /**
  * Minimum `grid.left` needed so the longest series name fits in the legend
- * column. The chart's Y axis (and thus the plot area) moves right by this
- * amount, and the table's first column then aligns to that new plot edge.
+ * column. With `containLabel: true` ECharts already reserves the Y-axis label
+ * gutter *on top of* `grid.left`, so that measured gutter is subtracted here —
+ * otherwise it is paid for twice and the legend column ends up much wider than
+ * its text (most visible after a dimension-value suffix is hidden).
  */
 export function getDataTableGridLeft(
   rows: DataTableRow[],
   fontSizePx = DATA_TABLE_FONT_SIZE,
   chartWidth = 0,
+  yAxisLabelGutter = 0,
 ): number {
   const longestLabel = rows.reduce(
     (max, row) => Math.max(max, estimateLabelWidth(row.name, fontSizePx)),
     0,
   );
-  const required = Math.ceil(
+  const legendWidth = Math.ceil(
     longestLabel +
       LEGEND_MARKER_WIDTH +
       LEGEND_GAP +
       LEGEND_PADDING +
       LABEL_SAFETY_MARGIN,
   );
+  const required = Math.max(0, legendWidth - Math.max(0, yAxisLabelGutter));
   const cap =
     chartWidth > 0
       ? Math.round(chartWidth * MAX_GRID_LEFT_RATIO)
       : Number.POSITIVE_INFINITY;
   return Math.max(MIN_GRID_LEFT, Math.min(required, cap));
+}
+
+/**
+ * The width ECharts reserves for Y-axis labels under `containLabel: true`.
+ * `computeColumnLayout` already measures the plot edge (`grid.rect.x`), and the
+ * component records the `grid.left` it applied, so the gutter is simply the
+ * difference — no dependency on ECharts' internal model options.
+ * Returns 0 for unusable measurements, which keeps the conservative width.
+ */
+export function getGridLabelGutter(
+  plotLeft: number,
+  configuredGridLeft: number,
+): number {
+  if (!Number.isFinite(plotLeft) || !Number.isFinite(configuredGridLeft)) {
+    return 0;
+  }
+  return Math.max(0, Math.round(plotLeft - configuredGridLeft));
+}
+
+/**
+ * Apply the legend-column width to the chart's grid. Returns the `grid.left`
+ * actually handed to ECharts so the render callback can measure the Y-axis
+ * label gutter as `plotEdge - appliedGridLeft`. Keeping this a pure helper
+ * makes the resize/width feedback loop testable without a chart instance.
+ */
+export function resolveDataTableGrid(
+  echartOptions: EChartsCoreOption,
+  requiredGridLeft: number,
+): { chartOptions: EChartsCoreOption; appliedGridLeft: number } {
+  const fallback = { chartOptions: echartOptions, appliedGridLeft: 0 };
+  if (!requiredGridLeft) {
+    return fallback;
+  }
+  const { grid } = echartOptions as { grid?: unknown };
+  if (!grid || typeof grid !== 'object' || Array.isArray(grid)) {
+    return fallback;
+  }
+  const gridObject = grid as Record<string, unknown>;
+  const currentLeft = typeof gridObject.left === 'number' ? gridObject.left : 0;
+  const nextLeft = Math.max(currentLeft, requiredGridLeft);
+  return {
+    appliedGridLeft: nextLeft,
+    chartOptions:
+      nextLeft === currentLeft
+        ? echartOptions
+        : ({
+            ...echartOptions,
+            grid: { ...gridObject, left: nextLeft },
+          } as EChartsCoreOption),
+  };
 }
 
 const FORECAST_MARKERS = ['__yhat'];

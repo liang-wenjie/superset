@@ -127,6 +127,11 @@ import {
 } from '../utils/formatters';
 import { getMetricDisplayName } from '../utils/metricDisplayName';
 import { mergeCustomEChartOptions } from '../utils/mergeCustomEChartOptions';
+import {
+  getDimensionColumnNames,
+  getHiddenDimensionLabels,
+  stripDimensionValueLabels,
+} from './inlineFilterSeriesName';
 
 const getFormatter = (
   customFormatters: Record<string, ValueFormatter>,
@@ -264,6 +269,37 @@ export default function transformProps(
     metrics = [],
     metricsB = [],
   }: EchartsMixedTimeseriesFormData = { ...DEFAULT_FORM_DATA, ...formData };
+
+  // A single-select chart inline filter on a groupby column pins the query to
+  // one dimension value, making the ", <value>" part of every series name
+  // redundant. Drop it from the rendered names so the legend, tooltip and the
+  // optional X-axis data table all agree. Each query keeps its own dimension
+  // columns, so a filter on Query A's groupby never rewrites Query B's names.
+  // `chartProps.formData` is camelCased by `ChartProps`, while `rawFormData`
+  // keeps the original keys. Read both so the injected inline filters are
+  // found regardless of which copy carries them.
+  const hiddenDimensionLabels = getHiddenDimensionLabels(
+    formData as unknown as QueryFormData,
+    chartProps.rawFormData as unknown as QueryFormData | undefined,
+  );
+  const groupbyColumns = getDimensionColumnNames(groupby);
+  const groupbyBColumns = getDimensionColumnNames(groupbyB);
+  // A query without a declared groupby can still receive series names with a
+  // dimension suffix from the backend label map; in that case the selected
+  // value itself is the only reliable match, and stripDimensionValueLabels
+  // only removes it when it appears as a non-metric segment.
+  const hiddenValuesA =
+    groupby.length === 0
+      ? hiddenDimensionLabels.map(({ value }) => value)
+      : hiddenDimensionLabels
+          .filter(({ column }) => groupbyColumns.has(column))
+          .map(({ value }) => value);
+  const hiddenValuesB =
+    groupbyB.length === 0
+      ? hiddenDimensionLabels.map(({ value }) => value)
+      : hiddenDimensionLabels
+          .filter(({ column }) => groupbyBColumns.has(column))
+          .map(({ value }) => value);
 
   // The orientation control is always visible and is the single source of
   // truth. Series data is stored as [category, value] for vertical charts
@@ -630,6 +666,9 @@ export default function transformProps(
       // When no groupby, format as just the entry name with optional query identifier
       displayName = showQueryIdentifiers ? `${entryName} (Query A)` : entryName;
     }
+    // Keep displayLabelMap keyed by the rendered name: cross filters and drill
+    // lookups resolve the clicked series name through this map.
+    displayName = stripDimensionValueLabels(displayName, hiddenValuesA);
     if (labelMapValues) {
       displayLabelMap[displayName] = labelMapValues;
     }
@@ -739,6 +778,7 @@ export default function transformProps(
       // When no groupby, format as just the entry name with optional query identifier
       displayName = showQueryIdentifiers ? `${entryName} (Query B)` : entryName;
     }
+    displayName = stripDimensionValueLabels(displayName, hiddenValuesB);
     if (labelMapValuesB) {
       displayLabelMapB[displayName] = labelMapValuesB;
     }

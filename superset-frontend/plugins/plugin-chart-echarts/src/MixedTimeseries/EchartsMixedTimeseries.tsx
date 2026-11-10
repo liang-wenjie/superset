@@ -40,6 +40,8 @@ import {
   DATA_TABLE_FONT_SIZE,
   getDataTableGridLeft,
   getDataTableHeight,
+  getGridLabelGutter,
+  resolveDataTableGrid,
   type ColumnLayout,
 } from '../components/chartDataTableUtils';
 import { formatSeriesName } from '../utils/series';
@@ -95,6 +97,33 @@ export default function EchartsMixedTimeseries({
 
   const [columnLayout, setColumnLayout] =
     useState<ColumnLayout>(EMPTY_COLUMN_LAYOUT);
+  // `containLabel: true` adds the Y-axis label gutter on top of `grid.left`.
+  // Measure the real gutter once the chart has painted so the legend column
+  // shrinks to the series names instead of reserving that space twice.
+  const [gridLabelGutter, setGridLabelGutter] = useState(0);
+
+  // Reserve enough room on the left for the longest series name. Raising
+  // grid.left moves the Y axis and the plot area to the right; the table's
+  // legend column then aligns to that new plot edge via computeColumnLayout.
+  const requiredGridLeft = useMemo(
+    () =>
+      showDataTable && tableData
+        ? getDataTableGridLeft(
+            tableData.rows,
+            DATA_TABLE_FONT_SIZE,
+            width,
+            gridLabelGutter,
+          )
+        : 0,
+    [showDataTable, tableData, width, gridLabelGutter],
+  );
+
+  // Keep the applied grid.left as a plain derived value (not a ref) so the
+  // layout callback can subtract it from the measured plot edge.
+  const { chartOptions, appliedGridLeft } = useMemo(
+    () => resolveDataTableGrid(echartOptions, requiredGridLeft),
+    [echartOptions, requiredGridLeft],
+  );
 
   const handleRendered = useCallback(() => {
     const chart = echartRef.current?.getEchartInstance();
@@ -105,7 +134,15 @@ export default function EchartsMixedTimeseries({
     setColumnLayout(previous =>
       areColumnLayoutsEqual(previous, next) ? previous : next,
     );
-  }, [tableData, width]);
+    const gutter = getGridLabelGutter(next.boundaries[0] ?? 0, appliedGridLeft);
+    if (gutter > 0) {
+      // The gutter depends only on Y-axis label widths, not on grid.left, so
+      // this converges after one repaint instead of looping on `finished`.
+      setGridLabelGutter(previous =>
+        Math.abs(previous - gutter) < 0.5 ? previous : gutter,
+      );
+    }
+  }, [tableData, width, appliedGridLeft]);
 
   // `finished` covers repaint, resize and dataZoom. Recompute on size changes
   // as a safety net for resizes that do not emit a repaint.
@@ -122,35 +159,6 @@ export default function EchartsMixedTimeseries({
     height - tableHeight,
     Math.min(MIN_CHART_HEIGHT, height),
   );
-
-  // Reserve enough room on the left for the longest series name. Raising
-  // grid.left moves the Y axis and the plot area to the right; the table's
-  // legend column then aligns to that new plot edge via computeColumnLayout.
-  const requiredGridLeft = useMemo(
-    () =>
-      showDataTable && tableData
-        ? getDataTableGridLeft(tableData.rows, DATA_TABLE_FONT_SIZE, width)
-        : 0,
-    [showDataTable, tableData, width],
-  );
-
-  const chartOptions = useMemo(() => {
-    if (!requiredGridLeft) {
-      return echartOptions;
-    }
-    const { grid } = echartOptions as { grid?: unknown };
-    if (!grid || typeof grid !== 'object' || Array.isArray(grid)) {
-      return echartOptions;
-    }
-    const gridObject = grid as Record<string, unknown>;
-    const currentLeft =
-      typeof gridObject.left === 'number' ? gridObject.left : 0;
-    const nextLeft = Math.max(currentLeft, requiredGridLeft);
-    if (nextLeft === currentLeft) {
-      return echartOptions;
-    }
-    return { ...echartOptions, grid: { ...gridObject, left: nextLeft } };
-  }, [echartOptions, requiredGridLeft]);
 
   const isFirstQuery = useCallback(
     (seriesIndex: number) => seriesIndex < seriesBreakdown,
