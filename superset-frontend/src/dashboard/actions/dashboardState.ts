@@ -1195,18 +1195,19 @@ export const SET_CHART_INLINE_FILTER = 'SET_CHART_INLINE_FILTER';
 
 interface SetChartInlineFilterAction {
   type: typeof SET_CHART_INLINE_FILTER;
-  chartId: number;
+  /** Redux chart state key: numeric slice id, or `<chartId>::<componentId>`. */
+  chartKey: number | string;
   filterId: string;
   /** `null` is an explicit clear; `undefined` means no selection was made. */
   value: InlineFilterChangeValue;
 }
 
 export function setChartInlineFilter(
-  chartId: number,
+  chartKey: number | string,
   filterId: string,
   value: InlineFilterChangeValue,
 ): SetChartInlineFilterAction {
-  return { type: SET_CHART_INLINE_FILTER, chartId, filterId, value };
+  return { type: SET_CHART_INLINE_FILTER, chartKey, filterId, value };
 }
 
 // ---------------------------------------------------------------------------

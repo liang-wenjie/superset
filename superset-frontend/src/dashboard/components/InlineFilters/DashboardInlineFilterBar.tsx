@@ -26,7 +26,8 @@ import { setChartInlineFilter } from '../../actions/dashboardState';
 import { triggerQuery } from 'src/components/Chart/chartAction';
 
 interface DashboardInlineFilterBarProps {
-  chartId: number;
+  /** Redux chart state key: numeric slice id, or `<chartId>::<componentId>`. */
+  chartKey: number | string;
   /** Raw inline_filters from the chart formData. */
   rawConfig: JsonObject | InlineFilterConfig[] | undefined;
   datasourceId?: string | number;
@@ -51,11 +52,13 @@ function normalizeConfig(
 /**
  * Dashboard-connected version of the inline filter bar. Reads the current
  * selection from dashboardState.chartInlineFilters and dispatches updates.
+ * Duplicated slices pass an instance-scoped chartKey so each holder owns its
+ * own selection and re-queries only itself.
  */
 export const DashboardInlineFilterBar: React.FC<
   DashboardInlineFilterBarProps
 > = ({
-  chartId,
+  chartKey,
   rawConfig,
   datasourceId,
   datasourceType,
@@ -65,15 +68,17 @@ export const DashboardInlineFilterBar: React.FC<
   const dispatch = useDispatch();
   const selection = useSelector(
     (state: RootState) =>
-      state.dashboardState.chartInlineFilters?.[chartId] ?? {},
+      state.dashboardState.chartInlineFilters?.[chartKey] ?? {},
   );
 
   const handleSelect = useCallback(
     (filterId: string, value: InlineFilterChangeValue) => {
-      dispatch(setChartInlineFilter(chartId, filterId, value));
-      dispatch(triggerQuery(true, chartId));
+      dispatch(setChartInlineFilter(chartKey, filterId, value));
+      // An inline filter belongs to one chart holder: selecting a value must
+      // not re-query the sibling holders of the same slice.
+      dispatch(triggerQuery(true, chartKey));
     },
-    [dispatch, chartId],
+    [dispatch, chartKey],
   );
 
   return (

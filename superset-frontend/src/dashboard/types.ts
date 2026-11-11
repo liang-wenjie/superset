@@ -147,8 +147,13 @@ export type DashboardState = {
     data: JsonObject;
   };
   chartStates?: Record<string, JsonObject>;
-  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value(s). */
-  chartInlineFilters?: Record<number, InlineFilterSelection>;
+  /**
+   * Runtime selections for per-chart inline quick filters: chart state key ->
+   * filterId -> value(s). Single-instance charts keep the numeric slice id;
+   * duplicated slices use `<chartId>::<componentId>` so each layout holder
+   * keeps its own selection.
+   */
+  chartInlineFilters?: Record<number | string, InlineFilterSelection>;
   autoRefreshStatus?: AutoRefreshStatus;
   autoRefreshPaused?: boolean;
   autoRefreshPausedByTab?: boolean;

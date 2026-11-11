@@ -113,8 +113,12 @@ interface DashboardStateShape {
   overwriteConfirmMetadata?: JsonObject;
   nativeFiltersBarOpen?: boolean;
   chartStates?: Record<string, ChartStateEntry>;
-  /** Runtime selections for per-chart inline quick filters: chartId -> filterId -> value(s). */
-  chartInlineFilters?: Record<number, InlineFilterSelection>;
+  /**
+   * Runtime selections for per-chart inline quick filters: chart state key ->
+   * filterId -> value(s). Duplicated slices are keyed by instance so each
+   * holder keeps its own selection.
+   */
+  chartInlineFilters?: Record<number | string, InlineFilterSelection>;
   css?: string;
   preselectNativeFilters?: JsonObject;
   autoRefreshStatus?: AutoRefreshStatus;
@@ -212,7 +216,16 @@ export default function dashboardStateReducer(
       updatedSliceIds.delete(sliceId!);
 
       const updatedInlineFilters = { ...state.chartInlineFilters };
-      delete updatedInlineFilters[sliceId!];
+      // A duplicated slice keeps one inline selection per layout holder. Drop
+      // all of them alongside the legacy numeric key when the slice is removed.
+      const instancePrefix = `${sliceId}::`;
+      Object.keys(updatedInlineFilters).forEach(key => {
+        // Redux object keys are always strings; compare as strings so both
+        // numeric slice ids and legacy string ids are matched.
+        if (key === String(sliceId) || key.startsWith(instancePrefix)) {
+          delete updatedInlineFilters[key];
+        }
+      });
 
       return {
         ...state,
@@ -481,12 +494,12 @@ export default function dashboardStateReducer(
       };
     },
     [SET_CHART_INLINE_FILTER](): DashboardStateShape {
-      const { chartId, filterId, value } = action as unknown as {
-        chartId: number;
+      const { chartKey, filterId, value } = action as unknown as {
+        chartKey: number | string;
         filterId: string;
         value: InlineFilterChangeValue;
       };
-      const existing = state.chartInlineFilters?.[chartId] || {};
+      const existing = state.chartInlineFilters?.[chartKey] || {};
       const next = { ...existing };
       // Keep an explicit clear as `null` instead of deleting the key: a
       // missing key means "never touched, apply the default value", while an
@@ -496,7 +509,7 @@ export default function dashboardStateReducer(
         ...state,
         chartInlineFilters: {
           ...state.chartInlineFilters,
-          [chartId]: next,
+          [chartKey]: next,
         },
       };
     },

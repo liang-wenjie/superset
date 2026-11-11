@@ -444,7 +444,7 @@ const Chart = (props: ChartProps) => {
   // Per-chart inline quick filter selections (button toggles in the header).
   const inlineFilterSelection = useSelector(
     (state: RootState) =>
-      state.dashboardState.chartInlineFilters?.[props.id] ?? {},
+      state.dashboardState.chartInlineFilters?.[chartKey] ?? {},
   );
 
   const inlineFilterConfig = useMemo<InlineFilterConfig[]>(() => {
@@ -931,7 +931,7 @@ const Chart = (props: ChartProps) => {
 
       {showInlineFilterBar && (
         <DashboardInlineFilterBar
-          chartId={props.id}
+          chartKey={chartKey}
           rawConfig={inlineFilterConfig}
           datasourceId={inlineFilterDatasourceId ?? datasource?.id}
           datasourceType={inlineFilterDatasourceType ?? datasource?.type}

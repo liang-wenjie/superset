@@ -1358,3 +1358,77 @@ test('passes the form data of the last request to ChartContainer next to the cur
     expect.objectContaining({ groupby: ['region'] }),
   );
 });
+
+const inlineFilterConfig = [{ id: 'f1', column: 'country' }];
+
+const duplicatedInlineState = () => {
+  const baseChart = defaultState.charts[queryId];
+  const baseFormData = {
+    ...baseChart.form_data,
+    adhoc_filters: [],
+    inline_filters: inlineFilterConfig,
+  };
+  const holder = (id: string) => ({
+    id,
+    type: 'CHART',
+    meta: { chartId: queryId },
+  });
+  return {
+    ...defaultState,
+    charts: {
+      ...defaultState.charts,
+      [`${queryId}::CHART-a`]: { ...baseChart, form_data: baseFormData },
+      [`${queryId}::CHART-b`]: { ...baseChart, form_data: baseFormData },
+      [`${queryId}::CHART-c`]: { ...baseChart, form_data: baseFormData },
+    },
+    dashboardLayout: {
+      present: {
+        ROOT_ID: { id: 'ROOT_ID', type: 'ROOT', children: ['GRID_ID'] },
+        GRID_ID: {
+          id: 'GRID_ID',
+          type: 'GRID',
+          children: ['CHART-a', 'CHART-b', 'CHART-c'],
+        },
+        'CHART-a': holder('CHART-a'),
+        'CHART-b': holder('CHART-b'),
+        'CHART-c': holder('CHART-c'),
+      },
+      past: [],
+      future: [],
+    },
+    dashboardState: {
+      ...defaultState.dashboardState,
+      // Hide the filter bar; this test targets the formData injection that
+      // drives the per-holder query, not the dropdown rendering.
+      editMode: true,
+      chartInlineFilters: {
+        [queryId]: { f1: 'legacy' },
+        [`${queryId}::CHART-a`]: { f1: 'CN' },
+        [`${queryId}::CHART-b`]: { f1: 'US' },
+        [`${queryId}::CHART-c`]: { f1: 'JP' },
+      },
+    },
+  };
+};
+
+test('duplicated holders inject their own inline-filter selection', () => {
+  const state = duplicatedInlineState();
+  Object.entries({
+    'CHART-a': 'CN',
+    'CHART-b': 'US',
+    'CHART-c': 'JP',
+  }).forEach(([componentId, value]) => {
+    setup({ componentId }, state);
+    const formData = capturedChartContainerProps.formData as {
+      adhoc_filters: { filterOptionName?: string; comparator?: unknown }[];
+    };
+    const injected = formData.adhoc_filters.filter(
+      filter => filter.filterOptionName === 'inline_f1',
+    );
+    expect(injected).toHaveLength(1);
+    expect(injected[0].comparator).toBe(value);
+    expect(capturedChartContainerProps.chartKey).toBe(
+      `${queryId}::${componentId}`,
+    );
+  });
+});
