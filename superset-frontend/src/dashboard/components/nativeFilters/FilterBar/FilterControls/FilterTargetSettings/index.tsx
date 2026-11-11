@@ -460,10 +460,7 @@ const FilterTargetSettings = ({
     try {
       const response = await SupersetClient.post({
         endpoint: `/api/v1/dataset/${row.datasetId}/validate_filter_target_transform/`,
-        body: JSON.stringify({
-          expression,
-          ...(row.column.trim() ? { column: row.column.trim() } : {}),
-        }),
+        body: JSON.stringify({ expression }),
         headers: { 'Content-Type': 'application/json' },
       });
       const result = response.json?.result as
@@ -574,10 +571,9 @@ const FilterTargetSettings = ({
             scopeTarget({
               datasetId: focus.datasetId,
               datasourceType: focus.datasourceType,
-              // {col} resolves to the report's source column. Keep the
-              // filter's own column as a fallback for legacy mappings that
-              // name the report's fields directly in the SQL template.
-              column: { name: column || defaultColumn },
+              // {col} inside the transform template resolves to the filter's
+              // default column.
+              column: { name: defaultColumn },
               valueTransform,
             }),
           );
@@ -614,7 +610,7 @@ const FilterTargetSettings = ({
               targets.push({
                 datasetId: row.datasetId,
                 datasourceType: row.datasourceType,
-                column: { name: column || defaultRow?.column || defaultColumn },
+                column: { name: defaultRow?.column || defaultColumn },
                 valueTransform,
                 chartIds: row.chartIds,
               });
@@ -754,7 +750,7 @@ const FilterTargetSettings = ({
                 <Input value={row.column} disabled onChange={() => undefined} />
               </FormItem>
             ) : null}
-            {!row.isDefault && (
+            {row.mode === 'column' ? (
               <FormItem label={t('Column')} style={{ marginBottom: 0 }}>
                 {focus ? (
                   <Select
@@ -793,7 +789,7 @@ const FilterTargetSettings = ({
                   />
                 )}
               </FormItem>
-            )}
+            ) : null}
             {row.mode === 'transform' ? (
               <FormItem
                 label={

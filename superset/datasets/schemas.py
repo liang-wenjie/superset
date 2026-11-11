@@ -717,16 +717,6 @@ class ValidateFilterTargetTransformSchema(Schema):
             )
         },
     )
-    column = fields.String(
-        allow_none=True,
-        validate=Length(1, 255),
-        metadata={
-            "description": (
-                "Source column the {col} placeholder resolves to. When "
-                "supplied it must exist in the dataset."
-            )
-        },
-    )
 
 
 class DatasetCacheWarmUpRequestSchema(Schema):
