@@ -48,6 +48,7 @@ import { useDashboardLayout } from 'src/dashboard/components/nativeFilters/state
 import { findFilterScope, getTreeCheckedItems } from './utils';
 import { cachedSupersetGet } from 'src/utils/cachedSupersetGet';
 import { CHART_TYPE } from 'src/dashboard/util/componentTypes';
+import { getMappedChartIds } from 'src/dashboard/util/chartInstance';
 import {
   fetchSemanticViewStructure,
   semanticViewDimensionsToColumns,
@@ -239,10 +240,9 @@ const ScopingTree: FC<ScopingTreeProps> = ({
 
   // Datasources that need a column-level check: uid -> chartId.
   const candidateDatasources = useMemo(() => {
-    const explicitChartIds = new Set<number>();
-    (filterTargets ?? []).forEach(target =>
-      (target.chartIds ?? []).forEach(id => explicitChartIds.add(id)),
-    );
+    // Instance-scoped overrides (written by the per-holder settings dialog)
+    // are mappings too; resolve their holder ids through the layout.
+    const explicitChartIds = getMappedChartIds(filterTargets, layout);
     const candidates = new Map<string, number>();
     if (!defaultColumn) {
       return candidates;
@@ -364,13 +364,10 @@ const ScopingTree: FC<ScopingTreeProps> = ({
 
   // Chart ids with an explicit per-report mapping: they are fully configured,
   // so neither the grey "datasets don't match" hint nor the red warning shows.
-  const explicitChartIds = useMemo(() => {
-    const ids = new Set<number>();
-    (filterTargets ?? []).forEach(target =>
-      (target.chartIds ?? []).forEach(id => ids.add(id)),
-    );
-    return ids;
-  }, [filterTargets]);
+  const explicitChartIds = useMemo(
+    () => getMappedChartIds(filterTargets, layout),
+    [filterTargets, layout],
+  );
 
   // Reverse lookup: chart id -> candidate datasource uid.
   const chartIdToDatasourceUid = useMemo(() => {

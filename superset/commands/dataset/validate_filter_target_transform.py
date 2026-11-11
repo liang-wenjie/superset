@@ -25,6 +25,7 @@ single expression, no clause smuggling, no Jinja, no executable comments, no
 sequence reads and no disallowed functions -- so a bad transform is caught in
 the editor instead of failing every chart query that uses it.
 """
+
 from __future__ import annotations
 
 import sqlglot
@@ -73,10 +74,39 @@ def _referenced_columns(expression: str, engine: str) -> set[str]:
 class ValidateFilterTargetTransformCommand(BaseCommand):
     """Validate a per-report filter value transform expression."""
 
-    def __init__(self, model_id: int, expression: str):
+    def __init__(self, model_id: int, expression: str, column: str | None = None):
         self._model_id = model_id
         self._expression = expression
+        self._column = column
         self._model: SqlaTable | None = None
+
+    def _source_column_issues(
+        self, expression: str, column_names: set[str]
+    ) -> list[str]:
+        """Validate the field ``{col}`` will be bound to at query time.
+
+        ``{col}`` is replaced with the report's source column by the query
+        layer, so a passing validation must mean the predicate can resolve it.
+        Templates that name the report's fields directly are covered by the
+        reference check in ``run`` instead.
+        """
+        issues: list[str] = []
+        if "{col}" in expression and not self._column:
+            issues.append(
+                __(
+                    "Select the source column that {col} stands for before "
+                    "validating the expression."
+                )
+            )
+        if self._column and self._column not in column_names:
+            issues.append(
+                __(
+                    "The selected source column %(column)s does not exist "
+                    "in this table.",
+                    column=self._column,
+                )
+            )
+        return issues
 
     def run(self) -> dict[str, object]:
         """
@@ -92,6 +122,8 @@ class ValidateFilterTargetTransformCommand(BaseCommand):
         engine = dataset.db_engine_spec.engine
         expression = self._expression
         issues: list[str] = []
+        column_names = {column.column_name for column in (dataset.columns or [])}
+        issues.extend(self._source_column_issues(expression, column_names))
 
         if contains_jinja(expression):
             issues.append(
@@ -146,9 +178,6 @@ class ValidateFilterTargetTransformCommand(BaseCommand):
             # (like a custom SQL expression column), or the {col} placeholder
             # for the filter's default field. Any other column name is a typo
             # or a reference to a field this table does not have.
-            column_names = {
-                column.column_name for column in (dataset.columns or [])
-            }
             unknown = _referenced_columns(expr, engine) - column_names
             if unknown:
                 issues.append(

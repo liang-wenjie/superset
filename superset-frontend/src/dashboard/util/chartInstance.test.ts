@@ -30,6 +30,7 @@ import {
   isInstanceScopedKey,
   parseChartIdFromStateKey,
   resolveFilterTarget,
+  getMappedChartIds,
 } from './chartInstance';
 
 const layout = {
@@ -65,6 +66,22 @@ const layout = {
   // position_json also carries non-layout entries (e.g. a version string)
   version: 'v1',
 } as unknown as Layout;
+
+test('counts instance-scoped targets as explicit chart mappings', () => {
+  expect(
+    getMappedChartIds(
+      [{ chartIds: [128] }, { instanceIds: ['CHART-b'] }],
+      layout,
+    ),
+  ).toEqual(new Set([128, 127]));
+  expect(getMappedChartIds(undefined, layout)).toEqual(new Set());
+  expect(getMappedChartIds([{ chartIds: [127] }], undefined)).toEqual(
+    new Set([127]),
+  );
+  expect(
+    getMappedChartIds([{ instanceIds: ['CHART-missing'] }], layout),
+  ).toEqual(new Set());
+});
 
 test('counts duplicate holders per slice id', () => {
   expect(getChartInstanceCounts(layout)).toEqual({ 127: 3, 128: 1 });

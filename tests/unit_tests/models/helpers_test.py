@@ -7183,3 +7183,82 @@ def test_values_for_column_applies_plain_runtime_filter(
 
     sql = str(read_sql_query.call_args.kwargs["sql"])
     assert "2026" in sql
+
+
+def test_value_transform_survives_an_unknown_clause_column(
+    database: Database,
+) -> None:
+    """A mapped filter can carry the filter's own field, absent from this
+    dataset, while the SQL template names the report's real column."""
+    from superset.connectors.sqla.models import SqlaTable, TableColumn
+
+    table = SqlaTable(
+        database=database,
+        schema=None,
+        table_name="t",
+        columns=[TableColumn(column_name="月份", type="VARCHAR(64)")],
+    )
+    transformed = table.get_sqla_query(
+        columns=[],
+        metrics=[],
+        groupby=["月份"],
+        filter=[
+            {
+                "col": "年份",
+                "op": "IN",
+                "val": [2026],
+                "valueTransform": "SUBSTRING(月份,1,4)",
+                "isExtra": True,
+            }
+        ],
+        is_timeseries=False,
+    )
+    sql = str(transformed.sqla_query)
+    assert "WHERE" in sql
+    assert "SUBSTRING(月份,1,4)" in sql
+    assert "2026" in sql
+
+    # Reverse check: without a transform the unknown column stays a no-op.
+    plain = table.get_sqla_query(
+        columns=[],
+        metrics=[],
+        groupby=["月份"],
+        filter=[{"col": "年份", "op": "IN", "val": [2026], "isExtra": True}],
+        is_timeseries=False,
+    )
+    assert "SUBSTRING" not in str(plain.sqla_query)
+
+
+def test_values_for_column_transforms_with_unknown_clause_column(
+    database: Database,
+) -> None:
+    """The distinct-values query must compile the same transform."""
+    import pandas as pd
+
+    from superset.connectors.sqla.models import SqlaTable, TableColumn
+
+    table = SqlaTable(
+        database=database,
+        schema=None,
+        table_name="t",
+        columns=[TableColumn(column_name="月份", type="VARCHAR(64)")],
+    )
+    with patch(
+        "pandas.read_sql_query",
+        return_value=pd.DataFrame({"column_values": ["2026"]}),
+    ) as read_sql_query:
+        table.values_for_column(
+            "月份",
+            filters=[
+                {
+                    "col": "年份",
+                    "op": "IN",
+                    "val": [2026],
+                    "valueTransform": "SUBSTRING(月份,1,4)",
+                }
+            ],
+        )
+
+    sql = str(read_sql_query.call_args.kwargs["sql"])
+    assert "SUBSTRING(月份,1,4)" in sql
+    assert "2026" in sql

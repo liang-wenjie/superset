@@ -212,6 +212,42 @@ export function resolveFilterTarget<T extends TargetLike>(
   return targets.find(target => target.chartIds?.includes(chartId));
 }
 
+/**
+ * Chart ids that have an explicit per-report filter target. Instance-scoped
+ * targets address a layout holder rather than a chart id, so resolve those
+ * holder ids through the dashboard layout. Used by the scope tree to decide
+ * whether a report still needs a column/transform mapping.
+ */
+export function getMappedChartIds(
+  targets: readonly TargetLike[] | undefined,
+  layout: Layout | undefined,
+): Set<number> {
+  const chartIds = new Set<number>();
+  const instanceIds = new Set<string>();
+  (targets ?? []).forEach(target => {
+    target.chartIds?.forEach(id => chartIds.add(Number(id)));
+    target.instanceIds?.forEach(id => instanceIds.add(id));
+  });
+  if (instanceIds.size > 0) {
+    Object.values(layout ?? {}).forEach(item => {
+      const holder = item as {
+        id?: unknown;
+        type?: string;
+        meta?: { chartId?: number };
+      };
+      if (
+        holder?.type === CHART_TYPE &&
+        typeof holder.id === 'string' &&
+        instanceIds.has(holder.id) &&
+        holder.meta?.chartId != null
+      ) {
+        chartIds.add(Number(holder.meta.chartId));
+      }
+    });
+  }
+  return chartIds;
+}
+
 export function isInstanceExcluded(
   scope: NativeFilterScope | undefined,
   instanceId: string | undefined,

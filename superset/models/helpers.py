@@ -6600,15 +6600,21 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         operator = _chart_filter_to_sqla_operator(str(flt.get("op") or ""))
         if operator is None or operator not in transform_operators:
             return None
+        # The predicate is built from the SQL template alone, so the clause's
+        # ``col`` may be the filter's default field, which this dataset does
+        # not have (e.g. a year filter mapped onto a report that only stores a
+        # month column). ``{col}`` resolves to the real column when available.
         col_obj = self._get_filter_column(str(flt_col), cols)
-        if col_obj is None:
-            return None
-        sqla_col = self.convert_tbl_column_to_sqla_col(
-            tbl_column=col_obj, template_processor=template_processor
+        sqla_col = (
+            self.convert_tbl_column_to_sqla_col(
+                tbl_column=col_obj, template_processor=template_processor
+            )
+            if col_obj is not None
+            else None
         )
         dialect = self.database.get_dialect()
         col_sql = dialect.identifier_preparer.quote(
-            getattr(col_obj, "column_name", str(flt_col))
+            col_obj.column_name if col_obj is not None else str(flt_col)
         )
         return self._value_transform_predicate(
             sqla_col=sqla_col,
@@ -7672,6 +7678,39 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
                 having_clause_and if is_metric_filter else where_clause_and
             )
 
+            # A ``valueTransform`` rewrites the stored value before comparing
+            # it with the filter value. Handle it before the column-resolution
+            # guard below: the clause can still carry the filter's default
+            # column (absent from this dataset) while the template references
+            # the report's own fields, e.g. ``SUBSTRING(月份,1,4)``. The
+            # predicate is built entirely from the SQL template, so neither
+            # ``col_obj`` nor ``sqla_col`` is required.
+            value_transform = flt.get("valueTransform")
+            if (
+                isinstance(value_transform, str)
+                and value_transform.strip()
+                and not is_metric_filter
+                and op != utils.FilterOperator.TEMPORAL_RANGE
+                and val is not None
+            ):
+                if col_obj is not None:
+                    col_sql = dialect.identifier_preparer.quote(col_obj.column_name)
+                elif isinstance(flt_col, str):
+                    col_sql = dialect.identifier_preparer.quote(flt_col)
+                else:
+                    col_sql = ""
+                where_clause_and.append(
+                    self._value_transform_predicate(
+                        sqla_col=sqla_col,
+                        operator=op,
+                        values=val,
+                        template=value_transform,
+                        dialect=dialect,
+                        col_sql=col_sql,
+                    )
+                )
+                continue
+
             if col_obj or sqla_col is not None:
                 if sqla_col is not None:
                     pass
@@ -7702,41 +7741,6 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
                     and not _is_parenthesized(sqla_col)
                 ):
                     sqla_col = Grouping(sqla_col)
-
-                # A ``valueTransform`` is an optional SQL template that rewrites
-                # the column value into the filter value's format before the
-                # comparison -- e.g. turn a stored '2026.7月' into '202607' so it
-                # matches a YYYYMM filter selection. The template is authored by
-                # the dashboard builder; the raw filter value is rendered as a
-                # dialect-escaped literal.
-                if value_transform := flt.get("valueTransform"):
-                    if (
-                        isinstance(value_transform, str)
-                        and value_transform.strip()
-                        and sqla_col is not None
-                        and not is_metric_filter
-                        and op != utils.FilterOperator.TEMPORAL_RANGE
-                        and val is not None
-                    ):
-                        if col_obj is not None:
-                            col_sql = dialect.identifier_preparer.quote(
-                                col_obj.column_name
-                            )
-                        elif isinstance(flt_col, str):
-                            col_sql = dialect.identifier_preparer.quote(flt_col)
-                        else:
-                            col_sql = ""
-                        where_clause_and.append(
-                            self._value_transform_predicate(
-                                sqla_col=sqla_col,
-                                operator=op,
-                                values=val,
-                                template=value_transform,
-                                dialect=dialect,
-                                col_sql=col_sql,
-                            )
-                        )
-                        continue
 
                 col_type = col_obj.type if col_obj else None
                 col_spec = db_engine_spec.get_column_spec(native_type=col_type)

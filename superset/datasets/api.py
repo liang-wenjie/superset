@@ -2446,7 +2446,7 @@ class DatasetRestApi(SoftDeleteApiMixin, BaseSupersetModelRestApi):
             return self.response_400(message=error.messages)
         try:
             result = ValidateFilterTargetTransformCommand(
-                pk, payload["expression"]
+                pk, payload["expression"], payload.get("column")
             ).run()
         except DatasetNotFoundError:
             return self.response_404()

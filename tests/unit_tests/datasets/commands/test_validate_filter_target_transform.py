@@ -37,22 +37,27 @@ def _command(
     expression: str,
     columns: list[str] | None = None,
     engine_spec: object = MySQLEngineSpec,
+    column: str | None = None,
 ) -> ValidateFilterTargetTransformCommand:
     """A command backed by a mocked dataset whose engine is MySQL."""
     dataset = mocker.MagicMock()
     dataset.columns = [
-        mocker.MagicMock(column_name=column_name)
-        for column_name in (columns or [])
+        mocker.MagicMock(column_name=column_name) for column_name in (columns or [])
     ]
     mocker.patch.object(
-        type(dataset), "db_engine_spec", PropertyMock(return_value=engine_spec)
+        type(dataset),
+        "db_engine_spec",
+        PropertyMock(return_value=engine_spec),
+        create=True,
     )
     mocker.patch(
         "superset.commands.dataset.validate_filter_target_transform."
         "DatasetDAO.find_by_id",
         return_value=dataset,
     )
-    return ValidateFilterTargetTransformCommand(model_id=1, expression=expression)
+    return ValidateFilterTargetTransformCommand(
+        model_id=1, expression=expression, column=column
+    )
 
 
 def test_valid_expression(app: Flask, mocker: MockerFixture) -> None:
@@ -62,6 +67,8 @@ def test_valid_expression(app: Flask, mocker: MockerFixture) -> None:
         mocker,
         "CONCAT(SUBSTRING({col},1,4),LPAD(CAST(SUBSTRING({col},6,1) "
         "AS UNSIGNED),2,'0'))",
+        columns=["月份"],
+        column="月份",
     )
     with app.app_context():
         result = command.run()
@@ -69,9 +76,7 @@ def test_valid_expression(app: Flask, mocker: MockerFixture) -> None:
     assert result["errors"] == []
 
 
-def test_bare_column_of_the_table_validates(
-    app: Flask, mocker: MockerFixture
-) -> None:
+def test_bare_column_of_the_table_validates(app: Flask, mocker: MockerFixture) -> None:
     """A naked column name of the table is a valid reference (like a custom
     SQL expression column), e.g. ``报告月份``."""
     command = _command(app, mocker, "报告月份", columns=["报告月份"])
@@ -87,17 +92,23 @@ def test_column_references_in_an_expression_are_checked(
     """Referencing a field the table does not have is refused; referencing
     its own fields (besides ``{col}``) is fine."""
     bad = _command(
-        app, mocker, "CONCAT(报告月份, {col})", columns=["报告月份"]
+        app,
+        mocker,
+        "CONCAT(missing_col, {col})",
+        columns=["报告月份"],
+        column="报告月份",
     )
     with app.app_context():
         result = bad.run()
     assert result["valid"] is False
-    assert any(
-        "do not exist in this table" in error for error in result["errors"]
-    )
+    assert "do not exist in this table" in str(result["errors"])
 
     good = _command(
-        app, mocker, "CONCAT(报告月份, {col})", columns=["报告月份", "其他列"]
+        app,
+        mocker,
+        "CONCAT(报告月份, {col})",
+        columns=["报告月份", "其他列"],
+        column="其他列",
     )
     with app.app_context():
         result = good.run()
@@ -123,11 +134,11 @@ def test_invalid_expressions(
     expression: str,
     expected: str,
 ) -> None:
-    command = _command(app, mocker, expression)
+    command = _command(app, mocker, expression, columns=["月份"], column="月份")
     with app.app_context():
         result = command.run()
     assert result["valid"] is False
-    assert any(expected in error for error in result["errors"])
+    assert expected in str(result["errors"])
 
 
 def test_missing_dataset_raises(app: Flask, mocker: MockerFixture) -> None:
@@ -137,6 +148,41 @@ def test_missing_dataset_raises(app: Flask, mocker: MockerFixture) -> None:
         return_value=None,
     )
     with pytest.raises(DatasetNotFoundError):
-        ValidateFilterTargetTransformCommand(
-            model_id=999, expression="{col}"
-        ).run()
+        ValidateFilterTargetTransformCommand(model_id=999, expression="{col}").run()
+
+
+def test_placeholder_requires_a_resolvable_source_column(
+    app: Flask, mocker: MockerFixture
+) -> None:
+    """``{col}`` must resolve to a real field, the same one the query uses."""
+    unbound = _command(app, mocker, "SUBSTRING({col},1,4)", columns=["月份"])
+    with app.app_context():
+        result = unbound.run()
+    assert result["valid"] is False
+    assert "source column" in str(result["errors"])
+
+    unknown = _command(
+        app, mocker, "SUBSTRING({col},1,4)", columns=["月份"], column="年份"
+    )
+    with app.app_context():
+        result = unknown.run()
+    assert result["valid"] is False
+    assert "does not exist" in str(result["errors"])
+
+    resolved = _command(
+        app, mocker, "SUBSTRING({col},1,4)", columns=["月份"], column="月份"
+    )
+    with app.app_context():
+        result = resolved.run()
+    assert result["valid"] is True
+
+
+def test_transform_naming_table_columns_needs_no_source_column(
+    app: Flask, mocker: MockerFixture
+) -> None:
+    """A saved mapping may name the report's own column directly."""
+    command = _command(app, mocker, "SUBSTRING(月份,1,4)", columns=["月份"])
+    with app.app_context():
+        result = command.run()
+    assert result["valid"] is True
+    assert result["errors"] == []
