@@ -109,6 +109,25 @@ const estimateTextWidth = (
     ) * fontSizePx,
   );
 
+/**
+ * Comparison labels are mostly digits, Latin letters and a percent sign, which
+ * render much narrower than the generic 0.62em ASCII estimate above. On the
+ * reported dashboard that estimate overstated a "同比 ↑104.79%" slot by about
+ * 60%, shrinking the text and leaving a wide empty gap on the right. Full-width
+ * glyphs (Chinese labels, arrows) stay at ~1em. Keep this separate from the
+ * big-number estimate so the number's own auto-fit behaviour is unchanged.
+ */
+const estimateComparisonTextWidth = (
+  text: string,
+  fontSizePx: number,
+): number =>
+  Math.ceil(
+    Array.from(text).reduce(
+      (width, char) => width + (char.charCodeAt(0) > 255 ? 1 : 0.5),
+      0,
+    ) * fontSizePx,
+  );
+
 // Estimated widths are heuristic (fixed per-character factors), so the real
 // render can differ by a few pixels depending on the actual font. Auto-shrink
 // against a slightly reduced available width so text stays off the canvas edge.
@@ -140,6 +159,18 @@ const TYPICAL_BIG_NUMBER_TEXT = '0,000.00';
 // Only a small right padding is needed, plus the same safety margin the
 // per-tile auto-fit uses to absorb the width-estimation error.
 const UNIFORM_RIGHT_PADDING = 4;
+// Uniform sizing must keep the YoY/MoM row inside the tile too. This
+// data-independent text is a conservative stand-in for the widest
+// "label + arrow + percentage" slot; every tile derives the same comparison
+// size cap from it, so no tile shrinks its comparison text on its own and
+// the whole dashboard keeps one comparison font size.
+const UNIFORM_COMPARISON_DESIGN_TEXT = 'MMM ↓-000.00%';
+const MIN_UNIFORM_COMPARISON_FONT_SIZE = 8;
+// YoY/MoM glyphs are much narrower than the big number's, and the row has more
+// horizontal room than the number, so give it a larger share of the tile than
+// the title (0.15 / 0.4). This is data-independent: every tile gets one size,
+// and the shared cap below still keeps the row inside the canvas.
+const UNIFORM_COMPARISON_FONT_RATIO = 0.45;
 
 /**
  * Read a comparison value column from a result row. Saved metrics are plain
@@ -540,19 +571,18 @@ export default function transformProps(
   // Label sizes come from the one shared big-number size. Reading each
   // chart's saved title/comparison size here is what made the YoY/MoM rows
   // look different across tiles of the same size.
-  const uniformLabelFontSizePx = (defaultFontSize: number): number =>
-    Math.max(
-      10,
-      Math.round(
-        (effectiveBigNumberFontSizePx * defaultFontSize) /
-          DEFAULT_BIG_NUMBER_FONT_SIZE,
-      ),
-    );
-  const uniformTitleFontSizePx = uniformLabelFontSizePx(
-    DEFAULT_TITLE_FONT_SIZE,
+  const uniformTitleFontSizePx = Math.max(
+    10,
+    Math.round(
+      (effectiveBigNumberFontSizePx * DEFAULT_TITLE_FONT_SIZE) /
+        DEFAULT_BIG_NUMBER_FONT_SIZE,
+    ),
   );
-  const uniformComparisonFontSizePx = uniformLabelFontSizePx(
-    DEFAULT_COMPARISON_FONT_SIZE,
+  // The comparison row takes a larger share than the title (see
+  // UNIFORM_COMPARISON_FONT_RATIO); it is still one dashboard-wide size.
+  const uniformComparisonFontSizePx = Math.max(
+    10,
+    Math.round(effectiveBigNumberFontSizePx * UNIFORM_COMPARISON_FONT_RATIO),
   );
   const titleFontSizePx = uniformBigNumberFontSize
     ? uniformTitleFontSizePx
@@ -784,52 +814,90 @@ export default function transformProps(
   // occupies `left + widest + gap + widest` at most. Shrink the font
   // proportionally when that exceeds the tile width, mirroring the big
   // number auto-size logic, while keeping a floor so the row stays readable.
+  // With uniform sizing the row is clamped to ONE dashboard-wide cap first:
+  // a data-independent design text keeps every tile on the same comparison
+  // size, and the per-tile fit below is only a last-resort guard for
+  // unusually long labels. Uniform sizing must never skip this fit -- doing
+  // so left the second slot cut off at the canvas edge.
+  const bothComparisonsShown = !!comparison1Content && !!comparison2Content;
+  // Uniform sizing is a dashboard-wide presentation setting: use the tighter,
+  // comparison-specific measurement there so the row can use the space it
+  // actually has. Charts with uniform sizing off keep the legacy estimator, so
+  // their existing layout and font sizes are untouched.
+  const measureComparisonText = (text: string, size: number): number =>
+    uniformBigNumberFontSize
+      ? estimateComparisonTextWidth(text, size)
+      : estimateTextWidth(text, size);
+  const comparisonAvailableWidth = Math.max(
+    0,
+    width - comparisonLeft - DEFAULT_BIG_NUMBER_LEFT - TEXT_FIT_SAFETY_MARGIN,
+  );
+  const designComparisonWidthPerPx = measureComparisonText(
+    UNIFORM_COMPARISON_DESIGN_TEXT,
+    1,
+  );
+  // Cap against the real canvas width and the ACTUAL (scaled) gap, not the
+  // padded design width and the unscaled default gap. Both of those used to
+  // reserve ~30-40px the row never needed, keeping the YoY/MoM text visibly
+  // too small on a normal-width tile. The design text stays data-independent
+  // so equal-width tiles still resolve to exactly one size.
+  const uniformComparisonCapPx = uniformBigNumberFontSize
+    ? Math.max(
+        MIN_UNIFORM_COMPARISON_FONT_SIZE,
+        Math.floor(
+          (Math.max(0, width - comparisonLeft) - comparisonGapPx) /
+            (bothComparisonsShown
+              ? designComparisonWidthPerPx * 2
+              : designComparisonWidthPerPx),
+        ),
+      )
+    : Number.POSITIVE_INFINITY;
+  let comparisonFontSizePx = Math.min(
+    requestedComparisonFontSizePx,
+    uniformComparisonCapPx,
+  );
   const comparison1TextWidth = comparison1Content
-    ? estimateTextWidth(comparison1Content.text, requestedComparisonFontSizePx)
+    ? measureComparisonText(comparison1Content.text, comparisonFontSizePx)
     : 0;
   const comparison2TextWidth = comparison2Content
-    ? estimateTextWidth(comparison2Content.text, requestedComparisonFontSizePx)
+    ? measureComparisonText(comparison2Content.text, comparisonFontSizePx)
     : 0;
   const widestComparisonTextWidth = Math.max(
     comparison1TextWidth,
     comparison2TextWidth,
   );
-  const bothComparisonsShown = !!comparison1Content && !!comparison2Content;
   const estimatedComparisonRowWidth =
     comparisonLeft +
     (bothComparisonsShown
       ? widestComparisonTextWidth * 2 + comparisonGapPx
       : widestComparisonTextWidth);
-  const comparisonAvailableWidth = Math.max(
-    0,
-    width - comparisonLeft - DEFAULT_BIG_NUMBER_LEFT - TEXT_FIT_SAFETY_MARGIN,
-  );
   // The floor is an absolute pixel size like the big number's: a proportional
   // floor (e.g. 50%) would block the shrink on narrow tiles and let the row
   // overflow again. ceil() on each slot's estimated width can still leave the
   // row a few pixels over, so re-measure at the shrunk size and refine until
   // the row fits (bounded to a few passes).
-  const minComparisonFontSizePx = 10;
-  let comparisonFontSizePx = requestedComparisonFontSizePx;
+  const minComparisonFontSizePx = uniformBigNumberFontSize
+    ? MIN_UNIFORM_COMPARISON_FONT_SIZE
+    : 10;
+  const initialComparisonFontSizePx = comparisonFontSizePx;
   if (
-    !uniformBigNumberFontSize &&
     comparisonAvailableWidth > 0 &&
     estimatedComparisonRowWidth > comparisonAvailableWidth
   ) {
     comparisonFontSizePx = Math.max(
       minComparisonFontSizePx,
       Math.floor(
-        (requestedComparisonFontSizePx * comparisonAvailableWidth) /
+        (initialComparisonFontSizePx * comparisonAvailableWidth) /
           estimatedComparisonRowWidth,
       ),
     );
     for (let i = 0; i < 3; i += 1) {
       const shrunkWidestWidth = Math.max(
         comparison1Content
-          ? estimateTextWidth(comparison1Content.text, comparisonFontSizePx)
+          ? measureComparisonText(comparison1Content.text, comparisonFontSizePx)
           : 0,
         comparison2Content
-          ? estimateTextWidth(comparison2Content.text, comparisonFontSizePx)
+          ? measureComparisonText(comparison2Content.text, comparisonFontSizePx)
           : 0,
       );
       const shrunkRowWidth =
@@ -848,12 +916,34 @@ export default function transformProps(
       comparisonFontSizePx = nextComparisonFontSizePx;
     }
   }
+  // Clipping is never acceptable. The padded width used above is a layout
+  // preference; on a very narrow tile the shared cap and the readability floor
+  // can still leave the second slot past the real canvas edge. As a last resort
+  // fit a data-independent upper bound of the row against the canvas itself.
+  // Using the same design text as the cap keeps equal-width KPI tiles on ONE
+  // comparison size, so this guard never reintroduces per-tile font drift.
+  // The real canvas edge is the bound: the design text is already wider than
+  // any rendered slot, so no extra padding is needed here.
+  const canvasComparisonWidth = Math.max(0, width);
+  if (uniformBigNumberFontSize) {
+    const rowUpperBound = (size: number): number =>
+      comparisonLeft +
+      measureComparisonText(UNIFORM_COMPARISON_DESIGN_TEXT, size) *
+        (bothComparisonsShown ? 2 : 1) +
+      (bothComparisonsShown ? comparisonGapPx : 0);
+    while (
+      comparisonFontSizePx > 1 &&
+      rowUpperBound(comparisonFontSizePx) > canvasComparisonWidth
+    ) {
+      comparisonFontSizePx -= 1;
+    }
+  }
   const comparisonWidth = Math.max(
     comparison1Content
-      ? estimateTextWidth(comparison1Content.text, comparisonFontSizePx)
+      ? measureComparisonText(comparison1Content.text, comparisonFontSizePx)
       : 0,
     comparison2Content
-      ? estimateTextWidth(comparison2Content.text, comparisonFontSizePx)
+      ? measureComparisonText(comparison2Content.text, comparisonFontSizePx)
       : 0,
   );
   const comparisonLefts =

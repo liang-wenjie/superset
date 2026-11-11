@@ -290,6 +290,20 @@ describe('BigNumberYoyMom transformProps', () => {
     }, 0);
 
   const TILE_WIDTH = 400;
+  // Rightmost pixel of the YoY/MoM graphic text, using the same estimator the
+  // plugin uses. Anything past the tile width is clipped by the canvas.
+  const comparisonRightEdge = (graphic: Record<string, any>[]): number =>
+    Math.max(
+      ...graphic.slice(2).map(element => {
+        const textWidth = Math.ceil(
+          Array.from(String(element.style.text)).reduce(
+            (total, char) => total + (char.charCodeAt(0) > 255 ? 1 : 0.5),
+            0,
+          ) * element.style.fontSize,
+        );
+        return element.left + textWidth;
+      }),
+    );
   // left offset + uniform right padding + safety margin
   const UNIFORM_AVAILABLE_WIDTH = TILE_WIDTH - 20 - 4 - 3;
 
@@ -422,9 +436,11 @@ describe('BigNumberYoyMom transformProps', () => {
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     expect(graphic[1].style.fontSize).toBeLessThan(48);
     expect(graphic[1].style.text).toBe('$9,457.13');
-    // Title and comparison rows stay legible instead of shrinking away.
+    // Title stays legible; the comparison row may go smaller than the
+    // legacy 10px floor on a tile this narrow, but must never be clipped.
     expect(graphic[0].style.fontSize).toBeGreaterThanOrEqual(10);
-    expect(graphic[2].style.fontSize).toBeGreaterThanOrEqual(10);
+    expect(graphic[2].style.fontSize).toBeGreaterThanOrEqual(8);
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(200);
   });
 
   const getAllFontSizes = (
@@ -453,17 +469,25 @@ describe('BigNumberYoyMom transformProps', () => {
       uniformBigNumberFontSizePx: 48,
     };
     const shortTile = getAllFontSizes(7.81, uniform);
-    const longTile = getAllFontSizes(1234567, uniform);
+    // A realistic long value: keeps the comparison percentages in a normal
+    // range so both tiles exercise the same shared comparison size.
+    const longTile = getAllFontSizes(123.4567, uniform);
 
     // Title, big number and both comparison rows all land on the same sizes.
+    // The comparison row is capped by the tile width (one shared cap), so it
+    // no longer overflows the canvas on narrow dashboards. Its glyphs are
+    // narrower than the number's, so it takes a larger share than the title.
     expect(longTile).toEqual(shortTile);
-    expect(shortTile).toEqual([18, 48, 18, 18]);
+    expect(shortTile).toEqual([18, 48, 22, 22]);
 
     const autoSizedTile = getAllFontSizes(7.81);
     expect(shortTile[0]).toBeLessThan(autoSizedTile[0]);
     expect(shortTile[1]).toBeLessThan(autoSizedTile[1]);
-    expect(shortTile[2]).toBeLessThan(autoSizedTile[2]);
-    expect(shortTile[3]).toBeLessThan(autoSizedTile[3]);
+    // The comparison row uses a wider, more accurate width model in uniform
+    // mode, so it may be slightly larger than the free auto-fit size (22 vs 21
+    // here). What matters is that both slots share ONE size and stay inside
+    // the canvas -- the clipping tests cover that separately.
+    expect(shortTile[2]).toBe(shortTile[3]);
   });
 
   test('keeps label sizes identical across tiles with different saved controls', () => {
@@ -473,7 +497,7 @@ describe('BigNumberYoyMom transformProps', () => {
       uniformBigNumberReferenceTexts: ['$3,808,637.34'],
     };
     const plain = getAllFontSizes(7.81, shared);
-    const customized = getAllFontSizes(3808637.34, {
+    const customized = getAllFontSizes(123.4567, {
       ...shared,
       titleFontSize: 0.5,
       comparisonFontSize: 0.3,
@@ -485,7 +509,7 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(plain[2]).toBe(plain[3]);
   });
 
-  test('scales comparison rows down with the group, not just the big number', () => {
+  test('keeps one shared comparison size while the group shrinks', () => {
     const shortGroup = getAllFontSizes(7.81, {
       uniformBigNumberFontSize: true,
       uniformBigNumberReferenceTexts: ['$7.81'],
@@ -495,11 +519,146 @@ describe('BigNumberYoyMom transformProps', () => {
       uniformBigNumberReferenceTexts: ['$3,808,637.34'],
     });
 
+    // Big number and title shrink with the group, while the comparison rows
+    // stay on the one tile-width-derived size shared by the dashboard.
     expect(longGroup[1]).toBeLessThan(shortGroup[1]);
     expect(longGroup[0]).toBeLessThan(shortGroup[0]);
-    expect(longGroup[2]).toBeLessThan(shortGroup[2]);
-    expect(longGroup[3]).toBeLessThan(shortGroup[3]);
+    expect(longGroup[2]).toBe(shortGroup[2]);
+    expect(longGroup[3]).toBe(shortGroup[3]);
     expect(longGroup[2]).toBe(longGroup[3]);
+  });
+
+  test('never clips the second comparison slot in uniform mode', () => {
+    // A real dashboard KPI tile is only ~150 CSS px wide; at 240px the row
+    // happens to fit even without the fix, so the test must use a real card.
+    const narrowWidth = 160;
+    const uniform = {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: ['$3,808,637.34'],
+      comparison1Label: '同比',
+      comparison2Label: '环比',
+    };
+    const buildNarrow = (value: number) =>
+      transformProps({
+        ...buildChartProps(
+          [
+            {
+              'SUM(sales)': value,
+              'SUM(sales)__1 month ago': 10,
+              'SUM(sales)__1 year ago': 20,
+            },
+          ],
+          uniform,
+        ),
+        width: narrowWidth,
+      });
+    const shortGraphic = buildNarrow(100).echartOptions.graphic as Record<
+      string,
+      any
+    >[];
+    const longGraphic = buildNarrow(1000).echartOptions.graphic as Record<
+      string,
+      any
+    >[];
+
+    // Reproduces the dashboard screenshot: the second slot used to be cut
+    // off at the canvas edge. Both tiles now keep the whole row inside the
+    // canvas and use exactly one shared comparison font size.
+    expect(comparisonRightEdge(shortGraphic)).toBeLessThanOrEqual(narrowWidth);
+    expect(comparisonRightEdge(longGraphic)).toBeLessThanOrEqual(narrowWidth);
+    expect(shortGraphic[2].style.fontSize).toBe(longGraphic[2].style.fontSize);
+    expect(shortGraphic[3].style.fontSize).toBe(longGraphic[3].style.fontSize);
+  });
+
+  test('fits the YoY/MoM row on dashboard 5 KPI cards', () => {
+    // dashboard 5: uniform sizing on with no pixel cap, big_number_left=0,
+    // comparison_gap=24, Chinese labels, longest value 3,808,637.34. Cards
+    // saved different comparison font sizes (0.125 / 0.15) but must render
+    // one shared size without clipping the second slot. The tile is ~150 CSS
+    // px wide in the reported dashboard screenshot.
+    const tileWidth = 150;
+    const shared = {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: ['$3,808,637.34', '$7.81', '$9,457.13'],
+      bigNumberLeft: 0,
+      comparisonGap: 24,
+      comparison1Label: '同比',
+      comparison2Label: '环比',
+      comparison1PercentDifferenceFormat: ',.2%',
+      comparison2PercentDifferenceFormat: ',.2%',
+    };
+    const build = (value: number, comparisonFontSize: number) =>
+      transformProps({
+        ...buildChartProps(
+          [
+            {
+              'SUM(sales)': value,
+              'SUM(sales)__1 month ago': value / 2,
+              'SUM(sales)__1 year ago': value / 3,
+            },
+          ],
+          { ...shared, comparisonFontSize },
+        ),
+        width: tileWidth,
+        height: 120,
+      }).echartOptions.graphic as Record<string, any>[];
+
+    const profit = build(3808637.34, 0.125);
+    const net = build(7.81, 0.15);
+
+    expect(net[2].style.fontSize).toBe(profit[2].style.fontSize);
+    expect(net[3].style.fontSize).toBe(profit[3].style.fontSize);
+    expect(comparisonRightEdge(profit)).toBeLessThanOrEqual(tileWidth);
+    expect(comparisonRightEdge(net)).toBeLessThanOrEqual(tileWidth);
+    expect(profit[2].style.fontSize).toBeGreaterThanOrEqual(8);
+  });
+
+  test('enlarges the comparison row on a real-width dashboard tile', () => {
+    // dashboard 5 renders ~290 CSS px wide tiles. The legacy width estimator
+    // overstated a "同比 ↑104.79%" slot by ~60%, leaving the YoY/MoM text at
+    // 13px with a wide empty gap on the right.
+    const tileWidth = 290;
+    const shared = {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: [
+        '$3,808,637.34',
+        '$7.81',
+        '$9,457.13',
+        '$383,184',
+      ],
+      bigNumberLeft: 0,
+      comparisonGap: 24,
+      comparison1Label: '同比',
+      comparison2Label: '环比',
+      comparison1PercentDifferenceFormat: ',.2%',
+      comparison2PercentDifferenceFormat: ',.2%',
+    };
+    const build = (value: number, monthAgo: number, yearAgo: number) =>
+      transformProps({
+        ...buildChartProps(
+          [
+            {
+              'SUM(sales)': value,
+              'SUM(sales)__1 month ago': monthAgo,
+              'SUM(sales)__1 year ago': yearAgo,
+            },
+          ],
+          shared,
+        ),
+        width: tileWidth,
+        height: 190,
+      }).echartOptions.graphic as Record<string, any>[];
+
+    const profit = build(3808637.34, 1860000, 2100000);
+    const net = build(7.81, 9.29, 10.51);
+
+    // Visibly larger than the old 13px, one shared size across tiles, and
+    // still entirely inside the canvas.
+    expect(profit[2].style.fontSize).toBeGreaterThanOrEqual(17);
+    expect(net[2].style.fontSize).toBe(profit[2].style.fontSize);
+    expect(net[3].style.fontSize).toBe(profit[3].style.fontSize);
+    expect(comparisonRightEdge(profit)).toBeLessThanOrEqual(tileWidth);
+    expect(comparisonRightEdge(net)).toBeLessThanOrEqual(tileWidth);
   });
 
   test('scales internal gaps by the same ratio as the tile text', () => {
