@@ -100,6 +100,22 @@ export default styled.div`
         var(--table-border-color, ${theme.colorSplit});
     }
 
+    /* Column headers draw a 1px right border for every column. Mirror it on
+       the body cells so separators stay continuous under multi-level header
+       groups, including the inner columns of a group that are neither
+       dimensions nor group boundaries. :where() keeps this rule below the
+       emphasis selectors below, which must still be able to widen those
+       lines. The last column has no separator because the table edge is
+       already drawn by the outer frame. */
+    tbody td:where(.dt-column-separator) {
+      border-right: var(--table-border-width, 1px) solid
+        var(--table-border-color, ${theme.colorSplit});
+    }
+
+    tbody td:last-child {
+      border-right: none;
+    }
+
     /* Bootstrap-like condensed table styles */
     table.table-condensed,
     table.table-sm {

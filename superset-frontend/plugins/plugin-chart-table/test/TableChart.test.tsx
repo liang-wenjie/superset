@@ -417,6 +417,65 @@ test('does not add a boundary line for a left-side group', () => {
   ).toBeNull();
 });
 
+test('keeps inner column separators of a header group through the body', () => {
+  const props = {
+    ...transformProps(testData.advanced),
+    headerGroups: [
+      {
+        id: 'metrics-group',
+        label: 'Metrics',
+        columns: ['sum__num', '%pct_nice'],
+        placement: 'right' as const,
+      },
+    ],
+  };
+
+  const { container } = render(<TableChart {...props} sticky={false} />);
+  const cells = container.querySelectorAll('tbody tr:first-of-type td');
+  expect(cells.length).toBeGreaterThanOrEqual(2);
+
+  // The first metric of a two-column group is neither a dimension nor a
+  // group boundary, so it must not be treated as an emphasis line...
+  expect(cells[1].classList.contains('right-border-only')).toBe(false);
+  // ...but the 1px separator drawn by its column header must continue into
+  // the data rows instead of stopping at the header.
+  Array.from(cells).forEach(cell => {
+    expect(cell.classList.contains('dt-column-separator')).toBe(true);
+  });
+
+  // Header cells get their separator from the th rule and are not tagged.
+  const sumHeader = Array.from(
+    container.querySelectorAll('thead tr:last-of-type th'),
+  ).find(th => th.getAttribute('data-column-name') === '1');
+  expect(sumHeader?.classList.contains('dt-column-separator')).toBe(false);
+
+  // Guard the CSS half of the fix: the class alone does not draw the line.
+  // Emotion may inject through CSSOM, so read the parsed rules rather than
+  // the text content of the style tags.
+  const cssRules = Array.from(document.styleSheets).flatMap(sheet => {
+    try {
+      return Array.from(sheet.cssRules).map(rule => rule.cssText);
+    } catch {
+      // A cross-origin sheet can throw when cssRules is accessed.
+      return [];
+    }
+  });
+  expect(cssRules.some(rule => rule.includes('.dt-column-separator'))).toBe(
+    true,
+  );
+});
+
+test('adds general column separators to body cells without header groups', () => {
+  const { container } = render(
+    <TableChart {...transformProps(testData.advanced)} sticky={false} />,
+  );
+  const cells = container.querySelectorAll('tbody tr:first-of-type td');
+  expect(cells.length).toBeGreaterThan(0);
+  Array.from(cells).forEach(cell => {
+    expect(cell.classList.contains('dt-column-separator')).toBe(true);
+  });
+});
+
 describe('plugin-chart-table', () => {
   describe('transformProps', () => {
     test('should parse pageLength to pageSize', () => {

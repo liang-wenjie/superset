@@ -1447,6 +1447,10 @@ export default function TableChart<D extends DataRecord = DataRecord>(
             },
             className: [
               className,
+              // Every body cell mirrors the header's 1px column separator,
+              // including columns inside a header group. The emphasis class
+              // above still wins in CSS for dimension/group boundaries.
+              'dt-column-separator',
               value == null ||
               (value instanceof DateWithFormatter && value.input == null)
                 ? 'dt-is-null'
