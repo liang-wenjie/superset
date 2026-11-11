@@ -997,6 +997,24 @@ test('does not render the data table for horizontal charts', () => {
   expect(screen.queryByText('sum__num')).not.toBeInTheDocument();
 });
 
+test('applies the configured minimum label column width to grid.left', () => {
+  renderWithDataTable({
+    formData: {
+      vizType: 'echarts_timeseries_line',
+      showDataTable: true,
+      dataTableMinLegendWidth: 220,
+    } as unknown as TimeseriesChartTransformedProps['formData'],
+    echartOptions: {
+      grid: { containLabel: true, left: 10 },
+      series: DATA_TABLE_SERIES,
+    } as unknown as TimeseriesChartTransformedProps['echartOptions'],
+  });
+  const echartOptions = getLatestEchartProps().echartOptions as unknown as {
+    grid?: { left?: number };
+  };
+  expect(echartOptions.grid?.left).toBe(220);
+});
+
 test('drill to detail skips a metric-prefixed series tuple part when building dimension filters', async () => {
   const onContextMenu = jest.fn();
   renderTimeseries({

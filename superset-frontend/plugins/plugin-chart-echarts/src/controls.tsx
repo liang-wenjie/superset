@@ -309,6 +309,25 @@ export const dataTableSection: ControlSetRow[] = [
       },
     },
   ],
+  [
+    {
+      name: 'dataTableMinLegendWidth',
+      config: {
+        type: 'NumberControl',
+        label: t('Minimum label column width'),
+        description: t(
+          'Minimum width in pixels for the series-name column of the data table. 0 fits the column to the longest series name. Value columns stay aligned to the X axis categories.',
+        ),
+        default: 0,
+        min: 0,
+        step: 4,
+        renderTrigger: true,
+        visibility: ({ controls }: ControlPanelsContainerProps) =>
+          Boolean(controls?.showDataTable?.value) &&
+          controls?.orientation?.value !== OrientationType.Horizontal,
+      },
+    },
+  ],
 ];
 
 export const showValueSection: ControlSetRow[] = [

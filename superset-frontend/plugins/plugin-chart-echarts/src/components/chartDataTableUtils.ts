@@ -59,9 +59,10 @@ export const DATA_TABLE_FONT_SIZE = 12;
 export const LEGEND_MARKER_WIDTH = 8;
 export const LEGEND_GAP = 4;
 export const LEGEND_PADDING = 4;
-// Only paid when the browser cannot measure text and we fall back to the
-// per-character approximation below.
-const LABEL_SAFETY_MARGIN = 2;
+// Covers the legend column's 1px right border, canvas/DOM font differences
+// and sub-pixel rounding. Without it the last glyph gets ellipsized even when
+// the measured text width appears sufficient.
+export const LABEL_SAFETY_MARGIN = 4;
 export const MIN_GRID_LEFT = 8;
 // A very long series name must not eat most of the plotting area.
 const MAX_GRID_LEFT_RATIO = 0.4;
@@ -126,19 +127,36 @@ export function createLabelWidthMeasure(
 }
 
 /**
+ * Read the user-configured minimum width of the series-name column. The
+ * control is saved under a camelCase key, but plugins can be handed formData
+ * that still uses the snake_case spelling, so accept both and ignore values
+ * that cannot be used as a pixel width.
+ */
+export function getDataTableMinLegendWidth(formData: {
+  dataTableMinLegendWidth?: unknown;
+  data_table_min_legend_width?: unknown;
+}): number {
+  const raw =
+    formData.dataTableMinLegendWidth ?? formData.data_table_min_legend_width;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
  * Minimum `grid.left` needed so the longest series name fits in the legend
  * column. With `containLabel: true` ECharts already reserves the Y-axis label
  * gutter *on top of* `grid.left`, so that measured gutter is subtracted here —
  * otherwise it is paid for twice and the legend column ends up much wider than
- * its text (most visible after a dimension-value suffix is hidden). Names are
- * measured with the browser's font metrics; the per-character approximation is
- * only a fallback and carries the extra safety margin.
+ * its text. Names are measured with the browser's font metrics; the
+ * per-character approximation is only a fallback. The safety margin is always
+ * applied, and an explicit `minLegendWidth` can widen the column further.
  */
 export function getDataTableGridLeft(
   rows: DataTableRow[],
   fontSizePx = DATA_TABLE_FONT_SIZE,
   chartWidth = 0,
   yAxisLabelGutter = 0,
+  minLegendWidth = 0,
 ): number {
   if (rows.length === 0) {
     return 0;
@@ -154,9 +172,13 @@ export function getDataTableGridLeft(
       LEGEND_MARKER_WIDTH +
       LEGEND_GAP +
       LEGEND_PADDING +
-      (exactMeasure ? 0 : LABEL_SAFETY_MARGIN),
+      LABEL_SAFETY_MARGIN,
   );
-  const required = Math.max(0, legendWidth - Math.max(0, yAxisLabelGutter));
+  const minimum = Number.isFinite(minLegendWidth)
+    ? Math.max(0, minLegendWidth)
+    : 0;
+  const targetWidth = Math.max(legendWidth, minimum);
+  const required = Math.max(0, targetWidth - Math.max(0, yAxisLabelGutter));
   const cap =
     chartWidth > 0
       ? Math.round(chartWidth * MAX_GRID_LEFT_RATIO)
@@ -215,6 +237,42 @@ export function resolveDataTableGrid(
 }
 
 const FORECAST_MARKERS = ['__yhat'];
+
+type EchartsAxis = {
+  data?: unknown[];
+};
+
+// A category axis lists every category the chart renders, including ones
+// where all series are null. Seeding the table from it keeps those columns
+// (and their separators) visible instead of silently dropping them.
+const getAxisCategories = (
+  echartOptions: EChartsCoreOption,
+): (string | number)[] => {
+  const axes = ensureIsArray(
+    (echartOptions as { xAxis?: unknown }).xAxis,
+  ) as EchartsAxis[];
+  const data = axes[0]?.data;
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  return data
+    .map(item => {
+      if (typeof item === 'string' || typeof item === 'number') {
+        return item;
+      }
+      if (item && typeof item === 'object') {
+        const { value } = item as Record<string, unknown>;
+        if (typeof value === 'string' || typeof value === 'number') {
+          return value;
+        }
+      }
+      return undefined;
+    })
+    .filter(
+      (item): item is string | number =>
+        typeof item === 'string' || typeof item === 'number',
+    );
+};
 
 type EchartsSeries = {
   name?: string;
@@ -282,14 +340,23 @@ export function buildDataTable(
   const secondaryFormatter = getNumberFormatter(secondaryFormat);
   const columnMap = new Map<string, DataTableColumn>();
   const dataSeries = series.filter(isDataSeries);
+  const axisCategories = getAxisCategories(echartOptions);
+
+  // Seed from the axis first: a category whose values are all null may not
+  // appear in any series data at all, but the table must still render it.
+  axisCategories.forEach(category => {
+    const key = String(category);
+    if (!columnMap.has(key)) {
+      columnMap.set(key, { key, value: category });
+    }
+  });
 
   dataSeries.forEach(entry => {
-    (entry.data ?? []).forEach(datum => {
+    (entry.data ?? []).forEach((datum, datumIndex) => {
       const pair = getDatum(datum);
-      if (!pair || pair.length < 2) {
-        return;
-      }
-      const [category] = pair;
+      // On a category axis a series datum can be a bare value; its category
+      // is then the axis entry at the same position.
+      const category = pair ? pair[0] : axisCategories[datumIndex];
       if (typeof category !== 'string' && typeof category !== 'number') {
         return;
       }
@@ -301,9 +368,12 @@ export function buildDataTable(
   });
 
   const columns = Array.from(columnMap.values());
-  // A time axis stores numeric timestamps; sorting them keeps the table in
-  // chronological order regardless of the order series were concatenated in.
-  if (columns.every(column => typeof column.value === 'number')) {
+  // A time axis has no explicit category list, so sort numeric timestamps
+  // chronologically. A category axis already defines the display order.
+  if (
+    axisCategories.length === 0 &&
+    columns.every(column => typeof column.value === 'number')
+  ) {
     columns.sort((a, b) => (a.value as number) - (b.value as number));
   }
   const columnIndex = new Map(
@@ -314,16 +384,17 @@ export function buildDataTable(
     const cells: (string | undefined)[] = Array.from({
       length: columns.length,
     });
-    (entry.data ?? []).forEach(datum => {
+    (entry.data ?? []).forEach((datum, datumIndex) => {
       const pair = getDatum(datum);
-      if (!pair || pair.length < 2) {
+      const category = pair ? pair[0] : axisCategories[datumIndex];
+      if (typeof category !== 'string' && typeof category !== 'number') {
         return;
       }
-      const [category, value] = pair;
       const index = columnIndex.get(String(category));
       if (index === undefined) {
         return;
       }
+      const value = pair ? pair[1] : datum;
       if (value === null || value === undefined || value === '') {
         cells[index] = '';
         return;

@@ -79,3 +79,38 @@ test('the control is hidden for horizontal charts', () => {
   ).toBe(false);
   expect(visibility({ controls: {} })).toBe(true);
 });
+
+test.each(panels)(
+  '%s exposes the minimum label column width control',
+  (_label, panel) => {
+    const control = findControl(panel, 'dataTableMinLegendWidth');
+    expect(control).toBeDefined();
+    expect(control?.config.default).toBe(0);
+    expect(control?.config.renderTrigger).toBe(true);
+  },
+);
+
+test('the minimum width control only appears with the data table enabled', () => {
+  const control = dataTableSection[1][0] as NamedControl;
+  const visibility = control.config.visibility as (props: {
+    controls: {
+      showDataTable?: { value: boolean };
+      orientation?: { value: OrientationType };
+    };
+  }) => boolean;
+  expect(visibility({ controls: {} })).toBe(false);
+  expect(visibility({ controls: { showDataTable: { value: false } } })).toBe(
+    false,
+  );
+  expect(visibility({ controls: { showDataTable: { value: true } } })).toBe(
+    true,
+  );
+  expect(
+    visibility({
+      controls: {
+        showDataTable: { value: true },
+        orientation: { value: OrientationType.Horizontal },
+      },
+    }),
+  ).toBe(false);
+});

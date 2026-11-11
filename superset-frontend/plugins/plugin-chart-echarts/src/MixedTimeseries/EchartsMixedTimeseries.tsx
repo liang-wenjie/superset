@@ -40,6 +40,7 @@ import {
   DATA_TABLE_FONT_SIZE,
   getDataTableGridLeft,
   getDataTableHeight,
+  getDataTableMinLegendWidth,
   getGridLabelGutter,
   resolveDataTableGrid,
   type ColumnLayout,
@@ -105,6 +106,8 @@ export default function EchartsMixedTimeseries({
   // Reserve enough room on the left for the longest series name. Raising
   // grid.left moves the Y axis and the plot area to the right; the table's
   // legend column then aligns to that new plot edge via computeColumnLayout.
+  // A configured minimum width widens the column further so names never clip.
+  const minLegendWidth = getDataTableMinLegendWidth(formData);
   const requiredGridLeft = useMemo(
     () =>
       showDataTable && tableData
@@ -113,9 +116,10 @@ export default function EchartsMixedTimeseries({
             DATA_TABLE_FONT_SIZE,
             width,
             gridLabelGutter,
+            minLegendWidth,
           )
         : 0,
-    [showDataTable, tableData, width, gridLabelGutter],
+    [showDataTable, tableData, width, gridLabelGutter, minLegendWidth],
   );
 
   // Keep the applied grid.left as a plain derived value (not a ref) so the

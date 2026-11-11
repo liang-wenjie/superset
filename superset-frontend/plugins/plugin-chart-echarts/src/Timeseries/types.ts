@@ -112,6 +112,8 @@ export type EchartsTimeseriesFormData = QueryFormData & {
   zoomable: boolean;
   /** Render a series-by-category data table directly below the X axis. */
   showDataTable?: boolean;
+  /** Minimum width in pixels of the data table's series-name column. */
+  dataTableMinLegendWidth?: number;
   richTooltip: boolean;
   xAxisLabelRotation: number;
   xAxisLabelInterval: number | string;

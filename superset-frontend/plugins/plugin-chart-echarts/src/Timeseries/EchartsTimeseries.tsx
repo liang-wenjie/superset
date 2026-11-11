@@ -67,6 +67,7 @@ import {
   DATA_TABLE_FONT_SIZE,
   getDataTableGridLeft,
   getDataTableHeight,
+  getDataTableMinLegendWidth,
   getGridLabelGutter,
   resolveDataTableGrid,
   type ColumnLayout,
@@ -919,7 +920,9 @@ export default function EchartsTimeseries({
 
   // Reserve room on the left for the longest series name. `grid.left` is
   // applied to the layout-adjusted options, since the compact-layout branch of
-  // getViableTimeseriesEchartOptions can replace the grid entirely.
+  // getViableTimeseriesEchartOptions can replace the grid entirely. A configured
+  // minimum width widens the column further so long names are never clipped.
+  const minLegendWidth = getDataTableMinLegendWidth(formData);
   const requiredGridLeft = useMemo(
     () =>
       showDataTable && tableData
@@ -928,9 +931,10 @@ export default function EchartsTimeseries({
             DATA_TABLE_FONT_SIZE,
             width,
             gridLabelGutter,
+            minLegendWidth,
           )
         : 0,
-    [showDataTable, tableData, width, gridLabelGutter],
+    [showDataTable, tableData, width, gridLabelGutter, minLegendWidth],
   );
   const { chartOptions, appliedGridLeft } = useMemo(
     () => resolveDataTableGrid(chartEchartOptions, requiredGridLeft),

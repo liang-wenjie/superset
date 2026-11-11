@@ -270,3 +270,35 @@ test('swap Y axes is a checkbox directly below the orientation control', () => {
   expect(rowIndex('orientation')).toBeGreaterThanOrEqual(0);
   expect(rowIndex('swapYAxes')).toBe(rowIndex('orientation') + 1);
 });
+
+test('minimum label column width follows the data table control', () => {
+  type MinimumWidthControl = {
+    name: string;
+    config: {
+      type: string;
+      default: number;
+      renderTrigger: boolean;
+      visibility: (props: ControlPanelsContainerProps) => boolean;
+    };
+  };
+  const control = getControl(
+    'dataTableMinLegendWidth',
+  ) as unknown as MinimumWidthControl;
+  expect(control).not.toBeNull();
+  expect(control.config.type).toBe('NumberControl');
+  expect(control.config.default).toBe(0);
+  expect(control.config.renderTrigger).toBe(true);
+  expect(
+    control.config.visibility({
+      controls: { showDataTable: { value: true } },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(true);
+  expect(
+    control.config.visibility({
+      controls: { showDataTable: { value: false } },
+    } as unknown as ControlPanelsContainerProps),
+  ).toBe(false);
+  expect(
+    control.config.visibility({} as unknown as ControlPanelsContainerProps),
+  ).toBe(false);
+});

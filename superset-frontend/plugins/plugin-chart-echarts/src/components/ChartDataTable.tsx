@@ -54,6 +54,12 @@ export default function ChartDataTable({
     : [];
   const visibleIndexes = hasLayout ? indexes : [];
   const height = getDataTableHeight(data.rows.length);
+  // `boundaries` holds the legend column's right edge followed by the right
+  // edge of every value column, including the last one. Draw them as an
+  // overlay rather than as cell borders: a cell with no value, a missing cell,
+  // or a column collapsed to zero width must still show its separator.
+  const separators = hasLayout ? [...boundaries] : [];
+  const separatorColor = theme.colorBorderSecondary;
 
   return (
     <div
@@ -63,7 +69,7 @@ export default function ChartDataTable({
         overflow: 'hidden auto',
         boxSizing: 'border-box',
         backgroundColor: theme.colorBgContainer,
-        borderTop: `1px solid ${theme.colorBorderSecondary}`,
+        borderTop: `1px solid ${separatorColor}`,
         color: theme.colorText,
         // Keep this in sync with DATA_TABLE_FONT_SIZE: getDataTableGridLeft
         // uses the same value to size the Y axis gutter for series names.
@@ -74,11 +80,12 @@ export default function ChartDataTable({
         <div
           key={row.name}
           style={{
+            position: 'relative',
             display: 'flex',
             alignItems: 'center',
             height: DATA_TABLE_ROW_HEIGHT,
             boxSizing: 'border-box',
-            borderBottom: `1px solid ${theme.colorBorderSecondary}`,
+            borderBottom: `1px solid ${separatorColor}`,
           }}
         >
           <div
@@ -97,7 +104,6 @@ export default function ChartDataTable({
               whiteSpace: 'nowrap',
               textOverflow: 'ellipsis',
               color: theme.colorTextSecondary,
-              borderRight: `1px solid ${theme.colorBorderSecondary}`,
             }}
             title={row.name}
           >
@@ -117,19 +123,38 @@ export default function ChartDataTable({
           {visibleIndexes.map((columnIndex, index) => (
             <div
               key={columnIndex}
+              data-test="data-table-value-cell"
               style={{
                 flex: `0 0 ${columnWidths[index]}px`,
                 width: columnWidths[index],
                 minWidth: 0,
+                // Column separators are drawn by the overlay below, so no
+                // border here can shift the cells off the X axis categories.
+                boxSizing: 'border-box',
                 textAlign: 'center',
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
                 textOverflow: 'ellipsis',
               }}
-              title={row.cells[columnIndex]}
+              title={row.cells[columnIndex] ?? ''}
             >
-              {row.cells[columnIndex]}
+              {row.cells[columnIndex] ?? ''}
             </div>
+          ))}
+          {separators.map((boundary, index) => (
+            <div
+              key={`column-separator-${index}`}
+              data-test="data-table-column-separator"
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: Math.max(0, Math.round(boundary) - 1),
+                width: 1,
+                backgroundColor: separatorColor,
+                pointerEvents: 'none',
+              }}
+            />
           ))}
         </div>
       ))}

@@ -86,6 +86,7 @@ export const DEFAULT_FORM_DATA: EchartsTimeseriesFormData = {
   yAxisBounds: [null, null],
   zoomable: false,
   showDataTable: false,
+  dataTableMinLegendWidth: 0,
   richTooltip: true,
   xAxisForceCategorical: false,
   xAxisLabelRotation: defaultXAxis.xAxisLabelRotation,

@@ -25,7 +25,9 @@ import {
   DATA_TABLE_FONT_SIZE,
   getDataTableGridLeft,
   getDataTableHeight,
+  getDataTableMinLegendWidth,
   getGridLabelGutter,
+  LABEL_SAFETY_MARGIN,
   LEGEND_GAP,
   LEGEND_MARKER_WIDTH,
   LEGEND_PADDING,
@@ -256,8 +258,14 @@ test('getDataTableGridLeft measures names with the browser font metrics', () => 
   const width = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660);
 
   expect(context.font).toContain(`${DATA_TABLE_FONT_SIZE}px`);
-  // 9 characters at 7px plus the real DOM chrome, with no estimate margin.
-  expect(width).toBe(63 + LEGEND_MARKER_WIDTH + LEGEND_GAP + LEGEND_PADDING);
+  // 9 characters at 7px plus the real DOM chrome and the safety margin.
+  expect(width).toBe(
+    63 +
+      LEGEND_MARKER_WIDTH +
+      LEGEND_GAP +
+      LEGEND_PADDING +
+      LABEL_SAFETY_MARGIN,
+  );
 });
 
 test('getDataTableGridLeft falls back to a conservative estimate without canvas', () => {
@@ -270,8 +278,78 @@ test('getDataTableGridLeft falls back to a conservative estimate without canvas'
   );
 });
 
+test('the reserved width covers the measured label plus the real DOM chrome', () => {
+  const context = fakeContext();
+  mockCanvas(context);
+  const rows = [makeRow('上年度数据'), makeRow('本年度利率')];
+  const width = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660);
+  const measured = Math.max(
+    ...rows.map(row => context.measureText(row.name).width),
+  );
+  // marker + gap + padding + the 1px right border must not eat into the text.
+  expect(width).toBeGreaterThanOrEqual(
+    measured + LEGEND_MARKER_WIDTH + LEGEND_GAP + LEGEND_PADDING + 1,
+  );
+});
+
 test('getDataTableGridLeft reserves no grid space for an empty table', () => {
   expect(getDataTableGridLeft([], DATA_TABLE_FONT_SIZE, 660)).toBe(0);
+});
+
+test('getDataTableMinLegendWidth accepts both key spellings and rejects junk', () => {
+  expect(getDataTableMinLegendWidth({})).toBe(0);
+  expect(getDataTableMinLegendWidth({ dataTableMinLegendWidth: 120 })).toBe(
+    120,
+  );
+  expect(
+    getDataTableMinLegendWidth({ data_table_min_legend_width: '96' }),
+  ).toBe(96);
+  expect(getDataTableMinLegendWidth({ dataTableMinLegendWidth: -10 })).toBe(0);
+  expect(
+    getDataTableMinLegendWidth({ dataTableMinLegendWidth: Number.NaN }),
+  ).toBe(0);
+  expect(getDataTableMinLegendWidth({ dataTableMinLegendWidth: 'nope' })).toBe(
+    0,
+  );
+});
+
+test('getDataTableGridLeft honours a configured minimum label column width', () => {
+  const rows = [makeRow('SUM(当月金额)')];
+  const automatic = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660);
+  const widened = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660, 0, 220);
+  expect(widened).toBe(220);
+  expect(widened).toBeGreaterThan(automatic);
+  // The plot edge is grid.left + gutter, so the minimum still holds after the
+  // measured Y-axis label gutter has been subtracted.
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660, 35, 220)).toBe(
+    185,
+  );
+});
+
+test('getDataTableGridLeft never shrinks below the measured label width', () => {
+  const rows = [makeRow('SUM(当月金额)')];
+  const automatic = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660);
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660, 0, 20)).toBe(
+    automatic,
+  );
+});
+
+test('getDataTableGridLeft ignores unusable minimum widths', () => {
+  const rows = [makeRow('SUM(当月金额)')];
+  const automatic = getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660);
+  expect(
+    getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660, 0, Number.NaN),
+  ).toBe(automatic);
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 660, 0, -100)).toBe(
+    automatic,
+  );
+});
+
+test('getDataTableGridLeft still caps an oversized minimum width', () => {
+  const rows = [makeRow('SUM(当月金额)')];
+  expect(getDataTableGridLeft(rows, DATA_TABLE_FONT_SIZE, 300, 0, 500)).toBe(
+    120,
+  );
 });
 
 test('createLabelWidthMeasure ignores unusable canvas metrics', () => {
@@ -417,4 +495,72 @@ test('getDataTableHeight caps the table at the maximum visible rows', () => {
   expect(getDataTableHeight(0)).toBe(0);
   expect(getDataTableHeight(3)).toBe(3 * 28 + 1);
   expect(getDataTableHeight(20)).toBe(8 * 28 + 1);
+});
+
+test('buildDataTable keeps axis categories that have no series values', () => {
+  const withAxis = {
+    xAxis: { type: 'category', data: [202607, 202608, 202609] },
+    series: [
+      {
+        name: '上月金额',
+        type: 'bar',
+        queryIndex: 0,
+        data: [
+          [202607, 6683.96],
+          [202608, 7845.29],
+        ],
+      },
+      {
+        name: '当月金额',
+        type: 'bar',
+        queryIndex: 0,
+        data: [[202607, 7100]],
+      },
+    ],
+  } as unknown as EChartsCoreOption;
+
+  const table = buildDataTable(withAxis, ',.2f');
+  expect(table.columns.map(column => column.value)).toEqual([
+    202607, 202608, 202609,
+  ]);
+  expect(table.rows[0].cells).toEqual(['6,683.96', '7,845.29', '']);
+  expect(table.rows[1].cells).toEqual(['7,100.00', '', '']);
+});
+
+test('buildDataTable maps bare scalar series data onto axis categories', () => {
+  const withAxis = {
+    xAxis: { type: 'category', data: ['A', 'B', 'C'] },
+    series: [
+      {
+        name: 'series',
+        type: 'bar',
+        queryIndex: 0,
+        data: [1, null, 3],
+      },
+    ],
+  } as unknown as EChartsCoreOption;
+
+  const table = buildDataTable(withAxis, ',.2f');
+  expect(table.columns.map(column => column.key)).toEqual(['A', 'B', 'C']);
+  expect(table.rows[0].cells).toEqual(['1.00', '', '3.00']);
+});
+
+test('buildDataTable preserves the category axis order instead of sorting it', () => {
+  const withAxis = {
+    xAxis: { data: [202609, 202607, 202608] },
+    series: [
+      {
+        name: 'series',
+        type: 'bar',
+        queryIndex: 0,
+        data: [[202607, 1]],
+      },
+    ],
+  } as unknown as EChartsCoreOption;
+
+  const table = buildDataTable(withAxis, ',.2f');
+  expect(table.columns.map(column => column.value)).toEqual([
+    202609, 202607, 202608,
+  ]);
+  expect(table.rows[0].cells).toEqual(['', '1.00', '']);
 });
