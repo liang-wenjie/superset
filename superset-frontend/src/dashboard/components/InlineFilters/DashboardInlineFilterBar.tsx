@@ -36,6 +36,8 @@ interface DashboardInlineFilterBarProps {
   chartAdhocFilters?: JsonObject[];
   /** Legacy chart filters (``{col, op, val}``), inherited the same way. */
   chartLegacyFilters?: JsonObject[];
+  /** Runtime dashboard/cross filters already applied to this holder's query. */
+  dashboardFilters?: JsonObject[];
 }
 
 /** Coerce the loosely-typed formData value into InlineFilterConfig[]. */
@@ -64,6 +66,7 @@ export const DashboardInlineFilterBar: React.FC<
   datasourceType,
   chartAdhocFilters,
   chartLegacyFilters,
+  dashboardFilters,
 }) => {
   const dispatch = useDispatch();
   const selection = useSelector(
@@ -90,6 +93,7 @@ export const DashboardInlineFilterBar: React.FC<
       datasourceType={datasourceType}
       chartAdhocFilters={chartAdhocFilters}
       chartLegacyFilters={chartLegacyFilters}
+      dashboardFilters={dashboardFilters}
     />
   );
 };

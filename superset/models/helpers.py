@@ -6489,7 +6489,12 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         for flt in (filters or []) + adhoc_filters_to_query_filters(
             adhoc_filters or [], where_only=True
         ):
-            predicate = self._column_filter_to_sqla(flt, cols, tp)
+            # A dashboard filter target can carry a SQL valueTransform. Compile
+            # it with the same predicate the chart query uses; clauses without
+            # one fall back to the plain column/operator/value filter.
+            predicate = self._column_value_transform_predicate(flt, cols, tp)
+            if predicate is None:
+                predicate = self._column_filter_to_sqla(flt, cols, tp)
             if predicate is not None:
                 qry = qry.where(predicate)
         where_sql = freeform_where_having({"adhoc_filters": adhoc_filters or []}).get(
@@ -6558,6 +6563,62 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
                 df = df.replace({np.nan: None})
                 return df["column_values"].to_list()
 
+    def _column_value_transform_predicate(
+        self,
+        flt: dict[str, Any],
+        cols: dict[str, "TableColumn"],
+        template_processor: Optional[BaseTemplateProcessor] = None,
+    ) -> Optional[ColumnElement]:
+        """Compile a dashboard target's ``valueTransform`` for a values query.
+
+        A per-chart (or per-holder) filter target can rewrite the stored column
+        value before comparing it with the selected value, e.g. ``{col}+1`` so
+        a "previous year" tile matches the dashboard's year selection. The
+        distinct-values query must apply the same predicate, otherwise it
+        suggests values that the chart query itself filters out. Returns
+        ``None`` when the clause has no usable transform, so the caller can
+        fall back to the plain ``_column_filter_to_sqla`` predicate.
+        """
+        value_transform = flt.get("valueTransform")
+        raw_val = flt.get("val")
+        flt_col = flt.get("col")
+        transform_operators = {
+            *self._VALUE_TRANSFORM_OPERATOR_SQL,
+            utils.FilterOperator.IN,
+            utils.FilterOperator.NOT_IN,
+        }
+        has_value = raw_val is not None and (
+            not isinstance(raw_val, (list, tuple, set)) or len(raw_val) > 0
+        )
+        if (
+            not isinstance(value_transform, str)
+            or not value_transform.strip()
+            or not has_value
+            or not flt_col
+        ):
+            return None
+        operator = _chart_filter_to_sqla_operator(str(flt.get("op") or ""))
+        if operator is None or operator not in transform_operators:
+            return None
+        col_obj = self._get_filter_column(str(flt_col), cols)
+        if col_obj is None:
+            return None
+        sqla_col = self.convert_tbl_column_to_sqla_col(
+            tbl_column=col_obj, template_processor=template_processor
+        )
+        dialect = self.database.get_dialect()
+        col_sql = dialect.identifier_preparer.quote(
+            getattr(col_obj, "column_name", str(flt_col))
+        )
+        return self._value_transform_predicate(
+            sqla_col=sqla_col,
+            operator=operator,
+            values=raw_val,
+            template=value_transform,
+            dialect=dialect,
+            col_sql=col_sql,
+        )
+
     def _column_filter_to_sqla(
         self,
         flt: dict[str, Any],
@@ -6572,7 +6633,9 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         values; unsupported operators (temporal ranges, array-element and
         string-length operators) are skipped rather than failing the request.
         Filters that resolve to a metric (HAVING) or to a removed column are
-        skipped too, mirroring ``get_sqla_query``.
+        skipped too, mirroring ``get_sqla_query``. Clauses carrying a dashboard
+        ``valueTransform`` are handled by
+        ``_column_value_transform_predicate`` before this method is called.
         """
         flt_col = flt.get("col")
         flt_op = flt.get("op")

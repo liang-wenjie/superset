@@ -90,6 +90,7 @@ import {
   getAppliedFilterValues,
 } from '../../../util/activeDashboardFilters';
 import getFormDataWithExtraFilters from '../../../util/charts/getFormDataWithExtraFilters';
+import { getInlineDashboardFilters } from '../../../util/charts/getInlineDashboardFilters';
 import {
   countChartInstances,
   getChartStateKey,
@@ -653,6 +654,15 @@ const Chart = (props: ChartProps) => {
     [formData, inlineFilterConfig, inlineFilterSelection],
   );
 
+  // The inline-filter dropdown must draw its options from the same filtered
+  // universe as the chart query, otherwise it offers values that cannot
+  // survive the chart's own WHERE clauses. Read from `formData` (before inline
+  // injection) so a selection never narrows its own option list.
+  const inlineDashboardFilters = useMemo(
+    () => getInlineDashboardFilters(formData as JsonObject | undefined),
+    [formData],
+  );
+
   // Memoize ownState so it keeps a stable reference across re-renders that
   // don't change its logical value. ViewQueryModal depends on ownState; a fresh
   // object on every render would refetch the query unnecessarily.
@@ -945,6 +955,7 @@ const Chart = (props: ChartProps) => {
               | JsonObject[]
               | undefined
           }
+          dashboardFilters={inlineDashboardFilters}
         />
       )}
 

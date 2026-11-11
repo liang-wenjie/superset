@@ -7084,3 +7084,102 @@ def test_not_in_filter_null_check_uses_the_engine_spec_hook(
     kql = compile_not_in()
     assert "isnull(state)" in kql
     assert "IS NULL" not in kql
+
+
+def test_values_for_column_applies_dashboard_value_transform(
+    database: Database,
+) -> None:
+    """A per-holder valueTransform must narrow distinct values like the chart query."""
+    import pandas as pd
+
+    from superset.connectors.sqla.models import SqlaTable, TableColumn
+
+    table = SqlaTable(
+        database=database,
+        schema=None,
+        table_name="t",
+        columns=[TableColumn(column_name="a", type="INTEGER")],
+    )
+
+    with patch(
+        "pandas.read_sql_query",
+        return_value=pd.DataFrame({"column_values": [2025]}),
+    ) as read_sql_query:
+        assert table.values_for_column(
+            "a",
+            filters=[
+                {
+                    "col": "a",
+                    "op": "IN",
+                    "val": [2026],
+                    "valueTransform": "{col}+1",
+                }
+            ],
+        ) == [2025]
+
+    sql = str(read_sql_query.call_args.kwargs["sql"])
+    # SELECT DISTINCT a ... WHERE (a+1) IN (2026): the transform, not the raw
+    # column, must be compared with the dashboard's selected year.
+    assert "+1" in sql or "+ 1" in sql
+    assert "2026" in sql
+
+
+def test_values_for_column_skips_empty_value_transform(
+    database: Database,
+) -> None:
+    """A cleared filter must not produce an invalid transformed predicate."""
+    import pandas as pd
+
+    from superset.connectors.sqla.models import SqlaTable, TableColumn
+
+    table = SqlaTable(
+        database=database,
+        schema=None,
+        table_name="t",
+        columns=[TableColumn(column_name="a", type="INTEGER")],
+    )
+
+    with patch(
+        "pandas.read_sql_query",
+        return_value=pd.DataFrame({"column_values": [2026]}),
+    ) as read_sql_query:
+        table.values_for_column(
+            "a",
+            filters=[
+                {
+                    "col": "a",
+                    "op": "IN",
+                    "val": [],
+                    "valueTransform": "{col}+1",
+                }
+            ],
+        )
+
+    sql = str(read_sql_query.call_args.kwargs["sql"])
+    assert "+1" not in sql
+    assert "+ 1" not in sql
+
+
+def test_values_for_column_applies_plain_runtime_filter(
+    database: Database,
+) -> None:
+    """Runtime dashboard filters without a transform still narrow the values."""
+    import pandas as pd
+
+    from superset.connectors.sqla.models import SqlaTable, TableColumn
+
+    table = SqlaTable(
+        database=database,
+        schema=None,
+        table_name="t",
+        columns=[TableColumn(column_name="a", type="INTEGER")],
+    )
+
+    with patch(
+        "pandas.read_sql_query",
+        return_value=pd.DataFrame({"column_values": [2026]}),
+    ) as read_sql_query:
+        table.values_for_column("a", filters=[{"col": "a", "op": "==", "val": 2026}])
+
+    sql = str(read_sql_query.call_args.kwargs["sql"])
+    assert "2026" in sql

@@ -32,12 +32,17 @@ jest.mock('./ChartInlineFilterBar', () => ({
   ChartInlineFilterBar: ({
     selection,
     onSelect,
+    dashboardFilters,
   }: {
     selection: Record<string, unknown>;
     onSelect: (filterId: string, value: string) => void;
+    dashboardFilters?: Record<string, unknown>[];
   }) => (
     <div>
       <span data-test="selection">{JSON.stringify(selection)}</span>
+      <span data-test="dashboard-filters">
+        {JSON.stringify(dashboardFilters ?? [])}
+      </span>
       <button type="button" onClick={() => onSelect('f1', 'C')}>
         pick
       </button>
@@ -70,6 +75,23 @@ test('reads only the selection of its own chart instance', () => {
   render(<DashboardInlineFilterBar chartKey="7::CHART-a" rawConfig={config} />);
 
   expect(screen.getByTestId('selection')).toHaveTextContent('{"f1":"CN"}');
+});
+
+test('forwards the holder runtime filters to the option query', () => {
+  const dashboardFilters = [
+    { col: '年份', op: 'IN', val: ['2026'], valueTransform: '{col}+1' },
+  ];
+  render(
+    <DashboardInlineFilterBar
+      chartKey="7::CHART-a"
+      rawConfig={config}
+      dashboardFilters={dashboardFilters}
+    />,
+  );
+
+  expect(screen.getByTestId('dashboard-filters')).toHaveTextContent(
+    JSON.stringify(dashboardFilters),
+  );
 });
 
 test('writes the selection and re-queries only its own chart instance', async () => {

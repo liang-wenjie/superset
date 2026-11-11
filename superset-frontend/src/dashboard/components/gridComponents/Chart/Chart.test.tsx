@@ -54,6 +54,15 @@ jest.mock('src/components/Chart/ChartContainer', () => {
   return { __esModule: true, default: MockChartContainer };
 });
 
+let capturedInlineFilterBarProps: Record<string, unknown> = {};
+jest.mock('../../InlineFilters', () => ({
+  ...jest.requireActual('../../InlineFilters'),
+  DashboardInlineFilterBar: (props: Record<string, unknown>) => {
+    capturedInlineFilterBarProps = props;
+    return <div data-test="inline-filter-bar" />;
+  },
+}));
+
 const props = {
   id: queryId,
   width: 100,
@@ -1431,4 +1440,30 @@ test('duplicated holders inject their own inline-filter selection', () => {
       `${queryId}::${componentId}`,
     );
   });
+});
+
+test('passes the holder runtime filters to the inline filter bar', () => {
+  const baseChart = defaultState.charts[queryId];
+  const runtimeFilters = [
+    { col: '年份', op: 'IN', val: ['2026'], valueTransform: '{col}+1' },
+  ];
+  setup(
+    {},
+    {
+      charts: {
+        ...defaultState.charts,
+        [queryId]: {
+          ...baseChart,
+          form_data: {
+            ...baseChart.form_data,
+            inline_filters: [{ id: 'f1', column: '年份' }],
+            extra_form_data: { filters: runtimeFilters },
+          },
+        },
+      },
+    },
+  );
+
+  expect(capturedInlineFilterBarProps.dashboardFilters).toEqual(runtimeFilters);
+  expect(capturedInlineFilterBarProps.chartKey).toBe(queryId);
 });

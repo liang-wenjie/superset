@@ -132,6 +132,13 @@ export interface InlineValuesQueryParams {
   extraFilters?: { col: string; val: InlineFilterSelectionValue }[];
   whereAdhoc?: JsonObject[];
   legacyFilters?: JsonObject[];
+  /**
+   * Runtime dashboard/cross filters already applied to the chart's query,
+   * including per-holder `valueTransform` clauses. They travel in
+   * `chart_filters.filters` so the values endpoint compiles them with the
+   * same SQL rules as the chart query.
+   */
+  dashboardFilters?: JsonObject[];
   search?: string;
 }
 
@@ -139,22 +146,25 @@ export interface InlineValuesQueryParams {
  * Query string for the column-values endpoint. `q` enables server-side
  * substring search (essential on high-cardinality columns where only one page
  * of values is loaded), while `extra_filters` cascades sibling selections and
- * `chart_filters` inherits the chart's own WHERE clauses.
+ * `chart_filters` inherits both the chart's own WHERE clauses and the runtime
+ * dashboard filters already applied to this holder.
  */
 export const buildInlineValuesQuery = ({
   extraFilters = [],
   whereAdhoc = [],
   legacyFilters = [],
+  dashboardFilters = [],
   search = '',
 }: InlineValuesQueryParams): string => {
   const params = new URLSearchParams();
   if (extraFilters.length > 0) {
     params.set('extra_filters', JSON.stringify(extraFilters));
   }
-  if (whereAdhoc.length > 0 || legacyFilters.length > 0) {
+  const chartFilters = [...legacyFilters, ...dashboardFilters];
+  if (whereAdhoc.length > 0 || chartFilters.length > 0) {
     params.set(
       'chart_filters',
-      JSON.stringify({ adhoc_filters: whereAdhoc, filters: legacyFilters }),
+      JSON.stringify({ adhoc_filters: whereAdhoc, filters: chartFilters }),
     );
   }
   if (search) {
@@ -266,6 +276,12 @@ export interface ChartInlineFilterBarProps {
   chartAdhocFilters?: JsonObject[];
   /** Legacy ``formData.filters`` (``{col, op, val}``), inherited the same way. */
   chartLegacyFilters?: JsonObject[];
+  /**
+   * Runtime dashboard/cross filters currently applied to this holder. Unlike
+   * the saved chart filters these change with the user's filter selections
+   * and can carry a per-instance SQL `valueTransform`.
+   */
+  dashboardFilters?: JsonObject[];
 }
 
 /**
@@ -280,6 +296,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   datasourceType,
   chartAdhocFilters,
   chartLegacyFilters,
+  dashboardFilters,
 }) => {
   const [optionsCache, setOptionsCache] = useState<
     Record<string, OptionsCacheEntry>
@@ -297,6 +314,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   const selectionKey = JSON.stringify(selection);
   const chartAdhocFiltersKey = JSON.stringify(chartAdhocFilters);
   const chartLegacyFiltersKey = JSON.stringify(chartLegacyFilters);
+  const dashboardFiltersKey = JSON.stringify(dashboardFilters);
   const searchTermsKey = JSON.stringify(searchTerms);
 
   const optionsFor = useCallback(
@@ -335,6 +353,8 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     if (active.length === 0) return undefined;
 
     let cancelled = false;
+    const runtimeFilters = (dashboardFilters ??
+      []) as QueryObjectFilterClause[];
     Promise.all(
       active.map(async (f): Promise<readonly [string, OptionsCacheEntry]> => {
         // A free-text filter has no option list, so skip both the values
@@ -352,7 +372,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
               column: f.column,
               sortMetric: f.sortMetric,
               sortAscending: f.sortAscending !== false,
-              filters: toInlineQueryFilters(extra),
+              filters: [...toInlineQueryFilters(extra), ...runtimeFilters],
             });
             if (metricOptions.length > 0) {
               return [
@@ -372,6 +392,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
             extraFilters: extra.map(({ col, val }) => ({ col, val })),
             whereAdhoc,
             legacyFilters: chartLegacyFilters ?? [],
+            dashboardFilters: dashboardFilters ?? [],
             search,
           });
           const { json } = await SupersetClient.get({
@@ -416,6 +437,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     selectionKey,
     chartAdhocFiltersKey,
     chartLegacyFiltersKey,
+    dashboardFiltersKey,
     searchTermsKey,
   ]);
 

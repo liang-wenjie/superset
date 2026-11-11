@@ -675,3 +675,63 @@ test('a cleared first-value default is not re-applied', async () => {
   await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
   expect(onSelect).not.toHaveBeenCalled();
 });
+
+const runtimeFilters = [
+  { col: '年份', op: 'IN', val: ['2026'], valueTransform: '{col}+1' },
+];
+
+const chartFiltersFrom = (endpoint: string) => {
+  const query = endpoint.split('?')[1] ?? '';
+  return JSON.parse(
+    new URLSearchParams(query).get('chart_filters') ?? '{}',
+  ) as { filters?: Record<string, unknown>[] };
+};
+
+test('sends runtime dashboard filters alongside the saved chart filters', () => {
+  const query = buildInlineValuesQuery({
+    legacyFilters: [{ col: 'legacy', op: '==', val: 'x' }],
+    dashboardFilters: runtimeFilters,
+  });
+  const params = new URLSearchParams(query);
+  const chartFilters = JSON.parse(params.get('chart_filters') ?? '{}');
+  expect(chartFilters.filters).toEqual([
+    { col: 'legacy', op: '==', val: 'x' },
+    ...runtimeFilters,
+  ]);
+  // Runtime filters must not be duplicated into extra_filters: that endpoint
+  // only supports plain equality and would drop the valueTransform.
+  expect(params.get('extra_filters')).toBeNull();
+});
+
+test('requests values with the holder runtime filters and refetches when they change', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['2026'] } });
+  const baseProps = {
+    filters,
+    selection: {},
+    onSelect: jest.fn(),
+    datasourceId: 1,
+    datasourceType: 'table',
+  };
+  const { rerender } = render(
+    <ChartInlineFilterBar {...baseProps} dashboardFilters={runtimeFilters} />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+  const firstEndpoint = (mockGet.mock.calls[0][0] as { endpoint: string })
+    .endpoint;
+  expect(chartFiltersFrom(firstEndpoint).filters).toEqual(runtimeFilters);
+
+  rerender(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[{ col: '年份', op: 'IN', val: ['2025'] }]}
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  const secondEndpoint = (mockGet.mock.calls[1][0] as { endpoint: string })
+    .endpoint;
+  expect(chartFiltersFrom(secondEndpoint).filters).toEqual([
+    { col: '年份', op: 'IN', val: ['2025'] },
+  ]);
+});
