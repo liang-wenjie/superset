@@ -582,10 +582,10 @@ msgstr "已选择 %s 个，共 %s 个"
 msgid "%s recipients"
 msgstr "%s 收件人"
 
-#, fuzzy, python-format
+#, python-format
 msgid "%s record..."
 msgid_plural "%s records..."
-msgstr[0] "%s 异常"
+msgstr[0] "%s 条记录..."
 
 #, fuzzy, python-format
 msgid "%s row"
@@ -18125,9 +18125,8 @@ msgid ""
 " a metric."
 msgstr "线条的宽度，可以是固定值，也可以是基于指标的变量宽度。"
 
-#, fuzzy
 msgid "Theme"
-msgstr "时间"
+msgstr "主题"
 
 msgid "Theme colors"
 msgstr ""
