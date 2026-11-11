@@ -48,6 +48,28 @@ function findRule(selectorText: string): string {
   throw new Error(`No rule found for selector ${selectorText}`);
 }
 
+function allRules(): string {
+  const themeObject = Theme.fromConfig();
+  render(
+    <themeObject.SupersetThemeProvider>
+      <GlobalStyles />
+    </themeObject.SupersetThemeProvider>,
+  );
+  const cssText: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue;
+    }
+    for (const rule of Array.from(rules)) {
+      cssText.push(rule.cssText);
+    }
+  }
+  return cssText.join('\n');
+}
+
 test('body is a growable min-height flex column, not a fixed-height box', () => {
   const bodyRule = findRule('body');
 
@@ -81,4 +103,44 @@ test('native scrollbars reserve no layout space and the overlay thumb floats', (
   expect(findRule('.superset-overlay-scrollbar-thumb[data-visible]')).toMatch(
     /opacity:\s*1/,
   );
+});
+
+test('horizontal scrollbars use an auto-hiding track with a rounded thumb', () => {
+  const trackRule = findRule('.superset-scrollbar-track');
+  expect(trackRule).toMatch(/position:\s*fixed/);
+  expect(trackRule).toMatch(/pointer-events:\s*none/);
+  expect(trackRule).toMatch(/opacity:\s*0/);
+
+  expect(findRule('.superset-scrollbar-track[data-visible]')).toMatch(
+    /opacity:\s*1/,
+  );
+
+  const thumbRule = findRule('.superset-scrollbar-thumb');
+  expect(thumbRule).toMatch(/position:\s*absolute/);
+  expect(thumbRule).toMatch(/border-radius:\s*999px/);
+});
+
+test('scrollbar overlays sit below every antd popup layer', () => {
+  const popupBase = Theme.fromConfig().theme.zIndexPopupBase;
+  const readZIndex = (rule: string) =>
+    Number(rule.match(/z-index:\s*(\d+)/)?.[1]);
+
+  // A hardcoded 10000 used to float scrollbars above modals and dropdowns.
+  expect(readZIndex(findRule('.superset-overlay-scrollbar-thumb'))).toBe(
+    popupBase - 1,
+  );
+  expect(readZIndex(findRule('.superset-scrollbar-track'))).toBe(popupBase - 1);
+});
+
+test('hovered and dragged thumbs grow and become draggable', () => {
+  const css = allRules();
+  expect(css).toMatch(/pointer-events:\s*auto/);
+  expect(css).toMatch(/cursor:\s*grab/);
+  expect(css).toMatch(/cursor:\s*grabbing/);
+  expect(css).toMatch(/width:\s*10px\s*!important/);
+  // Horizontal thumbs live inside an 8px track and grow to 12px on hover.
+  expect(css).toMatch(/height:\s*12px/);
+  expect(css).toMatch(/\[data-hover\]/);
+  expect(css).toMatch(/\[data-drag\]/);
+  expect(css).toMatch(/superset-scrollbar-thumb\[data-hover\]/);
 });

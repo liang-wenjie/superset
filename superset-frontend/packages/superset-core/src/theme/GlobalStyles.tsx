@@ -31,7 +31,12 @@ import '@fontsource/ibm-plex-mono/600.css';
 import { css, useTheme, Global } from '@emotion/react';
 import { useThemeMode } from './utils/themeUtils';
 import {
+  DRAG_ATTRIBUTE,
+  HOVER_ATTRIBUTE,
   OVERLAY_THUMB_CLASS,
+  SCROLLBAR_ACTIVE_ATTRIBUTE,
+  SCROLLBAR_THUMB_CLASS,
+  SCROLLBAR_TRACK_CLASS,
   VISIBLE_ATTRIBUTE,
   useAutoHideScrollbars,
 } from './useAutoHideScrollbars';
@@ -40,6 +45,11 @@ export const GlobalStyles = () => {
   const theme = useTheme();
   const isDark = useThemeMode();
   useAutoHideScrollbars();
+  // Scrollbar overlays must float above the content they belong to, but below
+  // every antd popup layer (modals, drawers, dropdowns, popovers, toasts),
+  // which start at zIndexPopupBase. A hardcoded high value here used to put
+  // scrollbars on top of unrelated UI.
+  const overlayZIndex = theme.zIndexPopupBase - 1;
   return (
     <Global
       key={`global-${theme.colorLink}`}
@@ -165,7 +175,7 @@ export const GlobalStyles = () => {
           position: fixed;
           top: 0;
           left: 0;
-          z-index: 10000;
+          z-index: ${overlayZIndex};
           border-radius: 999px;
           background-color: color-mix(
             in srgb,
@@ -180,6 +190,117 @@ export const GlobalStyles = () => {
 
         .${OVERLAY_THUMB_CLASS}[${VISIBLE_ATTRIBUTE}] {
           opacity: 1;
+          pointer-events: auto;
+          cursor: grab;
+        }
+
+        .${OVERLAY_THUMB_CLASS}[${HOVER_ATTRIBUTE}],
+        .${OVERLAY_THUMB_CLASS}[${DRAG_ATTRIBUTE}] {
+          opacity: 1;
+          pointer-events: auto;
+          cursor: grab;
+        }
+
+        /* A small invisible hit area makes the 5px thumb easy to catch before
+           it grows; it only exists while the thumb is on screen. */
+        .${OVERLAY_THUMB_CLASS}[${VISIBLE_ATTRIBUTE}]::before {
+          content: '';
+          position: absolute;
+          inset: -3px;
+        }
+
+        .${OVERLAY_THUMB_CLASS}[${HOVER_ATTRIBUTE}],
+        .${OVERLAY_THUMB_CLASS}[${DRAG_ATTRIBUTE}] {
+          background-color: color-mix(
+            in srgb,
+            ${theme.colorText},
+            transparent 25%
+          );
+        }
+
+        /* Grow across the scroll axis, keeping the outer edge anchored so the
+           widened thumb never spills outside its container. */
+        .${OVERLAY_THUMB_CLASS}[data-axis="y"][${HOVER_ATTRIBUTE}],
+        .${OVERLAY_THUMB_CLASS}[data-axis="y"][${DRAG_ATTRIBUTE}] {
+          width: 10px !important;
+          margin-left: -5px;
+        }
+
+        .${OVERLAY_THUMB_CLASS}[${DRAG_ATTRIBUTE}] {
+          cursor: grabbing;
+        }
+
+        /* Every horizontally scrollable container gets one of these tracks.
+           The hook clamps each track to the visible part of its own table (it
+           never docks to the window or spills past the table edges), and this
+           z-index keeps it below every antd popup layer. Only the opacity is
+           transitioned: transforming the track with a CSS transition would
+           make it lag behind the table while the page scrolls. */
+        .${SCROLLBAR_TRACK_CLASS} {
+          position: fixed;
+          top: 0;
+          left: 0;
+          z-index: ${overlayZIndex};
+          border-radius: 999px;
+          background-color: color-mix(
+            in srgb,
+            ${theme.colorText},
+            transparent 92%
+          );
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 180ms ease-out;
+          will-change: transform;
+        }
+
+        .${SCROLLBAR_TRACK_CLASS}[${VISIBLE_ATTRIBUTE}] {
+          opacity: 1;
+        }
+
+        .${SCROLLBAR_THUMB_CLASS} {
+          position: absolute;
+          top: 0;
+          left: 0;
+          height: 100%;
+          border-radius: 999px;
+          background-color: color-mix(
+            in srgb,
+            ${theme.colorText},
+            transparent 55%
+          );
+          transition: background-color 180ms ease-out;
+        }
+
+        /* Emphasise the thumb while the pointer is in the container. */
+        .${SCROLLBAR_TRACK_CLASS}[${SCROLLBAR_ACTIVE_ATTRIBUTE}] .${SCROLLBAR_THUMB_CLASS} {
+          background-color: color-mix(
+            in srgb,
+            ${theme.colorText},
+            transparent 30%
+          );
+        }
+
+        /* Only the thumb (not the full-width track) accepts pointer input, so
+           the rest of the container's bottom edge stays clickable. */
+        .${SCROLLBAR_TRACK_CLASS}[${VISIBLE_ATTRIBUTE}] .${SCROLLBAR_THUMB_CLASS} {
+          pointer-events: auto;
+          cursor: grab;
+        }
+
+        .${SCROLLBAR_THUMB_CLASS}[${HOVER_ATTRIBUTE}],
+        .${SCROLLBAR_THUMB_CLASS}[${DRAG_ATTRIBUTE}] {
+          height: 12px;
+          margin-top: -2px;
+          background-color: color-mix(
+            in srgb,
+            ${theme.colorText},
+            transparent 25%
+          );
+          cursor: grab;
+        }
+
+        .${SCROLLBAR_THUMB_CLASS}[${DRAG_ATTRIBUTE}] {
+          cursor: grabbing;
         }
       `}
     />
