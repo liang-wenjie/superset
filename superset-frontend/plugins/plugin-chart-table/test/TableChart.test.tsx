@@ -476,6 +476,101 @@ test('adds general column separators to body cells without header groups', () =>
   });
 });
 
+const indentedNames = ['  Michael', 'Joe  Smith', 'Maria'];
+const sourceRows = testData.advanced.queriesData[0].data ?? [];
+const whitespaceData = {
+  ...testData.advanced,
+  queriesData: [
+    {
+      ...testData.advanced.queriesData[0],
+      data: sourceRows.map((row, index) => ({
+        ...row,
+        name: indentedNames[index] ?? row.name,
+      })),
+    },
+  ],
+};
+
+const getCssRules = () =>
+  Array.from(document.styleSheets).flatMap(sheet => {
+    try {
+      return Array.from(sheet.cssRules).map(rule => rule.cssText);
+    } catch {
+      // A cross-origin sheet can throw when cssRules is accessed.
+      return [];
+    }
+  });
+
+test('tags cells whose values carry significant whitespace', () => {
+  const { container } = render(
+    <TableChart {...transformProps(whitespaceData)} sticky={false} />,
+  );
+  const cells = Array.from(container.querySelectorAll('tbody td'));
+  const findCell = (text: string) =>
+    cells.find(cell => cell.textContent === text);
+
+  // Leading indentation and repeated inner spaces both need preserving.
+  expect(
+    findCell('  Michael')?.classList.contains('dt-preserve-whitespace'),
+  ).toBe(true);
+  expect(
+    findCell('Joe  Smith')?.classList.contains('dt-preserve-whitespace'),
+  ).toBe(true);
+  // Reverse check: ordinary values keep the default `white-space: normal`.
+  expect(findCell('Maria')?.classList.contains('dt-preserve-whitespace')).toBe(
+    false,
+  );
+
+  // Guard the CSS half: the class alone does not preserve the spaces.
+  const rules = getCssRules();
+  expect(
+    rules.some(
+      rule =>
+        rule.includes('.dt-preserve-whitespace') && rule.includes('pre-wrap'),
+    ),
+  ).toBe(true);
+});
+
+test('keeps significant whitespace on truncated cells', () => {
+  const props = transformProps(whitespaceData);
+  const withTruncation = {
+    ...props,
+    columns: props.columns.map(column =>
+      column.key === 'name'
+        ? {
+            ...column,
+            config: { ...column.config, truncateLongCells: true },
+          }
+        : column,
+    ),
+  };
+  const { container } = render(
+    <TableChart {...withTruncation} sticky={false} />,
+  );
+  const wrappers = Array.from(
+    container.querySelectorAll('tbody td .dt-truncate-cell'),
+  );
+  expect(
+    wrappers
+      .find(node => node.textContent === '  Michael')
+      ?.classList.contains('dt-preserve-whitespace'),
+  ).toBe(true);
+  expect(
+    wrappers
+      .find(node => node.textContent === 'Maria')
+      ?.classList.contains('dt-preserve-whitespace'),
+  ).toBe(false);
+
+  // The truncation wrapper must not fall back to `nowrap`/`normal`.
+  expect(
+    getCssRules().some(
+      rule =>
+        rule.includes('.dt-truncate-cell.dt-preserve-whitespace') &&
+        rule.includes('white-space: pre'),
+    ),
+  ).toBe(true);
+});
+
 describe('plugin-chart-table', () => {
   describe('transformProps', () => {
     test('should parse pageLength to pageSize', () => {

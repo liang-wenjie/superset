@@ -57,6 +57,15 @@ export default styled.div`
       vertical-align: top;
     }
 
+    /* Data values are plain text, so the default "white-space: normal"
+       removes leading spaces and collapses runs of them. Indentation stored
+       in the data (e.g. hierarchical statement rows) would silently vanish
+       even though the Explore results grid shows it. Only cells tagged by
+       TableChart switch to a whitespace-preserving mode. */
+    tbody td.dt-preserve-whitespace {
+      white-space: pre-wrap;
+    }
+
     /* Header styling */
     thead > tr > th {
       padding-right: 0;
@@ -225,10 +234,18 @@ export default styled.div`
       white-space: nowrap;
     }
 
+    .dt-truncate-cell.dt-preserve-whitespace {
+      white-space: pre;
+    }
+
     .dt-truncate-cell:hover {
       overflow: visible;
       white-space: normal;
       height: auto;
+    }
+
+    .dt-truncate-cell.dt-preserve-whitespace:hover {
+      white-space: pre-wrap;
     }
 
     /* Pagination styling: page size selector on the left, page numbers on

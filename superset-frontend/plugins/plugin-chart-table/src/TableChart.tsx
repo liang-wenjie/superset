@@ -113,6 +113,13 @@ import {
 
 type ValueRange = [number, number];
 
+// HTML cells use `white-space: normal` by default, which strips leading
+// spaces and collapses runs of them. Indentation stored in the data (e.g.
+// hierarchical statement rows) must survive rendering, just like it does in
+// the Explore results grid. Only tag the cells that actually carry such
+// whitespace so every other cell keeps its existing layout.
+const SIGNIFICANT_WHITESPACE = /^\s|\s{2}/;
+
 function getComparisonKeyPortion(key: string, label: string): string {
   return key.startsWith(label) ? key.substring(label.length) : key;
 }
@@ -1249,6 +1256,8 @@ export default function TableChart<D extends DataRecord = DataRecord>(
             showNullAsBlank,
           );
           const html = isHtml && allowRenderHtml ? { __html: text } : undefined;
+          const preserveWhitespace =
+            !isHtml && SIGNIFICANT_WHITESPACE.test(text);
 
           let backgroundColor;
           let color;
@@ -1451,6 +1460,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
               // including columns inside a header group. The emphasis class
               // above still wins in CSS for dimension/group boundaries.
               'dt-column-separator',
+              preserveWhitespace ? 'dt-preserve-whitespace' : '',
               value == null ||
               (value instanceof DateWithFormatter && value.input == null)
                 ? 'dt-is-null'
@@ -1499,7 +1509,10 @@ export default function TableChart<D extends DataRecord = DataRecord>(
               )}
               {truncateLongCells ? (
                 <div
-                  className="dt-truncate-cell"
+                  className={cx(
+                    'dt-truncate-cell',
+                    preserveWhitespace && 'dt-preserve-whitespace',
+                  )}
                   style={columnWidth ? { width: columnWidth } : undefined}
                 >
                   {arrow && <span style={arrowStyles}>{arrow}</span>}
