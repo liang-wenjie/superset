@@ -90,6 +90,10 @@ import {
   getAppliedFilterValues,
 } from '../../../util/activeDashboardFilters';
 import getFormDataWithExtraFilters from '../../../util/charts/getFormDataWithExtraFilters';
+import {
+  countChartInstances,
+  getChartStateKey,
+} from '../../../util/chartInstance';
 import { useChartCustomizationFromRedux } from '../../nativeFilters/state';
 import { PLACEHOLDER_DATASOURCE } from '../../../constants';
 import { DashboardDatasetsContext } from '../../../contexts/DashboardDatasetsContext';
@@ -204,7 +208,21 @@ const Chart = (props: ChartProps) => {
     [dispatch],
   );
 
-  const chart = useSelector((state: RootState) => state.charts[props.id]);
+  const instanceCount = useSelector((state: RootState) =>
+    countChartInstances(state.dashboardLayout.present, props.id),
+  );
+  // Duplicate holders of the same slice get their own Redux chart key, so each
+  // one issues a query with its own filter target / SQL transform.
+  const stateKey = getChartStateKey(props.id, props.componentId, instanceCount);
+  // A holder added while editing has no hydrated instance state yet. The
+  // dashboard's layout effect creates one; until then fall back to the
+  // slice-level chart so the first render still has data.
+  const chart = useSelector(
+    (state: RootState) => state.charts[stateKey] ?? state.charts[props.id],
+  );
+  const chartKey = useSelector((state: RootState) =>
+    state.charts[stateKey] ? stateKey : props.id,
+  );
   const queriesResponse = chart?.queriesResponse;
   const chartUpdateEndTime = chart?.chartUpdateEndTime;
   const chartStatus = chart?.chartStatus;
@@ -540,6 +558,7 @@ const Chart = (props: ChartProps) => {
       colorScheme,
       colorNamespace,
       sliceId: props.id,
+      instanceId: instanceCount > 1 ? props.componentId : undefined,
       nativeFilters,
       allSliceIds,
       dataMask,
@@ -603,6 +622,8 @@ const Chart = (props: ChartProps) => {
     chartConfiguration,
     chartCustomizationItems,
     props.id,
+    props.componentId,
+    instanceCount,
     props.extraControls,
     colorScheme,
     colorNamespace,
@@ -816,14 +837,10 @@ const Chart = (props: ChartProps) => {
       slice_id: sliceSliceId,
       is_cached: isCached,
     });
-    return boundActionCreators.refreshChart(
-      chart?.id ?? props.id,
-      true,
-      props.dashboardId,
-    );
+    return boundActionCreators.refreshChart(chartKey, true, props.dashboardId);
   }, [
     boundActionCreators.refreshChart,
-    chart?.id,
+    chartKey,
     props.dashboardId,
     sliceSliceId,
     isCached,
@@ -971,6 +988,7 @@ const Chart = (props: ChartProps) => {
           annotationData={chart.annotationData ?? undefined}
           chartAlert={chart.chartAlert ?? undefined}
           chartId={props.id}
+          chartKey={chartKey}
           chartStatus={chartStatus ?? undefined}
           chartStackTrace={chart.chartStackTrace ?? undefined}
           datasource={chartDatasource}

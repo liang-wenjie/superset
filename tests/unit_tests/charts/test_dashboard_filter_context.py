@@ -930,3 +930,236 @@ def test_get_dashboard_filter_context_chart_not_in_layout_receives_root_filters(
     assert ctx.filters[0].id == "f1"
     assert ctx.filters[0].status == DashboardFilterStatus.APPLIED
     assert ctx.extra_form_data["filters"][0]["val"] == ["US"]
+
+
+# --- instance-scoped holders (same slice added to a dashboard more than once) ---
+
+DUPLICATE_HOLDER_IDS = ["CHART-a", "CHART-b", "CHART-c"]
+
+DUPLICATE_POSITION_JSON = {
+    "ROOT_ID": {"id": "ROOT_ID", "type": "ROOT", "children": ["GRID_ID"]},
+    "GRID_ID": {
+        "id": "GRID_ID",
+        "type": "GRID",
+        "children": ["ROW-abc"],
+        "parents": ["ROOT_ID"],
+    },
+    "ROW-abc": {
+        "id": "ROW-abc",
+        "type": "ROW",
+        "children": DUPLICATE_HOLDER_IDS,
+        "parents": ["ROOT_ID", "GRID_ID"],
+    },
+    **{
+        holder_id: {
+            "id": holder_id,
+            "type": "CHART",
+            "meta": {"chartId": 10},
+            "parents": ["ROOT_ID", "GRID_ID", "ROW-abc"],
+        }
+        for holder_id in DUPLICATE_HOLDER_IDS
+    },
+}
+
+
+def _make_instance_filter(
+    excluded_instances: list[str] | None = None,
+    scope_excluded: list[int] | None = None,
+) -> dict[str, Any]:
+    flt = _make_filter(
+        scope_root=["ROOT_ID"],
+        scope_excluded=scope_excluded or [],
+        default_value=["US"],
+    )
+    if excluded_instances is not None:
+        flt["scope"]["excludedInstances"] = excluded_instances
+    return flt
+
+
+def test_find_chart_layout_item_selects_requested_instance() -> None:
+    for holder_id in DUPLICATE_HOLDER_IDS:
+        item = _find_chart_layout_item(10, DUPLICATE_POSITION_JSON, holder_id)
+        assert item is not None
+        assert item["id"] == holder_id
+
+
+def test_find_chart_layout_item_unknown_instance_returns_none() -> None:
+    assert _find_chart_layout_item(10, DUPLICATE_POSITION_JSON, "CHART-missing") is None
+
+
+def test_find_chart_layout_item_without_instance_keeps_legacy_lookup() -> None:
+    item = _find_chart_layout_item(10, DUPLICATE_POSITION_JSON)
+    assert item is not None
+    assert item["id"] in DUPLICATE_HOLDER_IDS
+
+
+def test_excluded_instances_only_exclude_that_holder() -> None:
+    flt = _make_instance_filter(excluded_instances=["CHART-b"])
+    assert (
+        _is_filter_in_scope_for_chart(flt, 10, DUPLICATE_POSITION_JSON, "CHART-a")
+        is True
+    )
+    assert (
+        _is_filter_in_scope_for_chart(flt, 10, DUPLICATE_POSITION_JSON, "CHART-b")
+        is False
+    )
+    assert (
+        _is_filter_in_scope_for_chart(flt, 10, DUPLICATE_POSITION_JSON, "CHART-c")
+        is True
+    )
+
+
+def test_excluded_instances_ignored_for_legacy_chart_level_calls() -> None:
+    """Callers without a holder id (e.g. cache warm-up) keep slice semantics."""
+    flt = _make_instance_filter(excluded_instances=["CHART-b"])
+    assert _is_filter_in_scope_for_chart(flt, 10, DUPLICATE_POSITION_JSON) is True
+
+
+def test_legacy_excluded_still_excludes_every_holder() -> None:
+    flt = _make_instance_filter(scope_excluded=[10])
+    for holder_id in DUPLICATE_HOLDER_IDS:
+        assert (
+            _is_filter_in_scope_for_chart(flt, 10, DUPLICATE_POSITION_JSON, holder_id)
+            is False
+        )
+
+
+def test_resolve_filter_target_instance_ids_win_over_chart_ids() -> None:
+    from superset.charts.data.dashboard_filter_context import _resolve_filter_target
+
+    flt = {
+        "targets": [
+            {
+                "datasetId": 7,
+                "column": {"name": "报告日期_a"},
+                "instanceIds": ["CHART-a"],
+            },
+            {"datasetId": 7, "column": {"name": "legacy"}, "chartIds": [10]},
+        ]
+    }
+    resolved = _resolve_filter_target(flt, _make_slice(datasource_id=7), "CHART-a")
+    assert resolved["column"]["name"] == "报告日期_a"
+
+
+def test_resolve_filter_target_falls_back_to_chart_ids() -> None:
+    from superset.charts.data.dashboard_filter_context import _resolve_filter_target
+
+    flt = {
+        "targets": [
+            {
+                "datasetId": 7,
+                "column": {"name": "报告日期_a"},
+                "instanceIds": ["CHART-a"],
+            },
+            {"datasetId": 7, "column": {"name": "legacy"}, "chartIds": [10]},
+        ]
+    }
+    resolved = _resolve_filter_target(flt, _make_slice(datasource_id=7), "CHART-c")
+    assert resolved["column"]["name"] == "legacy"
+
+
+@patch("superset.charts.data.dashboard_filter_context._check_dashboard_access")
+@patch("superset.charts.data.dashboard_filter_context.db")
+def test_get_dashboard_filter_context_per_instance_sql_targets(
+    mock_db: MagicMock,
+    mock_check_access: MagicMock,
+) -> None:
+    """One filter value, three SQL mappings: each holder gets its own clause."""
+    filter_config = [
+        _make_filter(
+            flt_id="f1",
+            name="Report month",
+            scope_root=["ROOT_ID"],
+            default_value=["202607"],
+            target_column="report_date",
+        )
+    ]
+    filter_config[0]["targets"] = [
+        {"datasetId": 1, "column": {"name": "report_date"}},
+        {
+            "datasetId": 7,
+            "column": {"name": "报告日期_a"},
+            "valueTransform": "SUBSTRING({col},1,4)",
+            "instanceIds": ["CHART-a"],
+        },
+        {
+            "datasetId": 7,
+            "column": {"name": "报告日期_b"},
+            "valueTransform": "SUBSTRING({col},1,6)",
+            "instanceIds": ["CHART-b"],
+        },
+    ]
+    metadata = {"native_filter_configuration": filter_config}
+
+    dashboard = MagicMock()
+    dashboard.id = 1
+    slice_obj = _make_slice(chart_id=10, datasource_id=7)
+    dashboard.slices = [slice_obj]
+    dashboard.json_metadata = json.dumps(metadata)
+    dashboard.position_json = json.dumps(DUPLICATE_POSITION_JSON)
+    # Each call loads the dashboard and then the chart's Slice.
+    (
+        mock_db.session.query.return_value.filter_by.return_value.one_or_none
+    ).side_effect = [dashboard, slice_obj] * 2
+
+    ctx_a = get_dashboard_filter_context(
+        dashboard_id=1, chart_id=10, instance_id="CHART-a"
+    )
+    ctx_b = get_dashboard_filter_context(
+        dashboard_id=1, chart_id=10, instance_id="CHART-b"
+    )
+
+    # The value is shared; only the SQL mapping differs per holder.
+    assert ctx_a.extra_form_data["filters"][0]["val"] == ["202607"]
+    assert ctx_b.extra_form_data["filters"][0]["val"] == ["202607"]
+    assert ctx_a.filters[0].column == "报告日期_a"
+    assert ctx_b.filters[0].column == "报告日期_b"
+    assert ctx_a.extra_form_data["filters"][0]["valueTransform"] == (
+        "SUBSTRING({col},1,4)"
+    )
+    assert ctx_b.extra_form_data["filters"][0]["valueTransform"] == (
+        "SUBSTRING({col},1,6)"
+    )
+
+
+@patch("superset.charts.data.dashboard_filter_context._check_dashboard_access")
+@patch("superset.charts.data.dashboard_filter_context.db")
+def test_get_dashboard_filter_context_skips_an_excluded_instance(
+    mock_db: MagicMock,
+    mock_check_access: MagicMock,
+) -> None:
+    """A holder excluded from scope receives no filters while its siblings do."""
+    filter_config = [
+        _make_filter(
+            flt_id="f1",
+            name="Region",
+            scope_root=["ROOT_ID"],
+            default_value=["US"],
+            target_column="region",
+        )
+    ]
+    filter_config[0]["scope"]["excludedInstances"] = ["CHART-b"]
+    metadata = {"native_filter_configuration": filter_config}
+
+    dashboard = MagicMock()
+    dashboard.id = 1
+    slice_obj = MagicMock()
+    slice_obj.id = 10
+    dashboard.slices = [slice_obj]
+    dashboard.json_metadata = json.dumps(metadata)
+    dashboard.position_json = json.dumps(DUPLICATE_POSITION_JSON)
+    (
+        mock_db.session.query.return_value.filter_by.return_value.one_or_none
+    ).side_effect = [dashboard, slice_obj] * 2
+
+    ctx_a = get_dashboard_filter_context(
+        dashboard_id=1, chart_id=10, instance_id="CHART-a"
+    )
+    ctx_b = get_dashboard_filter_context(
+        dashboard_id=1, chart_id=10, instance_id="CHART-b"
+    )
+
+    assert ctx_a.filters[0].status == DashboardFilterStatus.APPLIED
+    assert ctx_a.extra_form_data["filters"][0]["val"] == ["US"]
+    assert ctx_b.filters == []
+    assert ctx_b.extra_form_data == {}

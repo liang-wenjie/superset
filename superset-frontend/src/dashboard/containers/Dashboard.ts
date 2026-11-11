@@ -24,6 +24,7 @@ import {
   addSliceToDashboard,
   removeSliceFromDashboard,
   clearAllChartStates,
+  syncChartInstanceStates,
 } from 'src/dashboard/actions/dashboardState';
 import { setDatasources } from 'src/dashboard/actions/datasources';
 
@@ -65,6 +66,7 @@ function mapDispatchToProps(dispatch: Dispatch) {
         clearAllChartStates,
         addSliceToDashboard,
         removeSliceFromDashboard,
+        syncChartInstanceStates,
         triggerQuery,
         logEvent,
       },

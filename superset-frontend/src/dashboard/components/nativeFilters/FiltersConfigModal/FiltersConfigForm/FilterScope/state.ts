@@ -34,7 +34,11 @@ export function useFilterScopeTree(
   initiallyExcludedCharts: number[] = [],
   buildTreeLeafTitle: BuildTreeLeafTitle = label => label,
   title = t('All panels'),
-  onChartSettings?: (chartId: number, label?: string) => void,
+  onChartSettings?: (
+    chartId: number,
+    label?: string,
+    instanceId?: string,
+  ) => void,
 ): {
   treeData: [TreeItem];
   layout: Layout;

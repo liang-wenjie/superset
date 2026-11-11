@@ -54,6 +54,9 @@ export interface ChartProps {
   annotationData?: JsonObject;
   actions: Actions;
   chartId: number;
+  /** Redux chart key. Equals chartId except on dashboards where the same slice
+   * appears more than once: each layout holder then owns its own query. */
+  chartKey?: number | string;
   datasource?: Datasource;
   dashboardId?: number;
   initialValues?: DataRecordFilters;
@@ -112,15 +115,15 @@ export type Actions = {
   ): Dispatch;
   chartRenderingFailed(
     arg0: string,
-    chartId: number,
+    chartId: number | string,
     arg2: string | null,
   ): Dispatch;
-  chartRenderingSucceeded(chartId: number): Dispatch;
+  chartRenderingSucceeded(chartId: number | string): Dispatch;
   postChartFormData(
     formData: SqlaFormData,
     arg1: boolean,
     timeout: number | undefined,
-    chartId: number,
+    chartId: number | string,
     dashboardId: number | undefined,
     ownState: JsonObject | undefined,
   ): Dispatch;
@@ -193,6 +196,7 @@ function Chart({
   const {
     actions,
     chartId,
+    chartKey,
     datasource,
     formData,
     timeout,
@@ -278,13 +282,14 @@ function Chart({
       formData,
       Boolean(force || getUrlParam(URL_PARAMS.force)), // allow override via url params force=true
       timeout,
-      chartId,
+      chartKey ?? chartId,
       dashboardId,
       ownState,
     );
   }, [
     actions,
     chartId,
+    chartKey,
     dashboardId,
     formData,
     force,
@@ -298,7 +303,7 @@ function Chart({
       logging.warn(error);
       actions.chartRenderingFailed(
         error.toString(),
-        chartId,
+        chartKey ?? chartId,
         info?.componentStack ?? null,
       );
 
@@ -311,7 +316,7 @@ function Chart({
         duration: Logger.getTimestamp() - renderStartTimeRef.current,
       });
     },
-    [actions, chartId],
+    [actions, chartId, chartKey],
   );
 
   // componentDidMount and componentDidUpdate combined

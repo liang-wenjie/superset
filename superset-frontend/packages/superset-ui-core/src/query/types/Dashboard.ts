@@ -32,7 +32,13 @@ export interface NativeFilterColumn {
 
 export interface NativeFilterScope {
   rootPath: string[];
+  /** Chart ids excluded from this filter. Kept for backwards compatibility;
+   * when a chart appears more than once on a dashboard use
+   * ``excludedInstances`` to exclude only some of its layout holders. */
   excluded: number[];
+  /** Layout component ids (CHART node ids) excluded from this filter. Allows
+   * scoping a filter to individual instances of the same slice. */
+  excludedInstances?: string[];
 }
 
 /** The target of a filter is the datasource/column being filtered */
@@ -49,8 +55,14 @@ export interface NativeFilterTarget {
   valueTransform?: string;
   /** When set, the target applies only to these chart ids (per-report
    * mapping). A target without ``chartIds`` is the default target used by
-   * every chart that has no explicit per-report target. */
+   * every chart that has no explicit per-report target. When a chart appears
+   * more than once on a dashboard, ``instanceIds`` takes precedence so each
+   * layout holder can carry its own column mapping / value transform. */
   chartIds?: number[];
+  /** Layout component ids (CHART node ids) this target applies to. Takes
+   * precedence over ``chartIds``; a target with both is treated as
+   * instance-scoped and its ``chartIds`` is ignored for duplicate holders. */
+  instanceIds?: string[];
 
   // maybe someday support this?
   // show values from these columns in the filter options selector

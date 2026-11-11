@@ -206,6 +206,7 @@ class ChartDataRestApi(ChartRestApi):
                 dashboard_filter_context = get_dashboard_filter_context(
                     dashboard_id=filters_dashboard_id,
                     chart_id=pk,
+                    instance_id=request.args.get("instance_id"),
                 )
             except ValueError as error:
                 return self.response_400(message=str(error))

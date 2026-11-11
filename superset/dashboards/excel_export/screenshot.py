@@ -47,6 +47,7 @@ def render_chart_image(
     dashboard_id: int,
     active_data_mask: dict[str, Any],
     user: Any,
+    instance_id: str | None = None,
 ) -> bytes | None:
     """
     Render ``chart`` (as seen on ``dashboard_id``) to PNG bytes.
@@ -60,6 +61,9 @@ def render_chart_image(
     :param dashboard_id: The dashboard the chart is displayed on (for filter scope)
     :param active_data_mask: Live dashboard filter state keyed by native filter id
     :param user: The requesting user; the render runs with their permissions
+    :param instance_id: Layout CHART node id when the slice appears more than
+        once, so filters resolve per holder and the screenshot cache key is
+        distinct for each holder
     :returns: PNG bytes, or ``None`` if the render failed (the caller skips and
         notes the chart)
     """
@@ -68,6 +72,7 @@ def render_chart_image(
             dashboard_id=dashboard_id,
             chart_id=chart.id,
             active_data_mask=active_data_mask,
+            instance_id=instance_id,
         )
 
         # Start from the chart's saved form data and force the slice id, then
@@ -83,9 +88,15 @@ def render_chart_image(
         )
 
         window_size = current_app.config["WEBDRIVER_WINDOW"]["slice"]
+        # A single holder keeps the chart's plain digest as the cache key, so
+        # old dashboards hit the exact same cached image as before. Duplicated
+        # holders must not share one cache entry: each resolves its own filters.
+        digest = (
+            chart.digest if instance_id is None else f"{chart.digest}-{instance_id}"
+        )
         screenshot = ChartScreenshot(
             url,
-            chart.digest,
+            digest,
             window_size=window_size,
             thumb_size=window_size,
         )

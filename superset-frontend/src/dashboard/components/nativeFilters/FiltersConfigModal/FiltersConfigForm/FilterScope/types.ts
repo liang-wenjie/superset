@@ -35,5 +35,11 @@ export type BuildTreeLeafTitle = (
   tooltipTitle?: string,
   isDeckMultiChart?: boolean,
   chartId?: number,
-  onChartSettings?: (chartId: number) => void,
+  onChartSettings?: (
+    chartId: number,
+    label?: string,
+    instanceId?: string,
+  ) => void,
+  /** Layout id of the CHART holder, used to configure a single instance. */
+  instanceId?: string,
 ) => ReactNode;

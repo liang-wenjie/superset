@@ -37,7 +37,10 @@ from superset.common.form_data_query_context import (
     is_raw_query_mode,
 )
 from superset.dashboards.excel_export import email
-from superset.dashboards.excel_export.layout import get_charts_in_layout_order
+from superset.dashboards.excel_export.instances import (
+    get_chart_instances,
+    instance_sheet_suffixes,
+)
 from superset.dashboards.excel_export.screenshot import render_chart_image
 from superset.utils import json
 from superset.utils.excel_streaming import StreamingXlsxWriter
@@ -65,6 +68,31 @@ class ChartSkippedError(Exception):
 def chart_label(chart: Any) -> str:
     """Return the chart label used in the export summary."""
     return f"{chart.id} - {chart.slice_name or ''}".strip()
+
+
+#: Excel caps sheet names at 31 characters. ``StreamingXlsxWriter`` enforces
+#: that cap (and strips illegal characters), but a ``#N`` instance marker has to
+#: be reserved before truncation or the writer would cut it off again.
+_MAX_SHEET_NAME_LEN = 31
+
+
+def _instance_sheet_name(name: str, suffix: str | None) -> str:
+    """Disambiguate duplicate chart holders without touching legacy names.
+
+    A single holder (``suffix is None``) returns ``name`` unchanged, so old
+    dashboards keep byte-identical sheet names. For a duplicated holder, reserve
+    room for the `` #N`` marker before the 31-character cap so it stays visible;
+    the writer still strips any illegal characters as a final safeguard.
+    """
+    if suffix is None:
+        return name
+    decorated = f" {suffix}"
+    return f"{name[: _MAX_SHEET_NAME_LEN - len(decorated)]}{decorated}"
+
+
+def _instance_label(label: str, suffix: str | None) -> str:
+    """Append an instance marker to a summary/email label when duplicated."""
+    return label if suffix is None else f"{label} {suffix}"
 
 
 def _usable_query_context(value: Any) -> dict[str, Any] | None:
@@ -171,33 +199,43 @@ def renders_as_image(chart: Any, mode: str) -> bool:
     return mode == EXPORT_MODE_IMAGES and chart.viz_type not in _table_viz_types()
 
 
-def _write_chart_image_sheet(
+def _write_chart_image_sheet(  # pylint: disable=too-many-arguments
     writer: StreamingXlsxWriter,
     chart: Any,
     dashboard_id: int,
     active_data_mask: dict[str, Any],
     user: Any,
+    instance_suffix: str | None = None,
+    instance_id: str | None = None,
 ) -> None:
     """Render a chart into a worksheet.
 
     :raises ChartSkippedError: if rendering fails
     """
-    image = render_chart_image(chart, dashboard_id, active_data_mask, user)
+    image = render_chart_image(
+        chart, dashboard_id, active_data_mask, user, instance_id=instance_id
+    )
     if image is None:
         raise ChartSkippedError
-    writer.add_image_sheet(chart_label(chart), image)
+    writer.add_image_sheet(
+        _instance_sheet_name(chart_label(chart), instance_suffix), image
+    )
 
 
-def _write_chart_sheets(
+def _write_chart_sheets(  # pylint: disable=too-many-arguments
     writer: StreamingXlsxWriter,
     chart: Any,
     json_body: dict[str, Any],
     dashboard_id: int,
     active_data_mask: dict[str, Any],
+    instance_suffix: str | None = None,
+    instance_id: str | None = None,
 ) -> None:
     """Run a chart's queries and write each result to a worksheet."""
-    # Preserve the caller's top-level query-context values.
-    json_body = dict(json_body)
+    # Preserve the caller's top-level query-context values. A deep copy keeps a
+    # shared, pre-resolved context pristine when one slice is exported several
+    # times: applying one holder's filters must not leak into the next holder.
+    json_body = copy.deepcopy(json_body)
     # Export full JSON results, regardless of saved values.
     json_body["result_format"] = ChartDataResultFormat.JSON
     json_body["result_type"] = ChartDataResultType.FULL
@@ -218,6 +256,7 @@ def _write_chart_sheets(
         dashboard_id=dashboard_id,
         chart_id=chart.id,
         active_data_mask=active_data_mask,
+        instance_id=instance_id,
     )
     if filter_context.extra_form_data:
         apply_dashboard_filter_context(json_body, filter_context.extra_form_data)
@@ -238,7 +277,7 @@ def _write_chart_sheets(
         else:
             name = f"{chart.id}.{index} - {chart.slice_name or ''}"
         writer.add_sheet(
-            name,
+            _instance_sheet_name(name, instance_suffix),
             colnames,
             (_record_to_row(record, colnames) for record in data),
         )
@@ -273,8 +312,10 @@ def build_workbook(  # pylint: disable=too-many-arguments
     skipped = skipped_charts or {}
     writer = StreamingXlsxWriter(path)
     try:
-        for chart in get_charts_in_layout_order(dashboard):
-            label = chart_label(chart)
+        instances = get_chart_instances(dashboard)
+        suffixes = instance_sheet_suffixes(instances)
+        for (chart, instance_id), suffix in zip(instances, suffixes, strict=True):
+            label = _instance_label(chart_label(chart), suffix)
             if (reason := skipped.get(chart.id)) is not None:
                 errored.setdefault(reason, []).append(label)
                 continue
@@ -282,10 +323,18 @@ def build_workbook(  # pylint: disable=too-many-arguments
                 if renders_as_image(chart, mode):
                     # Image charts do not need a query context.
                     _write_chart_image_sheet(
-                        writer, chart, dashboard.id, active_data_mask, user
+                        writer,
+                        chart,
+                        dashboard.id,
+                        active_data_mask,
+                        user,
+                        instance_suffix=suffix,
+                        instance_id=instance_id,
                     )
                 else:
-                    # Reuse a planned context or resolve one here.
+                    # Reuse a planned context or resolve one here. The same
+                    # context is replayed for every holder of this slice; each
+                    # holder applies its own dashboard filter context.
                     json_body = (
                         resolved[chart.id]
                         if chart.id in resolved
@@ -297,7 +346,13 @@ def build_workbook(  # pylint: disable=too-many-arguments
                         )
                         continue
                     _write_chart_sheets(
-                        writer, chart, json_body, dashboard.id, active_data_mask
+                        writer,
+                        chart,
+                        json_body,
+                        dashboard.id,
+                        active_data_mask,
+                        instance_suffix=suffix,
+                        instance_id=instance_id,
                     )
             except SoftTimeLimitExceeded:
                 # Let the task handler report the timeout and clean up.

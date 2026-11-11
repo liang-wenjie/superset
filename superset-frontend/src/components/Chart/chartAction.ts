@@ -1101,7 +1101,7 @@ export function refreshChart(
         chart.latestQueryFormData,
         force,
         timeout,
-        chart.id,
+        chartKey,
         dashboardId,
         getState().dataMask[chart.id]?.ownState,
       ),

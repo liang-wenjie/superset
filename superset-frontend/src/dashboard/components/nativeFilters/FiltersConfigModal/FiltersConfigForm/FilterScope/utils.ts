@@ -39,6 +39,31 @@ export const getNodeTitle = (node: LayoutItem) =>
   node?.id?.toString?.() ??
   '';
 
+/** Duplicate holders of one slice are indistinguishable by name; suffix them
+ * with their position among the holders so the scope tree can be configured
+ * per instance. */
+const getNodeDisplayTitle = (node: LayoutItem, layout: Layout): string => {
+  const title = getNodeTitle(node);
+  const chartId = node?.meta?.chartId;
+  if (node?.type !== CHART_TYPE || typeof chartId !== 'number') {
+    return title;
+  }
+  const holderIds = Object.values(layout)
+    .filter(
+      item =>
+        !!item &&
+        typeof item === 'object' &&
+        item.type === CHART_TYPE &&
+        item.meta?.chartId === chartId,
+    )
+    .map(item => item.id)
+    .sort();
+  if (holderIds.length <= 1) {
+    return title;
+  }
+  return `${title} #${holderIds.indexOf(node.id) + 1}`;
+};
+
 export const generateChartSubNodes = (
   chartId: number,
   chart: {
@@ -49,7 +74,11 @@ export const generateChartSubNodes = (
   } & Partial<Pick<Charts[keyof Charts], 'queriesResponse'>>,
   buildTreeLeafTitle: BuildTreeLeafTitle,
   sliceEntities?: Record<number, Slice>,
-  onChartSettings?: (chartId: number) => void,
+  onChartSettings?: (
+    chartId: number,
+    label?: string,
+    instanceId?: string,
+  ) => void,
 ): TreeItem[] => {
   const subNodes: TreeItem[] = [];
 
@@ -104,7 +133,11 @@ export const buildTree = (
   initiallyExcludedCharts: number[],
   buildTreeLeafTitle: BuildTreeLeafTitle,
   sliceEntities?: Record<number, Slice>,
-  onChartSettings?: (chartId: number) => void,
+  onChartSettings?: (
+    chartId: number,
+    label?: string,
+    instanceId?: string,
+  ) => void,
   visited: Set<string> = new Set(),
 ) => {
   if (!node) {
@@ -120,7 +153,7 @@ export const buildTree = (
     validNodes?.includes?.(node.id)
   ) {
     const title = buildTreeLeafTitle(
-      getNodeTitle(node),
+      getNodeDisplayTitle(node, layout),
       initiallyExcludedCharts?.includes?.(node.meta?.chartId as number),
       t(
         "This chart might be incompatible with the filter (datasets don't match)",
@@ -133,6 +166,7 @@ export const buildTree = (
       ),
       node.type === CHART_TYPE ? node.meta?.chartId : undefined,
       onChartSettings,
+      node.type === CHART_TYPE ? node.id : undefined,
     );
 
     const currentTreeItem: TreeItem = {
@@ -207,6 +241,7 @@ const checkTreeItem = (
   layout: Layout,
   items: string[],
   excluded: number[],
+  excludedInstances: string[] = [],
   visited: Set<string> = new Set(),
 ) => {
   items.forEach(item => {
@@ -219,11 +254,13 @@ const checkTreeItem = (
       layout,
       addInvisibleParents(layout, item),
       excluded,
+      excludedInstances,
       visited,
     );
     if (
       layout[item]?.type === CHART_TYPE &&
-      !excluded.includes(layout[item]?.meta.chartId as number)
+      !excluded.includes(layout[item]?.meta.chartId as number) &&
+      !excludedInstances.includes(item)
     ) {
       checkedItems.push(item);
     }
@@ -238,7 +275,13 @@ export const getTreeCheckedItems = (
   selectedLayers?: string[],
 ) => {
   const checkedItems: string[] = [];
-  checkTreeItem(checkedItems, layout, [...scope.rootPath], [...scope.excluded]);
+  checkTreeItem(
+    checkedItems,
+    layout,
+    [...scope.rootPath],
+    [...scope.excluded],
+    scope.excludedInstances ?? [],
+  );
 
   // If we have individual layer selections, exclude their parent charts from checkedItems
   // to prevent Tree component from auto-checking all children
@@ -317,23 +360,55 @@ export const findFilterScope = (
   );
 
   const excluded: number[] = [];
-  const isExcluded = (parent: string, item: string) =>
-    rootPath.includes(parent) && !chartKeys.includes(item);
-  // looking for charts to be excluded: iterate over all charts
-  // and looking for charts that have one of their parents in `rootPath` and not in selected items
+  // A chart id may only be excluded wholesale when every one of its layout
+  // holders is unchecked. When just some holders of a duplicated slice are
+  // unchecked, record those holders individually instead, so the remaining
+  // instances of the same slice stay in scope.
+  const uncheckedInstances: string[] = [];
+  const holderStats = new Map<number, { total: number; checked: number }>();
   Object.entries(layout).forEach(([key, value]) => {
-    const parents = value.parents || [];
-    if (
-      value.type === CHART_TYPE &&
-      [DASHBOARD_ROOT_ID, ...parents]?.find(parent => isExcluded(parent, key))
-    ) {
-      excluded.push(value.meta.chartId as number);
+    if (value.type !== CHART_TYPE) {
+      return;
     }
+    const chartId = value.meta?.chartId;
+    if (typeof chartId !== 'number') {
+      return;
+    }
+    const parents = value.parents || [];
+    const inRootPath = [DASHBOARD_ROOT_ID, ...parents].some(parent =>
+      rootPath.includes(parent),
+    );
+    if (!inRootPath) {
+      return;
+    }
+    const stat = holderStats.get(chartId) ?? { total: 0, checked: 0 };
+    stat.total += 1;
+    if (chartKeys.includes(key)) {
+      stat.checked += 1;
+    } else {
+      uncheckedInstances.push(key);
+    }
+    holderStats.set(chartId, stat);
+  });
+
+  const partialChartIds = new Set<number>();
+  holderStats.forEach((stat, chartId) => {
+    if (stat.checked === 0) {
+      excluded.push(chartId);
+    } else if (stat.total > 1 && stat.checked < stat.total) {
+      partialChartIds.add(chartId);
+    }
+  });
+
+  const excludedInstances = uncheckedInstances.filter(key => {
+    const chartId = layout[key]?.meta?.chartId;
+    return typeof chartId === 'number' && partialChartIds.has(chartId);
   });
 
   return {
     rootPath: [...new Set(rootPath)],
     excluded,
+    ...(excludedInstances.length > 0 ? { excludedInstances } : {}),
   };
 };
 

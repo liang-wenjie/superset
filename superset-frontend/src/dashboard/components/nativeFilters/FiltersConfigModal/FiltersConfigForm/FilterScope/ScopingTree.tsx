@@ -99,6 +99,8 @@ type SettingsChart = {
   label: string;
   datasetId: number;
   datasourceType: DatasourceType;
+  /** Layout id of the holder whose gear was clicked. */
+  instanceId?: string;
 };
 
 const separateKeys = (
@@ -141,6 +143,7 @@ const updateScopeWithParentCharts = (
       );
       updatedScope.rootPath = tempScope.rootPath;
       updatedScope.excluded = tempScope.excluded;
+      updatedScope.excludedInstances = tempScope.excludedInstances;
     }
   });
   return updatedScope;
@@ -190,7 +193,11 @@ const ScopingTree: FC<ScopingTreeProps> = ({
   const layout = useDashboardLayout();
 
   const handleChartSettings = useCallback(
-    (targetChartId: number, targetLabel?: string) => {
+    (
+      targetChartId: number,
+      targetLabel?: string,
+      targetInstanceId?: string,
+    ) => {
       const chart = charts[targetChartId];
       const datasource = chart?.form_data?.datasource;
       const parsed = datasource ? parseDatasource(datasource) : null;
@@ -202,6 +209,7 @@ const ScopingTree: FC<ScopingTreeProps> = ({
         label: targetLabel ?? String(targetChartId),
         datasetId: parsed.datasetId,
         datasourceType: parsed.datasourceType,
+        instanceId: targetInstanceId,
       });
     },
     [charts],
@@ -243,7 +251,10 @@ const ScopingTree: FC<ScopingTreeProps> = ({
       if (item?.type !== CHART_TYPE || item.meta?.chartId == null) {
         return;
       }
-      const chartId = item.meta.chartId;
+      // Number(...) keeps this a plain value read; a direct `item.meta.chartId`
+      // assignment is rewritten by the strict lint autofix into destructuring
+      // whose spacing then conflicts with the formatter.
+      const chartId = Number(item.meta.chartId);
       if (explicitChartIds.has(chartId)) {
         return;
       }
@@ -375,7 +386,12 @@ const ScopingTree: FC<ScopingTreeProps> = ({
       tooltipTitle?: string,
       isDeckMultiChart?: boolean,
       chartId?: number,
-      onChartSettings?: (chartId: number, label?: string) => void,
+      onChartSettings?: (
+        chartId: number,
+        label?: string,
+        instanceId?: string,
+      ) => void,
+      instanceId?: string,
     ) => ReactNode
   >(
     (
@@ -385,6 +401,7 @@ const ScopingTree: FC<ScopingTreeProps> = ({
       isDeckMultiChart,
       chartId,
       onChartSettings,
+      instanceId,
     ) => {
       let title = <span>{label}</span>;
 
@@ -474,7 +491,7 @@ const ScopingTree: FC<ScopingTreeProps> = ({
                 `}
                 onClick={e => {
                   e.stopPropagation();
-                  onChartSettings(chartId, label);
+                  onChartSettings(chartId, label, instanceId);
                 }}
               >
                 <Icons.SettingOutlined iconSize="m" />
@@ -556,6 +573,7 @@ const ScopingTree: FC<ScopingTreeProps> = ({
             chartId: settingsChart.chartId,
             datasetId: settingsChart.datasetId,
             datasourceType: settingsChart.datasourceType,
+            instanceId: settingsChart.instanceId,
           }}
           focusLabel={settingsChart.label}
           onSaveTargets={onSaveTargets}

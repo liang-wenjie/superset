@@ -80,23 +80,32 @@ def _is_filter_in_scope_for_chart(
     filter_config: dict[str, Any],
     chart_id: int,
     position_json: dict[str, Any],
+    instance_id: str | None = None,
 ) -> bool:
     """
-    Determines whether a native filter applies to a given chart.
+    Determines whether a native filter applies to a chart instance.
 
     A chart is in scope when one of its layout ancestors is in ``rootPath`` and
-    it's not excluded. The persisted ``chartsInScope`` is intentionally NOT used
-    here (it's a denormalized cache that the frontend recomputes from ``scope``
-    on every load, so it can be stale).
+    it's not excluded. ``excluded`` excludes a whole slice; the optional
+    ``excludedInstances`` excludes individual layout holders, which matters
+    when the same slice appears more than once on the dashboard. The persisted
+    ``chartsInScope`` is intentionally NOT used here (it's a denormalized cache
+    that the frontend recomputes from ``scope`` on every load, so it can be
+    stale).
     """
     scope = filter_config.get("scope", {})
     root_path: list[str] = scope.get("rootPath", [])
     excluded: list[int] = scope.get("excluded", [])
+    excluded_instances: list[str] = scope.get("excludedInstances") or []
 
     if chart_id in excluded:
         return False
+    if instance_id and instance_id in excluded_instances:
+        return False
 
-    if chart_layout_item := _find_chart_layout_item(chart_id, position_json):
+    if chart_layout_item := _find_chart_layout_item(
+        chart_id, position_json, instance_id
+    ):
         parents: list[str] = chart_layout_item.get("parents", [])
         return any(parent in root_path for parent in parents)
 
@@ -108,14 +117,16 @@ def _is_filter_in_scope_for_chart(
 def _find_chart_layout_item(
     chart_id: int,
     position_json: dict[str, Any],
+    instance_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Find the layout item for a chart in the dashboard position JSON."""
+    """Find the layout item for a chart instance in the dashboard position JSON."""
     for item in position_json.values():
         if not isinstance(item, dict):
             continue
         if (
             item.get("type") == CHART_TYPE
             and item.get("meta", {}).get("chartId") == chart_id
+            and (instance_id is None or item.get("id") == instance_id)
         ):
             return item
     return None
@@ -242,18 +253,23 @@ def _get_filter_target_column(filter_config: dict[str, Any]) -> str | None:
 def _resolve_filter_target(
     filter_config: dict[str, Any],
     slice: Slice,
+    instance_id: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve the native filter target for a chart.
+    """Resolve the native filter target for a chart instance.
 
-    A filter may carry one per-report target per chart (``chartIds`` scopes a
-    target to specific slices) plus a default target (no ``chartIds``). Only a
-    chart with an explicit target gets its mapping applied; every other chart
-    keeps the legacy single-target behavior (filter's own column), so an empty
-    dict means "no rewrite".
+    A filter may carry one target per layout holder (``instanceIds`` scopes a
+    target to specific CHART nodes) plus legacy per-report targets
+    (``chartIds``) and a default target (neither). Instance-scoped targets take
+    precedence so duplicated slices can each use their own column mapping or
+    value-transform SQL. An empty dict means "no rewrite".
     """
     targets = filter_config.get("targets") or []
     if not targets:
         return {}
+    if instance_id:
+        for target in targets:
+            if instance_id in (target.get("instanceIds") or []):
+                return target
     for target in targets:
         if int(slice.id) in (target.get("chartIds") or []):
             return target
@@ -324,6 +340,7 @@ def get_dashboard_filter_context(
     chart_id: int,
     *,
     active_data_mask: dict[str, Any] | None = None,
+    instance_id: str | None = None,
 ) -> DashboardFilterContext:
     """
     Build a DashboardFilterContext for a chart on a dashboard.
@@ -342,6 +359,8 @@ def get_dashboard_filter_context(
     :param dashboard_id: The ID of the dashboard
     :param chart_id: The ID of the chart
     :param active_data_mask: Optional live filter state keyed by native filter id
+    :param instance_id: Optional layout CHART node id, used when a slice appears
+        more than once so scope and filter targets resolve per holder
     :returns: DashboardFilterContext with merged extra_form_data and filter metadata
     :raises ValueError: if dashboard not found or chart not on dashboard
     :raises SupersetSecurityException: if the user cannot access the dashboard
@@ -373,14 +392,14 @@ def get_dashboard_filter_context(
         if flt_type == "DIVIDER":
             continue
 
-        if not _is_filter_in_scope_for_chart(flt, chart_id, position_json):
+        if not _is_filter_in_scope_for_chart(flt, chart_id, position_json, instance_id):
             continue
 
         flt_id = flt.get("id", "")
         flt_name = flt.get("name", "")
         extra_form_data, status = _resolve_filter_extra_form_data(flt, active_data_mask)
 
-        target = _resolve_filter_target(flt, slice)
+        target = _resolve_filter_target(flt, slice, instance_id)
         if target:
             target_column = (
                 target.get("column", {}).get("name")

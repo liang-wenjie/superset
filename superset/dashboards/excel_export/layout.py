@@ -28,17 +28,24 @@ CHART_TYPE = "CHART"
 ROOT_ID = "ROOT_ID"
 
 
-def _walk_chart_ids(position: dict[str, Any]) -> list[int]:
+def walk_chart_holders(position: dict[str, Any]) -> list[tuple[str, int]]:
     """
-    Depth-first walk of a dashboard ``position_json`` returning chart ids in
-    visual (layout) order, including tab-nested charts. Each chart id appears
-    once (first occurrence wins); cycles are guarded against.
+    Depth-first walk returning one ``(instance_id, chart_id)`` per ``CHART``
+    holder in visual (layout) order, including tab-nested charts.
+
+    Duplicates are preserved: the same slice placed in several holders yields
+    one entry per holder, each with its own ``instance_id`` (the ``CHART`` node
+    id from ``position_json``, falling back to the layout key). Cycles are
+    guarded against, and non-dict node values (e.g. a version string), missing
+    or non-dict ``meta``, and missing or non-integer ``chartId`` are tolerated.
+
+    :param position: The parsed dashboard ``position_json``
+    :returns: ``(instance_id, chart_id)`` pairs in visual order, with repeats
     """
     if ROOT_ID not in position:
         return []
 
-    ordered: list[int] = []
-    seen_charts: set[int] = set()
+    holders: list[tuple[str, int]] = []
     visited_nodes: set[str] = set()
     stack: list[str] = [ROOT_ID]
 
@@ -53,16 +60,33 @@ def _walk_chart_ids(position: dict[str, Any]) -> list[int]:
             continue
 
         if node.get("type") == CHART_TYPE:
-            chart_id = node.get("meta", {}).get("chartId")
-            if isinstance(chart_id, int) and chart_id not in seen_charts:
-                seen_charts.add(chart_id)
-                ordered.append(chart_id)
+            meta = node.get("meta")
+            chart_id = meta.get("chartId") if isinstance(meta, dict) else None
+            if isinstance(chart_id, int):
+                raw_id = node.get("id")
+                instance_id = raw_id if isinstance(raw_id, str) else node_id
+                holders.append((instance_id, chart_id))
 
         # Push children in reverse so they are popped in their declared order.
-        children = node.get("children", [])
-        for child_id in reversed(children):
-            stack.append(child_id)
+        children = node.get("children")
+        if isinstance(children, list):
+            for child_id in reversed(children):
+                stack.append(child_id)
 
+    return holders
+
+
+def _walk_chart_ids(position: dict[str, Any]) -> list[int]:
+    """
+    Depth-first walk returning chart ids in visual (layout) order, including
+    tab-nested charts. Each chart id appears once (first occurrence wins).
+    """
+    ordered: list[int] = []
+    seen_charts: set[int] = set()
+    for _, chart_id in walk_chart_holders(position):
+        if chart_id not in seen_charts:
+            seen_charts.add(chart_id)
+            ordered.append(chart_id)
     return ordered
 
 

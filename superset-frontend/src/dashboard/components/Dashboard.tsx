@@ -33,6 +33,7 @@ import type {
   LayoutItem,
 } from 'src/dashboard/types';
 import getChartIdsFromLayout from '../util/getChartIdsFromLayout';
+import { expandChartStateKeys } from '../util/chartInstance';
 import getLayoutComponentFromChartId from '../util/getLayoutComponentFromChartId';
 
 import {
@@ -60,6 +61,7 @@ type RelatedChartsFilter =
 interface DashboardActions {
   addSliceToDashboard: (id: number, component: LayoutItem | undefined) => void;
   removeSliceFromDashboard: (id: number) => void;
+  syncChartInstanceStates: () => void;
   triggerQuery: (value: boolean, id: number | string) => void;
   logEvent: (eventName: string, eventData: Record<string, unknown>) => void;
   clearDataMaskState: () => void;
@@ -132,11 +134,14 @@ function Dashboard({
 
   const refreshCharts = useCallback(
     (ids: (string | number)[]): void => {
-      ids.forEach(id => {
+      // Filter scopes hand back slice ids. Expand them before triggering,
+      // otherwise only the untouched slice-level chart state re-queries and
+      // duplicated holders keep showing the previous filter value.
+      expandChartStateKeys(layout, ids).forEach(id => {
         actions.triggerQuery(true, id);
       });
     },
-    [actions],
+    [actions, layout],
   );
 
   const applyFilters = useCallback((): void => {
@@ -324,6 +329,10 @@ function Dashboard({
 
   // componentDidUpdate equivalent for layout changes
   useEffect(() => {
+    // Holders added while editing never go through hydration; make sure each
+    // has its own chart state so it can issue an independent query.
+    actions.syncChartInstanceStates?.();
+
     const prevLayout = prevLayoutRef.current;
     const prevDashboardId = prevDashboardIdRef.current;
 

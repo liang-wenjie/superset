@@ -75,9 +75,13 @@ def test_render_chart_image_builds_url_with_slice_id_and_filters() -> None:
 
     assert result == b"PNGBYTES"
 
-    # Live filter state is resolved for this chart on this dashboard.
+    # Live filter state is resolved for this chart on this dashboard. A single
+    # holder passes ``instance_id=None`` to stay identical to the legacy export.
     mock_ctx.assert_called_once_with(
-        dashboard_id=7, chart_id=42, active_data_mask=active_mask
+        dashboard_id=7,
+        chart_id=42,
+        active_data_mask=active_mask,
+        instance_id=None,
     )
 
     # The Explore URL carries the slice id and the live extra_form_data.
@@ -162,3 +166,39 @@ def test_render_chart_image_propagates_soft_time_limit() -> None:
         pytest.raises(SoftTimeLimitExceeded),
     ):
         render_chart_image(chart, dashboard_id=7, active_data_mask={}, user=MagicMock())
+
+
+def test_render_chart_image_uses_instance_scoped_filters_and_digest() -> None:
+    """A duplicated holder resolves its own filters and a distinct cache key."""
+    chart = _chart(digest="abc123")
+    screenshot_instance = MagicMock()
+    screenshot_instance.get_screenshot.return_value = b"PNG"
+
+    with (
+        patch(
+            f"{MODULE}.get_dashboard_filter_context",
+            return_value=DashboardFilterContext(),
+        ) as mock_ctx,
+        patch(f"{MODULE}.get_url_path", return_value="/u"),
+        patch(
+            f"{MODULE}.ChartScreenshot", return_value=screenshot_instance
+        ) as mock_screenshot,
+        patch.object(screenshot_module, "current_app", _patched_app()),
+    ):
+        render_chart_image(
+            chart,
+            dashboard_id=7,
+            active_data_mask={},
+            user=MagicMock(),
+            instance_id="CHART-xyz",
+        )
+
+    mock_ctx.assert_called_once_with(
+        dashboard_id=7,
+        chart_id=42,
+        active_data_mask={},
+        instance_id="CHART-xyz",
+    )
+    # The digest must carry the instance id so the holders never share a cached
+    # screenshot rendered with a different holder's filters.
+    assert mock_screenshot.call_args.args[1] == "abc123-CHART-xyz"

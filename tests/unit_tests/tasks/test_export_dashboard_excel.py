@@ -115,13 +115,24 @@ def mocks() -> Iterator[dict[str, Any]]:
                 (MODULE, "get_export_status"),
                 (MODULE, "mark_export_failed"),
                 (MODULE, "mark_export_running"),
-                (WORKBOOK_MODULE, "get_charts_in_layout_order"),
+                (WORKBOOK_MODULE, "get_chart_instances"),
                 (WORKBOOK_MODULE, "get_dashboard_filter_context"),
                 (WORKBOOK_MODULE, "ChartDataQueryContextSchema"),
                 (WORKBOOK_MODULE, "ChartDataCommand"),
                 (WORKBOOK_MODULE, "render_chart_image"),
             )
         }
+        # The workbook now iterates chart instances, but these regression tests
+        # inject a plain list of charts. Keep that injection point and adapt it
+        # to single-holder ``(chart, None)`` instances, so every existing test
+        # still expresses "the dashboard's charts" the same way.
+        charts = mock.MagicMock()
+        patched["get_charts_in_layout_order"] = charts
+
+        def _as_instances(_dashboard: Any) -> list[tuple[Any, None]]:
+            return [(chart, None) for chart in charts()]
+
+        patched["get_chart_instances"].side_effect = _as_instances
         # Both modules must use the same mocked error keys.
         shared_email = mock.MagicMock()
         for module in (MODULE, WORKBOOK_MODULE):

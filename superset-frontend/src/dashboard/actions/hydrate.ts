@@ -61,6 +61,10 @@ import { getUrlParam } from 'src/utils/urlUtils';
 import { ResourceStatus } from 'src/hooks/apiResources/apiResources';
 import type { DashboardChartStates } from 'src/dashboard/types/chartState';
 import extractUrlParams from '../util/extractUrlParams';
+import {
+  getChartInstanceCounts,
+  getChartStateKey,
+} from '../util/chartInstance';
 import updateComponentParentsList from '../util/updateComponentParentsList';
 import { AUTO_REFRESH_STATE_DEFAULTS } from '../types/autoRefresh';
 import { migrateChartCustomizationArray } from '../util/migrateChartCustomization';
@@ -68,6 +72,7 @@ import {
   DashboardLayout,
   FilterBarOrientation,
   GetState,
+  Layout,
   LayoutItem,
   RootState,
 } from '../types';
@@ -256,6 +261,43 @@ export const hydrateDashboard =
       }
     });
 
+    // Duplicate layout holders of the same slice share one slice definition
+    // but need their own chart state, so each issues a query with its own
+    // filter target / SQL value transform. Single-instance charts keep the
+    // original numeric key, leaving every existing consumer untouched.
+    const baseChartQueries = { ...chartQueries };
+    const instanceCounts = getChartInstanceCounts(layout as Layout);
+    Object.values(layout).forEach(rawItem => {
+      const item = rawItem as LayoutItem;
+      const chartId = item?.meta?.chartId;
+      if (
+        !item ||
+        typeof item !== 'object' ||
+        item.type !== CHART_TYPE ||
+        typeof chartId !== 'number'
+      ) {
+        return;
+      }
+      const stateKey = getChartStateKey(
+        chartId,
+        item.id,
+        instanceCounts[chartId] ?? 1,
+      );
+      const base = baseChartQueries[chartId];
+      if (stateKey === chartId || !base) {
+        return;
+      }
+      chartQueries[String(stateKey)] = {
+        ...base,
+        // The backend resolves the saved chart from the real slice id; the
+        // instance key only addresses the Redux store and the query cache.
+        form_data: {
+          ...(base.form_data as JsonObject),
+          slice_id: chartId,
+        },
+      };
+    });
+
     // buildActiveFilters reads `parents` for filter scopes before the layout
     // reducer rebuilds them, and the repair above may have moved components
     updateComponentParentsList({
@@ -335,7 +377,7 @@ export const hydrateDashboard =
       getCrossFiltersConfiguration(
         dashboardLayout.present as Record<string, LayoutItem>,
         metadata as Parameters<typeof getCrossFiltersConfiguration>[1],
-        chartQueries as Parameters<typeof getCrossFiltersConfiguration>[2],
+        baseChartQueries as Parameters<typeof getCrossFiltersConfiguration>[2],
       );
     metadata.chart_configuration = chartConfiguration;
     metadata.global_chart_configuration = globalChartConfiguration;

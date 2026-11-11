@@ -40,6 +40,11 @@ import {
 import { logging } from '@apache-superset/core/utils';
 import { t } from '@apache-superset/core/translation';
 import { chart as initChart } from 'src/components/Chart/chartReducer';
+import {
+  expandChartStateKeys,
+  getChartInstanceKeys,
+  isInstanceScopedKey,
+} from '../util/chartInstance';
 import { applyDefaultFormData } from 'src/explore/store';
 import type { InlineFilterChangeValue } from '../components/InlineFilters/types';
 import {
@@ -798,9 +803,15 @@ export function fetchCharts(
   dashboardId?: number,
 ): (dispatch: AppDispatch, getState: GetState) => Promise<void> {
   return (dispatch: AppDispatch, getState: GetState) => {
+    // Scope ids describe slices; duplicated slices also need every instance
+    // key refreshed, otherwise the extra holders keep serving stale data.
+    const chartKeys = expandChartStateKeys(
+      getState().dashboardLayout?.present,
+      chartList,
+    );
     if (!interval) {
       return Promise.all(
-        chartList.map(chartKey =>
+        chartKeys.map(chartKey =>
           Promise.resolve(dispatch(refreshChart(chartKey, force, dashboardId))),
         ),
       ).then(() => undefined);
@@ -824,12 +835,12 @@ export function fetchCharts(
     }
     // Only stagger when there are multiple charts to avoid division by zero
     const delay =
-      staggerRefresh && chartList.length > 1
-        ? refreshTime / (chartList.length - 1)
+      staggerRefresh && chartKeys.length > 1
+        ? refreshTime / (chartKeys.length - 1)
         : 0;
     return Promise.all(
-      chartList.map(
-        (chartKey: number, i: number) =>
+      chartKeys.map(
+        (chartKey: string | number, i: number) =>
           new Promise<void>((resolve, reject) => {
             setTimeout(() => {
               Promise.resolve(
@@ -979,6 +990,48 @@ export function removeSliceFromDashboard(
     dispatch(removeSlice(id));
     dispatch(removeChart(id));
     getLabelsColorMap().removeSlice(id);
+  };
+}
+
+/**
+ * Hydration creates one Redux chart state per layout holder of a duplicated
+ * slice. Holders added or removed while editing never go through hydration, so
+ * mirror the layout here: create the missing instance states (with a fresh
+ * triggerQuery so each issues its own first request) and drop stale ones.
+ */
+export function syncChartInstanceStates(): (
+  dispatch: AppDispatch,
+  getState: GetState,
+) => void {
+  return (dispatch, getState) => {
+    const { dashboardLayout, charts } = getState();
+    const instanceKeys = getChartInstanceKeys(dashboardLayout?.present);
+    const expected = new Set(instanceKeys.map(({ stateKey }) => stateKey));
+
+    Object.keys(charts ?? {}).forEach(key => {
+      if (isInstanceScopedKey(key) && !expected.has(key)) {
+        dispatch(removeChart(key));
+      }
+    });
+
+    instanceKeys.forEach(({ stateKey, chartId }) => {
+      if (charts?.[stateKey]) {
+        return;
+      }
+      const base = charts?.[chartId];
+      if (!base) {
+        return;
+      }
+      const baseFormData =
+        (base as unknown as { form_data?: JsonObject }).form_data ?? {};
+      const newChart = {
+        ...initChart,
+        id: chartId,
+        triggerQuery: true,
+        form_data: { ...baseFormData, slice_id: chartId },
+      };
+      dispatch(addChart(newChart, stateKey));
+    });
   };
 }
 

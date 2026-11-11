@@ -53,6 +53,7 @@ import {
 } from './chartTypeLimitations';
 import getEffectiveExtraFilters from './getEffectiveExtraFilters';
 import { getAllActiveFilters } from '../activeAllDashboardFilters';
+import { isInstanceExcluded, resolveFilterTarget } from '../chartInstance';
 
 /** Return provenance only for customizations that contribute member selections. */
 export function getCustomizationSelectionSources({
@@ -130,9 +131,9 @@ export type CachedFormDataWithExtraControls = CachedFormData & {
   [key: string]: any;
 };
 
-const cachedFiltersByChart: Record<number, DataRecordFilters> = {};
+const cachedFiltersByChart: Record<string, DataRecordFilters> = {};
 const cachedFormdataByChart: Record<
-  number,
+  string,
   CachedFormData & {
     dataMask: DataMask;
     extraControls: Record<string, string | boolean | null>;
@@ -157,6 +158,9 @@ export interface GetFormDataWithExtraFiltersArguments {
   ownColorScheme?: string;
   colorNamespace?: string;
   sliceId: number;
+  /** Layout component id of this chart holder. Duplicated slices use it to
+   * resolve instance-scoped filter targets and scope exclusions. */
+  instanceId?: string;
   dataMask: DataMaskStateWithId;
   nativeFilters: PartialFilters;
   extraControls: Record<string, string | boolean | null>;
@@ -509,6 +513,7 @@ export default function getFormDataWithExtraFilters({
   ownColorScheme,
   colorNamespace,
   sliceId,
+  instanceId,
   dataMask,
   extraControls,
   labelsColor,
@@ -523,7 +528,10 @@ export default function getFormDataWithExtraFilters({
     semantic_selection_version: chart.form_data?.semantic_selection_version,
     semantic_selection_sources: chart.form_data?.semantic_selection_sources,
   };
-  const cachedFormData = cachedFormdataByChart[sliceId];
+  // Duplicate layout holders of the same slice need independent cache entries,
+  // otherwise the last rendered holder's SQL override leaks into the others.
+  const cacheKey = instanceId ? `${sliceId}::${instanceId}` : String(sliceId);
+  const cachedFormData = cachedFormdataByChart[cacheKey];
   const dataMaskEqual = areObjectsEqual(cachedFormData?.dataMask, dataMask, {
     ignoreUndefined: true,
   });
@@ -533,7 +541,7 @@ export default function getFormDataWithExtraFilters({
     { ignoreUndefined: true },
   );
   if (
-    cachedFiltersByChart[sliceId] === filters &&
+    cachedFiltersByChart[cacheKey] === filters &&
     isEqual(cachedFormData?.chartSelectionInput, chartSelectionInput) &&
     areObjectsEqual(cachedFormData?.own_color_scheme, ownColorScheme) &&
     areObjectsEqual(cachedFormData?.color_scheme, colorScheme) &&
@@ -575,7 +583,13 @@ export default function getFormDataWithExtraFilters({
   // Range filter's time_range) replace the cross-filter's. Merge native
   // filters first so a cross-filter selection takes precedence.
   const filterIdsAppliedOnChart = Object.entries(activeFilters)
-    .filter(([, activeFilter]) => activeFilter?.scope?.includes(chart.id))
+    .filter(([filterId, activeFilter]) => {
+      if (!activeFilter?.scope?.includes(chart.id)) {
+        return false;
+      }
+      // A filter can exclude individual layout holders of a duplicated slice.
+      return !isInstanceExcluded(nativeFilters?.[filterId]?.scope, instanceId);
+    })
     .map(([filterId]) => filterId)
     .sort((a, b) => Number(!nativeFilters?.[a]) - Number(!nativeFilters?.[b]));
 
@@ -593,8 +607,10 @@ export default function getFormDataWithExtraFilters({
         if (!filter || filter.type !== NativeFilterType.NativeFilter) {
           return mergeExtraFormData(acc, filterData);
         }
-        const target = (filter.targets ?? []).find(item =>
-          item.chartIds?.includes(chart.id),
+        const target = resolveFilterTarget(
+          filter.targets,
+          chart.id,
+          instanceId,
         );
         if (!target) {
           return mergeExtraFormData(acc, filterData);
@@ -730,8 +746,8 @@ export default function getFormDataWithExtraFilters({
     ...(layerFilterScope && { layer_filter_scope: layerFilterScope }),
   };
 
-  cachedFiltersByChart[sliceId] = filters;
-  cachedFormdataByChart[sliceId] = {
+  cachedFiltersByChart[cacheKey] = filters;
+  cachedFormdataByChart[cacheKey] = {
     ...formData,
     chartSelectionInput,
     dataMask,

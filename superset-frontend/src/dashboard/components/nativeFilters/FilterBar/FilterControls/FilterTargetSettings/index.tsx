@@ -47,6 +47,10 @@ import { cachedSupersetGet } from 'src/utils/cachedSupersetGet';
 import { useChartIds } from 'src/dashboard/util/charts/useChartIds';
 import { CHART_TYPE } from 'src/dashboard/util/componentTypes';
 import { useDashboardLayout } from 'src/dashboard/components/nativeFilters/state';
+import {
+  getChartInstanceIds,
+  resolveFilterTarget,
+} from 'src/dashboard/util/chartInstance';
 import { setFilterConfiguration } from 'src/dashboard/actions/nativeFilters';
 import {
   fetchSemanticViewStructure,
@@ -84,6 +88,8 @@ export type FilterTargetSettingsProps = {
     chartId: number;
     datasetId: number;
     datasourceType: DatasourceType;
+    /** Layout id of the holder being configured; absent for legacy callers. */
+    instanceId?: string;
   };
   /** Display name for the focused report row. */
   focusLabel?: string;
@@ -337,8 +343,10 @@ const FilterTargetSettings = ({
       const focusKey = datasourceKey(focus.datasetId, focus.datasourceType);
       // Per-report targets carry the chart id; the focused chart's saved
       // override is the target whose ``chartIds`` includes it.
-      const saved = targets.find(target =>
-        target.chartIds?.includes(focus.chartId),
+      const saved = resolveFilterTarget(
+        targets,
+        focus.chartId,
+        focus.instanceId,
       );
       const seedColumn =
         saved?.column?.name ??
@@ -501,18 +509,50 @@ const FilterTargetSettings = ({
       const column = row?.column.trim() ?? '';
       const valueTransform = row?.valueTransform.trim() ?? '';
       const mode = row?.mode ?? 'column';
+      const { instanceId } = focus;
+      const siblingInstanceIds = instanceId
+        ? getChartInstanceIds(layout, focus.chartId).filter(
+            id => id !== instanceId,
+          )
+        : [];
+      // Instance-scoped overrides win over legacy chart-scoped ones. Callers
+      // without an instance id keep writing the legacy shape unchanged.
+      const scopeTarget = (target: Partial<NativeFilterTarget>) => {
+        if (!instanceId) {
+          return { ...target, chartIds: [focus.chartId] };
+        }
+        const { chartIds: _legacyIds, ...rest } = target;
+        return { ...rest, instanceIds: [instanceId] };
+      };
 
-      // Keep the default target (targets[0], shared by every chart) and the
-      // overrides of other charts untouched; this dialog only edits the
-      // focused chart's per-report target. A value transform left on the
-      // default target by a previous implementation is stripped: per-report
-      // transforms now live on chart-scoped targets only.
       (filter.targets ?? []).forEach(target => {
         if (
+          instanceId &&
+          Array.isArray(target.instanceIds) &&
+          target.instanceIds.includes(instanceId)
+        ) {
+          return; // replaced by the upsert below
+        }
+        if (
+          !instanceId &&
           Array.isArray(target.chartIds) &&
           target.chartIds.includes(focus.chartId)
         ) {
-          return; // replaced by the upsert below
+          return;
+        }
+        // A legacy chart-scoped target applies to every holder. Once one
+        // holder gets its own override, split it so the sibling holders keep
+        // the old mapping instead of silently losing (or sharing) it.
+        if (
+          instanceId &&
+          Array.isArray(target.chartIds) &&
+          target.chartIds.includes(focus.chartId)
+        ) {
+          if (siblingInstanceIds.length > 0) {
+            const { chartIds: _legacyIds, ...rest } = target;
+            targets.push({ ...rest, instanceIds: siblingInstanceIds });
+          }
+          return;
         }
         if (target === filter.targets?.[0] && target.valueTransform) {
           const { valueTransform: _stripped, ...rest } = target;
@@ -522,28 +562,30 @@ const FilterTargetSettings = ({
         targets.push(target);
       });
 
-      // Upsert the focused chart's override. A column mapping that equals the
+      // Upsert the focused holder's override. A column mapping that equals the
       // default column (same field name) is the implicit default behavior, so
       // it needs no explicit target.
       if (mode === 'transform') {
         if (valueTransform) {
-          targets.push({
-            datasetId: focus.datasetId,
-            datasourceType: focus.datasourceType,
-            // {col} inside the transform template resolves to the filter's
-            // default column.
-            column: { name: defaultColumn },
-            valueTransform,
-            chartIds: [focus.chartId],
-          });
+          targets.push(
+            scopeTarget({
+              datasetId: focus.datasetId,
+              datasourceType: focus.datasourceType,
+              // {col} inside the transform template resolves to the filter's
+              // default column.
+              column: { name: defaultColumn },
+              valueTransform,
+            }),
+          );
         }
       } else if (column && column !== defaultColumn) {
-        targets.push({
-          datasetId: focus.datasetId,
-          datasourceType: focus.datasourceType,
-          column: { name: column },
-          chartIds: [focus.chartId],
-        });
+        targets.push(
+          scopeTarget({
+            datasetId: focus.datasetId,
+            datasourceType: focus.datasourceType,
+            column: { name: column },
+          }),
+        );
       }
     } else {
       const defaultRow = rows.find(row => row.isDefault);
@@ -651,7 +693,8 @@ const FilterTargetSettings = ({
         `}
       >
         {t(
-          `Choose one of the two — pick another column of this table, or write a SQL that converts the stored field value into the filter value's format ({col} is the quoted column name). Example: ${DEFAULT_TRANSFORM_HINT} maps a stored 2026.7月 to 202607 so it matches a YYYYMM selection.`,
+          "Choose one of the two — pick another column of this table, or write a SQL that converts the stored field value into the filter value's format ({col} is the quoted column name). Example: %(hint)s maps a stored 2026.7月 to 202607 so it matches a YYYYMM selection.",
+          { hint: DEFAULT_TRANSFORM_HINT },
         )}
       </div>
       {rows.map(row => (
@@ -761,7 +804,8 @@ const FilterTargetSettings = ({
                     <Tooltip
                       placement="top"
                       title={t(
-                        `Write a SQL expression that converts the stored field value into the filter value's format. {col} is replaced with the column name. Example: ${DEFAULT_TRANSFORM_HINT} maps 2026.7月 to 202607.`,
+                        "Write a SQL expression that converts the stored field value into the filter value's format. {col} is replaced with the column name. Example: %(hint)s maps 2026.7月 to 202607.",
+                        { hint: DEFAULT_TRANSFORM_HINT },
                       )}
                     >
                       <Icons.InfoCircleOutlined iconSize="s" />
