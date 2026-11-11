@@ -397,6 +397,23 @@ const config: ControlPanelConfig = {
         ],
         [
           {
+            name: 'comparison_use_center_gap',
+            config: {
+              type: 'CheckboxControl',
+              label: t('YoY gap from center'),
+              default: false,
+              renderTrigger: true,
+              description: t(
+                'Off (default): "Comparison spacing" is measured from the MoM text. On: the SAME slider is measured from the tile center line instead, so YoY no longer drifts when the MoM text changes length. Only the anchor changes - the slider, its drag behaviour and its saved value are shared by both modes.',
+              ),
+              visibility: ({ controls }) =>
+                controls?.show_comparison1?.value === true &&
+                controls?.show_comparison2?.value === true,
+            },
+          },
+        ],
+        [
+          {
             name: 'comparison_gap',
             config: {
               type: 'SliderControl',
@@ -406,7 +423,9 @@ const config: ControlPanelConfig = {
               step: 4,
               default: DEFAULT_COMPARISON_GAP,
               renderTrigger: true,
-              description: t('Horizontal spacing between MoM and YoY.'),
+              description: t(
+                'Horizontal distance to YoY, applied from the MoM text by default or from the tile center line when "YoY gap from center" is checked. Both modes use this one slider. It only moves the second slot and never changes the font size.',
+              ),
               visibility: ({ controls }) =>
                 controls?.show_comparison1?.value === true &&
                 controls?.show_comparison2?.value === true,
@@ -433,6 +452,9 @@ const config: ControlPanelConfig = {
             config: {
               ...subheaderFontSize.config,
               label: t('Comparison font size'),
+              description: t(
+                'Size of the YoY/MoM labels. The Tiny..Huge ratios are converted against a fixed reference height, so tall tiles do not make these secondary labels as large as the title. Applies when the dashboard-level "Uniform big number font size" setting is off; when it is on, one fixed dashboard-wide size is used instead.',
+              ),
             },
           },
         ],

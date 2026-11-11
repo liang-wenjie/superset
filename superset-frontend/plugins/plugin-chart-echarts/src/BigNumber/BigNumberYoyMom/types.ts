@@ -63,7 +63,15 @@ export type BigNumberYoyMomFormData = QueryFormData & {
   comparison2PercentDifferenceFormat?: string;
   /** @deprecated Use comparisonGap and swapComparisonOrder. */
   comparison2Left?: number;
+  /** Horizontal distance to the second comparison slot. */
   comparisonGap?: number;
+  /**
+   * Only changes the ANCHOR of comparisonGap: false (default) measures it
+   * from the MoM text, true measures it from the tile's horizontal center
+   * line. Both modes reuse the very same comparisonGap value; there is no
+   * second gap control.
+   */
+  comparisonUseCenterGap?: boolean;
   swapComparisonOrder?: boolean;
   comparisonFontSize?: number;
   comparisonTop?: number;

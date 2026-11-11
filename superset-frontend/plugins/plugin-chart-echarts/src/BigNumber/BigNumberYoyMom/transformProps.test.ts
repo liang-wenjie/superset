@@ -76,6 +76,15 @@ describe('BigNumberYoyMom transformProps', () => {
       datasource: baseDatasource,
     }) as unknown as BigNumberYoyMomChartProps;
 
+  // Width of one comparison slot, using the same estimator the plugin uses.
+  const comparisonTextWidth = (element: Record<string, any>): number =>
+    Math.ceil(
+      Array.from(String(element.style.text)).reduce(
+        (total, char) => total + (char.charCodeAt(0) > 255 ? 1 : 0.5),
+        0,
+      ) * element.style.fontSize,
+    );
+
   const DARK_THEME = {
     colorBgContainer: '#141414',
     colorText: 'rgba(255, 255, 255, 0.88)',
@@ -126,7 +135,7 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[0].left).toBe(20);
     // The big number "1,234,567" would overflow a 400px tile at the default
     // 120px font, so it is auto-shrunk to fit and the whole stack re-centers.
-    expect(graphic[0].top).toBeCloseTo(79.2);
+    expect(graphic[0].top).toBeCloseTo(81);
 
     expect(graphic[1].style.text).toBe('$1,234,567');
     expect(graphic[1].style.fontSize).toBe(52);
@@ -136,16 +145,18 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[2].style.text).toBe('MoM ↑23.46%');
     expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
     expect(graphic[2].left).toBe(20);
-    // Both slots side by side (~702px at 45px) overflow the 360px available
-    // width, so the comparison row is auto-shrunk to 21px and the stack
-    // re-centers with the final heights.
-    expect(graphic[2].style.fontSize).toBe(21);
-    expect(graphic[2].top).toBeCloseTo(195.6);
+    // Both slots side by side overflow the 400px canvas at the requested
+    // 45px, so the comparison row is kept at the fixed 18px and the stack
+    // re-centers with the final heights. The comparison-specific width model
+    // (0.5em ASCII / 1em full-width) is much tighter than the old generic
+    // one, so the row keeps a larger, configurable size.
+    expect(graphic[2].style.fontSize).toBe(18);
+    expect(graphic[2].top).toBeCloseTo(197.4);
 
     expect(graphic[3].style.text).toBe('YoY ↓17.70%');
     expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
-    // The second slot starts after the shrunk MoM width (154px) plus the gap.
-    expect(graphic[3].left).toBe(198);
+    // The second slot starts after the MoM width (108px) plus the gap.
+    expect(graphic[3].left).toBe(152);
   });
 
   test('separates comparisons by estimated width when the gap is zero', () => {
@@ -162,10 +173,11 @@ describe('BigNumberYoyMom transformProps', () => {
       ),
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
-    // No overlap even at gap 0: YoY starts after the shrunk MoM width (168px).
+    // No overlap even at gap 0: YoY starts immediately after the MoM text.
     expect(graphic[2].left).toBe(20);
-    expect(graphic[2].left + 168).toBeLessThanOrEqual(graphic[3].left);
-    expect(graphic[3].left).toBe(188);
+    expect(graphic[3].left).toBe(
+      graphic[2].left + comparisonTextWidth(graphic[2]),
+    );
   });
 
   test('formats MoM and YoY percentages with their own formats', () => {
@@ -223,10 +235,10 @@ describe('BigNumberYoyMom transformProps', () => {
     // title ("本月销售额" at the requested 75px would be 413px wide) and the
     // big number are auto-shrunk to fit the 400px tile (with a 3px safety
     // margin), and the comparison row (~1140px side by side at the requested
-    // 75px) is shrunk to 21px too, so the stack re-centers with the final
+    // 75px) is now a fixed 18px, so the stack re-centers with the final
     // heights.
-    expect(graphic[2].style.fontSize).toBe(21);
-    expect(graphic[2].top).toBeCloseTo(354.4);
+    expect(graphic[2].style.fontSize).toBe(18);
+    expect(graphic[2].top).toBeCloseTo(356.2);
   });
 
   test('does not shrink the big number when it already fits the tile width', () => {
@@ -290,19 +302,13 @@ describe('BigNumberYoyMom transformProps', () => {
     }, 0);
 
   const TILE_WIDTH = 400;
-  // Rightmost pixel of the YoY/MoM graphic text, using the same estimator the
-  // plugin uses. Anything past the tile width is clipped by the canvas.
+  // Rightmost pixel of the YoY/MoM graphic text. Anything past the tile width
+  // is clipped by the canvas.
   const comparisonRightEdge = (graphic: Record<string, any>[]): number =>
     Math.max(
-      ...graphic.slice(2).map(element => {
-        const textWidth = Math.ceil(
-          Array.from(String(element.style.text)).reduce(
-            (total, char) => total + (char.charCodeAt(0) > 255 ? 1 : 0.5),
-            0,
-          ) * element.style.fontSize,
-        );
-        return element.left + textWidth;
-      }),
+      ...graphic
+        .slice(2)
+        .map(element => element.left + comparisonTextWidth(element)),
     );
   // left offset + uniform right padding + safety margin
   const UNIFORM_AVAILABLE_WIDTH = TILE_WIDTH - 20 - 4 - 3;
@@ -740,8 +746,8 @@ describe('BigNumberYoyMom transformProps', () => {
       width: 800,
     });
     const graphic = result.echartOptions.graphic as Record<string, any>[];
-    expect(graphic[2].style.fontSize).toBe(45);
-    expect(graphic[3].style.fontSize).toBe(45);
+    expect(graphic[2].style.fontSize).toBe(18);
+    expect(graphic[3].style.fontSize).toBe(18);
   });
 
   test('reads comparison values from configured result columns', () => {
@@ -988,9 +994,9 @@ describe('BigNumberYoyMom transformProps', () => {
     // no title element: big number and comparisons stay centered as a stack.
     expect(graphic).toHaveLength(3);
     expect(graphic[0].style.text).toBe('$100');
-    expect(graphic[0].top).toBeCloseTo(65.4);
-    expect(graphic[1].top).toBeCloseTo(209.4);
-    expect(graphic[2].top).toBeCloseTo(209.4);
+    expect(graphic[0].top).toBeCloseTo(67.2);
+    expect(graphic[1].top).toBeCloseTo(211.2);
+    expect(graphic[2].top).toBeCloseTo(211.2);
   });
 
   test('pushes comparisons below a large big number without overlapping', () => {
@@ -1007,8 +1013,8 @@ describe('BigNumberYoyMom transformProps', () => {
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     // The stack is centered while preserving the configured internal gap.
-    expect(graphic[0].top).toBeCloseTo(101.4);
-    expect(graphic[1].top).toBeCloseTo(173.4);
+    expect(graphic[0].top).toBeCloseTo(103.2);
+    expect(graphic[1].top).toBeCloseTo(175.2);
   });
 
   test('maps title font size ratios to pixels', () => {
@@ -1021,15 +1027,15 @@ describe('BigNumberYoyMom transformProps', () => {
     const graphicTiny = tiny.echartOptions.graphic as Record<string, any>[];
     const graphicHuge = huge.echartOptions.graphic as Record<string, any>[];
     expect(graphicTiny[0].style.fontSize).toBe(38);
-    // The "MoM —" + "YoY —" row (368px at 45px) overflows the 357px available
-    // width (400px minus the 20px margins and the 3px safety margin), so it
-    // shrinks to 43px and nudges the stack.
-    expect(graphicTiny[1].top).toBeCloseTo(75);
+    // The "MoM —" + "YoY —" row fits the 400px canvas at the requested 45px,
+    // so the configured comparison size is kept instead of being flattened
+    // by an over-estimating auto-fit.
+    expect(graphicTiny[1].top).toBeCloseTo(90);
     // At 0.4*300 the title ("本月销售额") would be 660px wide, so it
     // auto-shrinks to 64px to fit the same available width and the stack
     // re-centers.
     expect(graphicHuge[0].style.fontSize).toBe(64);
-    expect(graphicHuge[1].top).toBeCloseTo(90.6);
+    expect(graphicHuge[1].top).toBeCloseTo(105.6);
   });
 
   test('pushes the big number below a large title', () => {
@@ -1037,10 +1043,10 @@ describe('BigNumberYoyMom transformProps', () => {
       buildChartProps([{ 'SUM(sales)': 100 }], { titleFontSize: 40 }),
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
-    // graphic[0]=title, graphic[1]=big number. The comparison row shrinks to
-    // 43px under the 357px available width, so the centered stack sits lower.
-    expect(graphic[0].top).toBeCloseTo(28.2);
-    expect(graphic[1].top).toBeCloseTo(76.2);
+    // graphic[0]=title, graphic[1]=big number. The comparison row keeps its
+    // configured 45px because it fits, so the centered stack sits lower.
+    expect(graphic[0].top).toBeCloseTo(43.2);
+    expect(graphic[1].top).toBeCloseTo(91.2);
   });
 
   test('shrinks a long title to fit a narrow tile', () => {
@@ -1075,10 +1081,10 @@ describe('BigNumberYoyMom transformProps', () => {
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     // graphic[0]=title, graphic[1]=big number (0+54+0=54), graphic[2]=MoM line.
-    // The comparison row is shrunk to 21px, so the stack is a bit shorter and
-    // comparison sits at 56.4 + 80*1.2 + 120 = 272.4.
-    expect(graphic[1].top).toBeCloseTo(56.4);
-    expect(graphic[2].top).toBeCloseTo(272.4);
+    // The comparison row stays at 18px, so the stack is shorter and the
+    // internal gaps are compressed to keep everything inside the tile.
+    expect(graphic[1].top).toBeCloseTo(58.2);
+    expect(graphic[2].top).toBeCloseTo(274.2);
   });
 
   test('compresses internal gaps when content overflows the tile height', () => {
@@ -1092,15 +1098,14 @@ describe('BigNumberYoyMom transformProps', () => {
         ],
         { bigNumberTop: 50, comparisonTop: 100 },
       ),
-      // The requested stack (36 + 50 + 96 + 100 + 25.2 = 307.2px) exceeds the
-      // tile, so the internal gaps shrink to 42.8/0 and the comparison row
-      // stays inside the 200px height instead of being pushed out of the
-      // bottom.
+      // The requested stack exceeds the 200px tile, so the internal gaps
+      // shrink and the comparison row stays inside instead of being pushed
+      // out of the bottom.
       height: 200,
     });
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     const comparisonRowHeight = graphic[2].style.fontSize * 1.2;
-    expect(graphic[2].top).toBeCloseTo(174.8);
+    expect(graphic[2].top).toBeCloseTo(178.4);
     expect(graphic[2].top + comparisonRowHeight).toBeLessThanOrEqual(200);
   });
 
@@ -1356,5 +1361,256 @@ describe('BigNumberYoyMom transformProps', () => {
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     expect(graphic[1].style.fill).toBe(DARK_THEME.colorText);
+  });
+
+  // --- Optional YoY center-line gap and comparison sizing controls --------
+
+  const sizingRows = [
+    {
+      'SUM(sales)': 100,
+      'SUM(sales)__1 month ago': 90,
+      'SUM(sales)__1 year ago': 80,
+    },
+  ];
+
+  const buildSizedTile = (
+    tileWidth: number,
+    tileHeight: number,
+    formData: Record<string, unknown>,
+  ): Record<string, any>[] =>
+    transformProps({
+      ...buildChartProps(sizingRows, formData),
+      width: tileWidth,
+      height: tileHeight,
+    }).echartOptions.graphic as Record<string, any>[];
+
+  test('anchors YoY to the center line while reusing comparison spacing', () => {
+    const base = {
+      bigNumberLeft: 0,
+      comparisonUseCenterGap: true,
+      comparisonGap: 8,
+    };
+    const normal = buildSizedTile(400, 200, base);
+    // 400 / 2 + 8: the ONE spacing slider, measured from the center line.
+    expect(normal[3].left).toBe(208);
+    expect(normal[2].left).toBe(0);
+
+    // The whole point of the checkbox: the anchored slot no longer moves
+    // when the MoM text gets longer or shorter.
+    const longLabel = buildSizedTile(400, 200, {
+      ...base,
+      comparison1Label: '环比',
+    });
+    const shortLabel = buildSizedTile(400, 200, {
+      ...base,
+      comparison1Label: 'M',
+    });
+    expect(longLabel[2].style.text).not.toBe(normal[2].style.text);
+    expect(longLabel[3].left).toBe(208);
+    expect(shortLabel[3].left).toBe(208);
+    expect(comparisonRightEdge(longLabel)).toBeLessThanOrEqual(400);
+  });
+
+  test('reads the snake_case checkbox and shared spacing saved by Explore', () => {
+    const graphic = buildSizedTile(400, 200, {
+      bigNumberLeft: 0,
+      comparison_use_center_gap: true,
+      comparison_gap: 12,
+    });
+    // 400 / 2 + 12
+    expect(graphic[3].left).toBe(212);
+  });
+
+  test('an unchecked box keeps MoM-relative spacing', () => {
+    const shared = { bigNumberLeft: 0, comparisonGap: 40 };
+    const legacyChart = buildSizedTile(400, 200, shared);
+    const explicitlyOff = buildSizedTile(400, 200, {
+      ...shared,
+      comparisonUseCenterGap: false,
+    });
+    // Charts saved before the checkbox existed have no flag at all.
+    expect(explicitlyOff[3].left).toBe(legacyChart[3].left);
+    expect(legacyChart[3].left).toBe(148);
+    expect(comparisonRightEdge(legacyChart)).toBeLessThanOrEqual(400);
+  });
+
+  test('the center anchor reuses the same spacing slider value', () => {
+    const build = (comparisonGap: number): Record<string, any>[] =>
+      buildSizedTile(400, 200, {
+        bigNumberLeft: 0,
+        comparisonUseCenterGap: true,
+        comparisonGap,
+      });
+    const zero = build(0);
+    const small = build(8);
+    const large = build(40);
+    expect(zero[3].left).toBe(200); // exactly on the center line
+    expect(small[3].left).toBe(208); // 400 / 2 + 8
+    expect(large[3].left).toBe(240);
+    // Dragging the slider moves the slot by the same delta in this mode.
+    expect(large[3].left - small[3].left).toBe(32);
+    expect(comparisonRightEdge(large)).toBeLessThanOrEqual(400);
+  });
+
+  test('one slider value produces two different anchors', () => {
+    const shared = { bigNumberLeft: 0, comparisonGap: 24 };
+    const fromMom = buildSizedTile(400, 200, shared);
+    const fromCenter = buildSizedTile(400, 200, {
+      ...shared,
+      comparisonUseCenterGap: true,
+    });
+    expect(fromCenter[3].left).toBe(224); // 400 / 2 + 24
+    expect(fromCenter[3].left).not.toBe(fromMom[3].left);
+    // Switching the anchor never re-sizes the text.
+    expect(fromCenter[2].style.fontSize).toBe(fromMom[2].style.fontSize);
+    expect(comparisonRightEdge(fromCenter)).toBeLessThanOrEqual(400);
+  });
+
+  test('swaps both slots while the center anchor stays on the right', () => {
+    const graphic = buildSizedTile(400, 200, {
+      bigNumberLeft: 0,
+      comparisonUseCenterGap: true,
+      comparisonGap: 8,
+      swapComparisonOrder: true,
+    });
+    // The anchor is a fixed POSITION; swap decides which label sits there.
+    expect(graphic[2].left).toBe(208);
+    expect(graphic[3].left).toBe(0);
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+  });
+
+  test('keeps the anchored slots from overlapping on a long MoM label', () => {
+    const graphic = buildSizedTile(300, 200, {
+      bigNumberLeft: 0,
+      comparisonUseCenterGap: true,
+      comparisonGap: 8,
+      comparison1Label: 'A very long MoM comparison label',
+    });
+    expect(
+      graphic[2].left + comparisonTextWidth(graphic[2]),
+    ).toBeLessThanOrEqual(graphic[3].left);
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(300);
+  });
+
+  test('keeps one fixed comparison size while a uniform tile is resized', () => {
+    const uniform = {
+      uniformBigNumberFontSize: true,
+      uniformBigNumberReferenceTexts: ['$7.81'],
+      bigNumberLeft: 0,
+      comparisonGap: 24,
+    };
+    const widths = [290, 360, 440];
+    const heights = [190, 220, 260];
+    const tiles = widths.map((tileWidth, index) =>
+      buildSizedTile(tileWidth, heights[index], uniform),
+    );
+    const comparisonSizes = tiles.map(graphic => graphic[2].style.fontSize);
+    // Dragging a tile used to make the YoY/MoM text grow and shrink, because
+    // its size was derived from the measured big-number font size.
+    expect(new Set(comparisonSizes).size).toBe(1);
+    expect(comparisonSizes[0]).toBe(18);
+    // The tile really did change size: the big number still follows it.
+    expect(
+      new Set(tiles.map(graphic => graphic[1].style.fontSize)).size,
+    ).toBeGreaterThan(1);
+    tiles.forEach((graphic, index) => {
+      expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(widths[index]);
+    });
+  });
+
+  test('honours the comparison font size control when uniform sizing is off', () => {
+    const comparisonSize = (fontSize: number): number =>
+      buildSizedTile(600, 300, {
+        bigNumberLeft: 20,
+        comparisonFontSize: fontSize,
+      })[2].style.fontSize;
+    // Tiny (0.125) and Small (0.15) map to 15px and 18px against a fixed
+    // 120px reference height, so a tall tile cannot inflate these labels.
+    expect(comparisonSize(0.125)).toBe(15);
+    expect(comparisonSize(0.15)).toBe(18);
+  });
+
+  test('never clips the comparison row when uniform sizing is off', () => {
+    const shared = {
+      bigNumberLeft: 0,
+      comparisonGap: 24,
+      comparison1Label: '同比',
+      comparison2Label: '环比',
+      comparison1PercentDifferenceFormat: ',.2%',
+      comparison2PercentDifferenceFormat: ',.2%',
+    };
+    [160, 150].forEach(tileWidth => {
+      const graphic = buildSizedTile(tileWidth, 190, shared);
+      // The 10px readability floor used to stop the shrink here, leaving the
+      // second slot past the canvas edge with no guard to catch it.
+      expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(tileWidth);
+      expect(graphic[2].style.fontSize).toBeGreaterThan(0);
+    });
+  });
+
+  test('keeps an anchored row inside the canvas on a narrow tile', () => {
+    const tileWidth = 200;
+    const graphic = buildSizedTile(tileWidth, 190, {
+      bigNumberLeft: 0,
+      comparisonUseCenterGap: true,
+      comparisonGap: 8,
+      comparison1Label: '同比',
+      comparison2Label: '环比',
+    });
+    // 200 / 2 + 8; the anchor holds even on a narrow tile.
+    expect(graphic[3].left).toBe(108);
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(tileWidth);
+    expect(
+      graphic[2].left + comparisonTextWidth(graphic[2]),
+    ).toBeLessThanOrEqual(graphic[3].left);
+  });
+
+  test('comparison spacing never changes the comparison font size', () => {
+    const build = (gap: number): Record<string, any>[] =>
+      buildSizedTile(400, 200, { bigNumberLeft: 0, comparisonGap: gap });
+    const sizes = [0, 24, 120, 240].map(gap => build(gap)[2].style.fontSize);
+    // The spacing control only MOVES the second slot. Sizing reserves a fixed
+    // design gap and never reads this control.
+    expect(new Set(sizes).size).toBe(1);
+    expect(build(0)[3].left).toBeLessThan(build(24)[3].left);
+    expect(build(24)[3].left).toBeLessThan(build(120)[3].left);
+    [0, 24, 120, 240].forEach(gap => {
+      // A gap too large for the tile is clamped back inside the canvas.
+      expect(comparisonRightEdge(build(gap))).toBeLessThanOrEqual(400);
+    });
+  });
+
+  test('the center anchor never changes the comparison font size', () => {
+    const build = (gap: number): Record<string, any>[] =>
+      buildSizedTile(400, 200, {
+        bigNumberLeft: 0,
+        comparisonUseCenterGap: true,
+        comparisonGap: gap,
+      });
+    const sizes = [0, 8, 40, 240].map(gap => build(gap)[2].style.fontSize);
+    expect(new Set(sizes).size).toBe(1);
+    const fromMom = buildSizedTile(400, 200, {
+      bigNumberLeft: 0,
+      comparisonGap: 40,
+    });
+    // The checkbox only changes the anchor, so both modes share one size.
+    expect(sizes[0]).toBe(fromMom[2].style.fontSize);
+    expect(comparisonRightEdge(build(240))).toBeLessThanOrEqual(400);
+  });
+
+  test('the shared slider alone drives the center anchor', () => {
+    const shared = { bigNumberLeft: 0, comparisonGap: 40 };
+    const withStaleField = buildSizedTile(400, 200, {
+      ...shared,
+      comparisonUseCenterGap: true,
+      comparisonYoyAxisGap: 8,
+    });
+    const withoutStaleField = buildSizedTile(400, 200, {
+      ...shared,
+      comparisonUseCenterGap: true,
+    });
+    // A leftover value from the removed separate control is ignored.
+    expect(withStaleField[3].left).toBe(withoutStaleField[3].left);
+    expect(withStaleField[3].left).toBe(240); // 400 / 2 + 40
   });
 });

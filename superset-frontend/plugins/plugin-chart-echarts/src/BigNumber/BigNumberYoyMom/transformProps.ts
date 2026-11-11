@@ -171,6 +171,25 @@ const MIN_UNIFORM_COMPARISON_FONT_SIZE = 8;
 // the title (0.15 / 0.4). This is data-independent: every tile gets one size,
 // and the shared cap below still keeps the row inside the canvas.
 const UNIFORM_COMPARISON_FONT_RATIO = 0.45;
+// Uniform sizing pins the comparison row to ONE dashboard-wide size. Derive
+// it from the dashboard's absolute pixel setting (or this fixed reference when
+// that setting is blank), never from the tile's measured width/height, so
+// dragging a tile cannot make the YoY/MoM text grow or shrink.
+const DEFAULT_UNIFORM_BIG_NUMBER_REFERENCE_PX = 40;
+// Readability floor for the free (non-uniform) layout. The hard canvas guard
+// below may still go smaller when that is the only way to avoid clipping.
+const MIN_COMPARISON_FONT_SIZE_PX = 10;
+// Sizing reserves ONE fixed design gap between the two slots. The
+// comparison_gap control is never read here: changing the spacing slider may
+// move the second slot but must NEVER change the font size, in either anchor
+// mode. Use the plugin default so normal spacing still fits without shrinking.
+const COMPARISON_FIT_RESERVED_GAP = DEFAULT_COMPARISON_GAP;
+// The YoY/MoM row is secondary information. Its Tiny..Huge ratios are
+// converted against a FIXED reference height instead of the tile's real
+// height: on a tall tile 0.15 * 190 = 29px made the comparison text as large
+// as the title. 120px maps the default Small (0.15) to 18px, the same size
+// the dashboard-wide uniform setting uses, and keeps dragging height-stable.
+const DEFAULT_COMPARISON_FONT_REFERENCE_HEIGHT_PX = 120;
 
 /**
  * Read a comparison value column from a result row. Saved metrics are plain
@@ -317,6 +336,13 @@ export default function transformProps(
   const legacyComparison2Left = pick<number>('comparison2Left');
   const comparison2Mode = pick<'time_shift' | 'metric'>('comparison2Mode');
   const comparisonGap = pick<number>('comparisonGap') ?? DEFAULT_COMPARISON_GAP;
+  // A checkbox switches the ANCHOR of comparison_gap, not its value. Both
+  // modes reuse the very same slider (and its drag behaviour): off (default,
+  // and for charts saved before the checkbox existed) measures the gap from
+  // the MoM text; on measures it from the tile's horizontal center line.
+  // Charts saved with the short-lived separate center-gap control simply
+  // fall back to MoM spacing, since that field is never read here.
+  const useCenterGap = pick<boolean>('comparisonUseCenterGap') ?? false;
   const swapComparisonOrder = pick<boolean>('swapComparisonOrder') ?? false;
   const comparisonFontSize =
     pick<number>('comparisonFontSize') ?? DEFAULT_COMPARISON_FONT_SIZE;
@@ -465,10 +491,11 @@ export default function transformProps(
   const graphic: GraphicComponentOption[] = [];
 
   // Auto-positioning keeps the text stack compact and centered, matching the
-  // flex-centered layout used by the other Big Number visualizations. Font
-  // sizes follow the shared controls: ratios (<= 1, Tiny .. Huge) are
-  // multiplied by the chart height; legacy numeric values > 1 are absolute
-  // pixels. These are the unscaled design sizes.
+  // flex-centered layout used by the other Big Number visualizations. Title
+  // and big number ratios (<= 1, Tiny .. Huge) scale with the chart height;
+  // the comparison row uses a fixed reference height instead (see below).
+  // Legacy numeric values > 1 are absolute pixels. These are the unscaled
+  // design sizes.
   const hasTitle = !!headerText;
   const titleFontSizeValue =
     typeof titleFontSize === 'number'
@@ -490,9 +517,14 @@ export default function transformProps(
     typeof comparisonFontSize === 'number'
       ? comparisonFontSize
       : Number(comparisonFontSize) || DEFAULT_COMPARISON_FONT_SIZE;
+  // Unlike the title and the big number, comparison labels do NOT scale with
+  // the tile height: see DEFAULT_COMPARISON_FONT_REFERENCE_HEIGHT_PX. A tall
+  // tile must not turn "Tiny" into a 24px label.
   const baseComparisonFontSizePx =
     comparisonFontSizeValue <= 1
-      ? Math.ceil(comparisonFontSizeValue * height)
+      ? Math.ceil(
+          comparisonFontSizeValue * DEFAULT_COMPARISON_FONT_REFERENCE_HEIGHT_PX,
+        )
       : Math.ceil(comparisonFontSizeValue);
 
   // ECharts graphic text does not wrap or auto-scale, so a long formatted
@@ -579,10 +611,20 @@ export default function transformProps(
     ),
   );
   // The comparison row takes a larger share than the title (see
-  // UNIFORM_COMPARISON_FONT_RATIO); it is still one dashboard-wide size.
+  // UNIFORM_COMPARISON_FONT_RATIO). Unlike the title, this size must NOT be
+  // derived from effectiveBigNumberFontSizePx: that value follows the tile's
+  // pixel width, which made the YoY/MoM text change size while a tile was
+  // being dragged. Use the dashboard's absolute pixel setting (or a fixed
+  // reference) so the whole dashboard keeps one stable comparison size.
+  const uniformComparisonReferencePx =
+    typeof uniformBigNumberFontSizePx === 'number' &&
+    Number.isFinite(uniformBigNumberFontSizePx) &&
+    uniformBigNumberFontSizePx > 0
+      ? uniformBigNumberFontSizePx
+      : DEFAULT_UNIFORM_BIG_NUMBER_REFERENCE_PX;
   const uniformComparisonFontSizePx = Math.max(
-    10,
-    Math.round(effectiveBigNumberFontSizePx * UNIFORM_COMPARISON_FONT_RATIO),
+    MIN_UNIFORM_COMPARISON_FONT_SIZE,
+    Math.round(uniformComparisonReferencePx * UNIFORM_COMPARISON_FONT_RATIO),
   );
   const titleFontSizePx = uniformBigNumberFontSize
     ? uniformTitleFontSizePx
@@ -590,9 +632,12 @@ export default function transformProps(
   const requestedBigNumberFontSizePx = uniformBigNumberFontSize
     ? effectiveBigNumberFontSizePx
     : scaleFontSize(baseBigNumberFontSizePx);
+  // With uniform sizing off, the chart's own "Comparison font size" control is
+  // the one and only source. The auto-fit below only ever subtracts from it
+  // when the row would actually leave the canvas.
   const requestedComparisonFontSizePx = uniformBigNumberFontSize
     ? uniformComparisonFontSizePx
-    : scaleFontSize(baseComparisonFontSizePx, 10);
+    : Math.max(MIN_COMPARISON_FONT_SIZE_PX, baseComparisonFontSizePx);
 
   const estimatedBigNumberWidth = estimateTextWidth(
     bigNumberText,
@@ -808,154 +853,86 @@ export default function transformProps(
     formatter: percentFormatter2,
     valueFormatter: valueFormatter2,
   });
-  // Comparison slots render side by side (MoM / YoY) and, like the big
-  // number, are clipped at the canvas edge when the tile is narrow. Both
-  // slots start at comparisonLeft and align to the widest text, so the row
-  // occupies `left + widest + gap + widest` at most. Shrink the font
-  // proportionally when that exceeds the tile width, mirroring the big
-  // number auto-size logic, while keeping a floor so the row stays readable.
-  // With uniform sizing the row is clamped to ONE dashboard-wide cap first:
-  // a data-independent design text keeps every tile on the same comparison
-  // size, and the per-tile fit below is only a last-resort guard for
-  // unusually long labels. Uniform sizing must never skip this fit -- doing
-  // so left the second slot cut off at the canvas edge.
-  const bothComparisonsShown = !!comparison1Content && !!comparison2Content;
-  // Uniform sizing is a dashboard-wide presentation setting: use the tighter,
-  // comparison-specific measurement there so the row can use the space it
-  // actually has. Charts with uniform sizing off keep the legacy estimator, so
-  // their existing layout and font sizes are untouched.
-  const measureComparisonText = (text: string, size: number): number =>
-    uniformBigNumberFontSize
-      ? estimateComparisonTextWidth(text, size)
-      : estimateTextWidth(text, size);
-  const comparisonAvailableWidth = Math.max(
-    0,
-    width - comparisonLeft - DEFAULT_BIG_NUMBER_LEFT - TEXT_FIT_SAFETY_MARGIN,
-  );
-  const designComparisonWidthPerPx = measureComparisonText(
-    UNIFORM_COMPARISON_DESIGN_TEXT,
-    1,
-  );
-  // Cap against the real canvas width and the ACTUAL (scaled) gap, not the
-  // padded design width and the unscaled default gap. Both of those used to
-  // reserve ~30-40px the row never needed, keeping the YoY/MoM text visibly
-  // too small on a normal-width tile. The design text stays data-independent
-  // so equal-width tiles still resolve to exactly one size.
-  const uniformComparisonCapPx = uniformBigNumberFontSize
-    ? Math.max(
-        MIN_UNIFORM_COMPARISON_FONT_SIZE,
-        Math.floor(
-          (Math.max(0, width - comparisonLeft) - comparisonGapPx) /
-            (bothComparisonsShown
-              ? designComparisonWidthPerPx * 2
-              : designComparisonWidthPerPx),
-        ),
-      )
-    : Number.POSITIVE_INFINITY;
-  let comparisonFontSizePx = Math.min(
-    requestedComparisonFontSizePx,
-    uniformComparisonCapPx,
-  );
-  const comparison1TextWidth = comparison1Content
-    ? measureComparisonText(comparison1Content.text, comparisonFontSizePx)
-    : 0;
-  const comparison2TextWidth = comparison2Content
-    ? measureComparisonText(comparison2Content.text, comparisonFontSizePx)
-    : 0;
-  const widestComparisonTextWidth = Math.max(
-    comparison1TextWidth,
-    comparison2TextWidth,
-  );
-  const estimatedComparisonRowWidth =
-    comparisonLeft +
-    (bothComparisonsShown
-      ? widestComparisonTextWidth * 2 + comparisonGapPx
-      : widestComparisonTextWidth);
-  // The floor is an absolute pixel size like the big number's: a proportional
-  // floor (e.g. 50%) would block the shrink on narrow tiles and let the row
-  // overflow again. ceil() on each slot's estimated width can still leave the
-  // row a few pixels over, so re-measure at the shrunk size and refine until
-  // the row fits (bounded to a few passes).
+  // Comparison slots render side by side (MoM / YoY). Both modes measure with
+  // estimateComparisonTextWidth (0.5em ASCII / 1em full-width): the generic
+  // estimator overstated a "同比 ↑104.79%" slot by ~60% and flattened every
+  // configured "Comparison font size" to the same tiny value. Uniform sizing
+  // measures a data-independent design text so equal-width tiles share ONE size.
+  const comparisonFitTexts = uniformBigNumberFontSize
+    ? [UNIFORM_COMPARISON_DESIGN_TEXT, UNIFORM_COMPARISON_DESIGN_TEXT]
+    : [comparison1Content?.text ?? '', comparison2Content?.text ?? ''];
+  const measureLayoutText = (size: number, index: number): number =>
+    estimateComparisonTextWidth(comparisonFitTexts[index], size);
+  const comparisonSlotWidthsAt = (size: number): [number, number] => [
+    comparison1Content ? measureLayoutText(size, 0) : 0,
+    comparison2Content ? measureLayoutText(size, 1) : 0,
+  ];
+  // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Fit the two slots
+  // back-to-back plus one FIXED design gap, then place them using the
+  // configured spacing. Changing "Comparison spacing" only moves the second
+  // slot; it never re-sizes the text, and neither does the anchor checkbox.
+  const comparisonRowFits = (size: number, bound: number): boolean => {
+    const [first, second] = comparisonSlotWidthsAt(size);
+    return (
+      comparisonLeft + first + second + COMPARISON_FIT_RESERVED_GAP <= bound
+    );
+  };
   const minComparisonFontSizePx = uniformBigNumberFontSize
     ? MIN_UNIFORM_COMPARISON_FONT_SIZE
-    : 10;
-  const initialComparisonFontSizePx = comparisonFontSizePx;
-  if (
-    comparisonAvailableWidth > 0 &&
-    estimatedComparisonRowWidth > comparisonAvailableWidth
+    : MIN_COMPARISON_FONT_SIZE_PX;
+  let comparisonFontSizePx = requestedComparisonFontSizePx;
+  // Leave a little air on the right when there is room, but never let that
+  // preference win over legibility. This is the only "soft" fit: it stops at
+  // the readability floor.
+  const preferredComparisonWidth = Math.max(0, width - TEXT_FIT_SAFETY_MARGIN);
+  while (
+    comparisonFontSizePx > minComparisonFontSizePx &&
+    !comparisonRowFits(comparisonFontSizePx, preferredComparisonWidth)
   ) {
-    comparisonFontSizePx = Math.max(
-      minComparisonFontSizePx,
-      Math.floor(
-        (initialComparisonFontSizePx * comparisonAvailableWidth) /
-          estimatedComparisonRowWidth,
-      ),
-    );
-    for (let i = 0; i < 3; i += 1) {
-      const shrunkWidestWidth = Math.max(
-        comparison1Content
-          ? measureComparisonText(comparison1Content.text, comparisonFontSizePx)
-          : 0,
-        comparison2Content
-          ? measureComparisonText(comparison2Content.text, comparisonFontSizePx)
-          : 0,
-      );
-      const shrunkRowWidth =
-        comparisonLeft +
-        (bothComparisonsShown
-          ? shrunkWidestWidth * 2 + comparisonGapPx
-          : shrunkWidestWidth);
-      if (shrunkRowWidth <= comparisonAvailableWidth) break;
-      const nextComparisonFontSizePx = Math.max(
-        minComparisonFontSizePx,
-        Math.floor(
-          (comparisonFontSizePx * comparisonAvailableWidth) / shrunkRowWidth,
-        ),
-      );
-      if (nextComparisonFontSizePx === comparisonFontSizePx) break;
-      comparisonFontSizePx = nextComparisonFontSizePx;
-    }
+    comparisonFontSizePx -= 1;
   }
-  // Clipping is never acceptable. The padded width used above is a layout
-  // preference; on a very narrow tile the shared cap and the readability floor
-  // can still leave the second slot past the real canvas edge. As a last resort
-  // fit a data-independent upper bound of the row against the canvas itself.
-  // Using the same design text as the cap keeps equal-width KPI tiles on ONE
-  // comparison size, so this guard never reintroduces per-tile font drift.
-  // The real canvas edge is the bound: the design text is already wider than
-  // any rendered slot, so no extra padding is needed here.
+  // Clipping is never acceptable, in BOTH modes. The floor above is only a
+  // readability preference; on a very narrow tile the row must be allowed to
+  // go smaller than that to stay on the canvas. Uniform sizing still measures
+  // the shared design text, so this guard cannot reintroduce per-tile drift.
   const canvasComparisonWidth = Math.max(0, width);
-  if (uniformBigNumberFontSize) {
-    const rowUpperBound = (size: number): number =>
-      comparisonLeft +
-      measureComparisonText(UNIFORM_COMPARISON_DESIGN_TEXT, size) *
-        (bothComparisonsShown ? 2 : 1) +
-      (bothComparisonsShown ? comparisonGapPx : 0);
-    while (
-      comparisonFontSizePx > 1 &&
-      rowUpperBound(comparisonFontSizePx) > canvasComparisonWidth
-    ) {
-      comparisonFontSizePx -= 1;
-    }
+  while (
+    comparisonFontSizePx > 1 &&
+    !comparisonRowFits(comparisonFontSizePx, canvasComparisonWidth)
+  ) {
+    comparisonFontSizePx -= 1;
   }
-  const comparisonWidth = Math.max(
-    comparison1Content
-      ? measureComparisonText(comparison1Content.text, comparisonFontSizePx)
-      : 0,
-    comparison2Content
-      ? measureComparisonText(comparison2Content.text, comparisonFontSizePx)
-      : 0,
+
+  // LAYOUT ONLY. One slider drives both anchor modes: unchecked measures the
+  // spacing from the MoM text's right edge, checked measures the SAME value
+  // from the tile's horizontal center line. Nothing above reads either value,
+  // so spacing can never influence the font size.
+  const hasLegacyComparisonLefts =
+    legacyComparison1Left !== undefined || legacyComparison2Left !== undefined;
+  const [slot0Width, slot1Width] = comparisonSlotWidthsAt(comparisonFontSizePx);
+  const leftWidth = swapComparisonOrder ? slot1Width : slot0Width;
+  const rightWidth = swapComparisonOrder ? slot0Width : slot1Width;
+  const minRightLeft = comparisonLeft + leftWidth;
+  const idealRightLeft = useCenterGap
+    ? Math.round(width / 2) + comparisonGapPx
+    : minRightLeft + comparisonGapPx;
+  // comparisonRowFits guarantees minRightLeft <= width - rightWidth, so these
+  // bounds always leave room: bias towards the configured position, but never
+  // let a large gap push the second slot off the canvas or back into the first.
+  const clampLeft = (left: number, textWidth: number): number =>
+    Math.min(Math.max(0, left), Math.max(0, width - textWidth));
+  const rightLeft = clampLeft(
+    Math.max(idealRightLeft, minRightLeft),
+    rightWidth,
   );
-  const comparisonLefts =
-    legacyComparison1Left !== undefined || legacyComparison2Left !== undefined
-      ? [
-          legacyComparison1Left ?? comparisonLeft,
-          legacyComparison2Left ??
-            comparisonLeft + comparisonWidth + comparisonGapPx,
-        ]
-      : swapComparisonOrder
-        ? [comparisonLeft + comparisonWidth + comparisonGapPx, comparisonLeft]
-        : [comparisonLeft, comparisonLeft + comparisonWidth + comparisonGapPx];
+  const comparisonLefts = hasLegacyComparisonLefts
+    ? [
+        clampLeft(legacyComparison1Left ?? comparisonLeft, slot0Width),
+        clampLeft(legacyComparison2Left ?? rightLeft, slot1Width),
+      ]
+    : swapComparisonOrder
+      ? [rightLeft, comparisonLeft]
+      : [comparisonLeft, rightLeft];
 
   // Match the Big Number family: the complete text stack is centered in the
   // tile. Heights use the post auto-size font sizes so the stack stays
