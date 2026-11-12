@@ -20,6 +20,13 @@ import { useCallback } from 'react';
 import { useTable, Column } from 'react-table';
 import { act, render } from '@superset-ui/core/spec';
 import useSticky from '../../../src/DataTable/hooks/useSticky';
+import {
+  FROZEN_BODY_Z_INDEX,
+  FROZEN_CELL_CLASS,
+  FROZEN_EDGE_CLASS,
+  FROZEN_HEADER_Z_INDEX,
+  HAS_FROZEN_COLUMNS_CLASS,
+} from '../../../src/DataTable/utils/freezeColumns';
 import { TABLE_FRAME_CLASS } from '../../../src/utils/tableStyle';
 
 // A value distinguishable from any real scrollbar width, so the width
@@ -100,7 +107,8 @@ const data: Row[] = Array.from({ length: 8 }, (_, i) => ({
 
 function StickyTableHarness({
   withFooter = true,
-}: { withFooter?: boolean } = {}) {
+  freezeColumns = 0,
+}: { withFooter?: boolean; freezeColumns?: number } = {}) {
   const getTableSize = useCallback(
     () => ({ width: MAX_WIDTH, height: MAX_HEIGHT }),
     [],
@@ -111,6 +119,7 @@ function StickyTableHarness({
         columns,
         data,
         getTableSize,
+        freezeColumns,
       },
       useSticky,
     );
@@ -340,4 +349,142 @@ test('sticky table paints once it gains a box, when first rendered inside a hidd
     resizeObserver.restore();
     jest.restoreAllMocks();
   }
+});
+
+test('pins frozen columns in the header, body and footer clones only', () => {
+  mockMeasurements();
+
+  const { container } = render(<StickyTableHarness freezeColumns={1} />);
+  const root = container.querySelector(
+    '[data-test="sticky-root"] > div',
+  ) as HTMLDivElement;
+  const [headerDiv, bodyDiv, footerDiv] = Array.from(
+    root.children,
+  ) as HTMLDivElement[];
+
+  [headerDiv, bodyDiv, footerDiv].forEach(section => {
+    const rows = section.querySelectorAll('tr');
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach(row => {
+      const cells = row.querySelectorAll<HTMLElement>('th, td');
+      expect(cells[0].classList.contains(FROZEN_CELL_CLASS)).toBe(true);
+      expect(cells[0].style.position).toBe('sticky');
+      expect(parseFloat(cells[0].style.left)).toBe(0);
+      expect(cells[0].classList.contains(FROZEN_EDGE_CLASS)).toBe(true);
+      expect(Number(cells[0].style.zIndex)).toBeGreaterThanOrEqual(
+        FROZEN_BODY_Z_INDEX,
+      );
+      expect(cells[1].classList.contains(FROZEN_CELL_CLASS)).toBe(false);
+    });
+  });
+
+  // The hidden sizer must stay unmodified: it measures natural column widths.
+  const sizer = root.children[3];
+  if (sizer) {
+    sizer.querySelectorAll('th, td').forEach(cell => {
+      expect(cell.classList.contains(FROZEN_CELL_CLASS)).toBe(false);
+    });
+  }
+
+  jest.restoreAllMocks();
+});
+
+test('pins the first column in every visible body data row', () => {
+  mockMeasurements();
+
+  const { container } = render(<StickyTableHarness freezeColumns={1} />);
+  const bodyDiv = container.querySelector(
+    '[data-test="sticky-root"] > div > div:nth-child(2)',
+  ) as HTMLDivElement;
+  const rows = bodyDiv.querySelectorAll('tbody tr');
+  expect(rows).toHaveLength(data.length);
+  rows.forEach(row => {
+    const [first, second] = row.querySelectorAll('td');
+    expect(first.classList.contains(FROZEN_CELL_CLASS)).toBe(true);
+    expect(first.style.position).toBe('sticky');
+    expect(first.style.zIndex).toBe(String(FROZEN_BODY_Z_INDEX));
+    expect(second.style.position).toBe('');
+    expect(second.style.zIndex).toBe('');
+  });
+
+  jest.restoreAllMocks();
+});
+
+test('keeps frozen header cells above frozen body cells', () => {
+  mockMeasurements();
+
+  const { container } = render(<StickyTableHarness freezeColumns={1} />);
+  const root = container.querySelector(
+    '[data-test="sticky-root"] > div',
+  ) as HTMLDivElement;
+  const [headerDiv, bodyDiv] = Array.from(root.children) as HTMLDivElement[];
+  const headerCell = headerDiv.querySelector('thead th') as HTMLElement;
+  const bodyCell = bodyDiv.querySelector('tbody td') as HTMLElement;
+  expect(headerCell.style.zIndex).toBe(String(FROZEN_HEADER_Z_INDEX));
+  expect(bodyCell.style.zIndex).toBe(String(FROZEN_BODY_Z_INDEX));
+  expect(Number(headerCell.style.zIndex)).toBeGreaterThan(
+    Number(bodyCell.style.zIndex),
+  );
+
+  jest.restoreAllMocks();
+});
+
+test('uses measured column widths for the second frozen column', () => {
+  mockMeasurements();
+
+  const { container } = render(<StickyTableHarness freezeColumns={2} />);
+  const bodyDiv = container.querySelector(
+    '[data-test="sticky-root"] > div > div:nth-child(2)',
+  ) as HTMLDivElement;
+  const cells = bodyDiv.querySelector('tr')!.querySelectorAll('td');
+  expect(parseFloat(cells[0].style.left)).toBe(0);
+  expect(parseFloat(cells[1].style.left)).toBe(60);
+  expect(cells[1].classList.contains(FROZEN_EDGE_CLASS)).toBe(true);
+
+  jest.restoreAllMocks();
+});
+
+test('clamps an oversized frozen count to the real column count', () => {
+  mockMeasurements();
+
+  const { container } = render(<StickyTableHarness freezeColumns={99} />);
+  const bodyDiv = container.querySelector(
+    '[data-test="sticky-root"] > div > div:nth-child(2)',
+  ) as HTMLDivElement;
+  const cells = bodyDiv.querySelector('tr')!.querySelectorAll('td');
+  expect(cells[0].classList.contains(FROZEN_CELL_CLASS)).toBe(true);
+  expect(cells[1].classList.contains(FROZEN_CELL_CLASS)).toBe(true);
+  expect(parseFloat(cells[1].style.left)).toBe(60);
+  // Without clamping the boundary marker would sit on a nonexistent column
+  // and the frozen block would have no visible right edge.
+  expect(cells[1].classList.contains(FROZEN_EDGE_CLASS)).toBe(true);
+
+  jest.restoreAllMocks();
+});
+
+test('switches to per-cell borders only when freezing is active', () => {
+  mockMeasurements();
+
+  const { container } = render(<StickyTableHarness freezeColumns={1} />);
+  const root = container.querySelector(
+    '[data-test="sticky-root"] > div',
+  ) as HTMLDivElement;
+  expect(root.classList.contains(HAS_FROZEN_COLUMNS_CLASS)).toBe(true);
+
+  jest.restoreAllMocks();
+});
+
+test('does not mark any cell when freezing is disabled', () => {
+  mockMeasurements();
+
+  const { container } = render(<StickyTableHarness />);
+  expect(container.querySelectorAll(`.${FROZEN_CELL_CLASS}`)).toHaveLength(0);
+  const root = container.querySelector(
+    '[data-test="sticky-root"] > div',
+  ) as HTMLDivElement;
+  // Collapsed borders must stay untouched for every chart without frozen
+  // columns; otherwise this fix would restyle the whole plugin.
+  expect(root.classList.contains(HAS_FROZEN_COLUMNS_CLASS)).toBe(false);
+
+  jest.restoreAllMocks();
 });

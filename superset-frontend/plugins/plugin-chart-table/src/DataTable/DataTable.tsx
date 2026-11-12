@@ -78,6 +78,7 @@ export interface DataTableProps<D extends object> extends TableOptions<D> {
   pageSize?: number;
   noResults?: string | ((filterString: string) => ReactNode);
   sticky?: boolean;
+  freezeColumns?: number;
   rowCount: number;
   wrapperRef?: MutableRefObject<HTMLDivElement>;
   onColumnOrderChange?: () => void;

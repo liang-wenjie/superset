@@ -116,6 +116,24 @@ const createMockExplore = (
   metadata: {},
 });
 
+test('exposes a frozen columns control with a safe default', () => {
+  const control = findNamedControl('freeze_columns');
+  expect(control).not.toBeNull();
+  expect(control).toEqual(
+    expect.objectContaining({
+      type: 'SelectControl',
+      label: 'Frozen columns',
+      default: 0,
+      renderTrigger: true,
+      freeForm: true,
+    }),
+  );
+  const { choices } = control as unknown as { choices: [number, string][] };
+  expect(choices).toHaveLength(11);
+  expect(choices[0]).toEqual([0, 'Do not freeze']);
+  expect(choices[10]).toEqual([10, '10']);
+});
+
 test('semantic view raw ordering offers only selected dimensions', () => {
   const ordering = findOrderingControl();
   expect(ordering?.mapStateToProps).toBeTruthy();

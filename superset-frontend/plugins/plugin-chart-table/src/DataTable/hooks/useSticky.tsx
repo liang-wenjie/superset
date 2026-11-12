@@ -40,6 +40,11 @@ import {
 } from '../utils/getScrollBarSize';
 import needScrollBar from '../utils/needScrollBar';
 import useMountedMemo from '../utils/useMountedMemo';
+import {
+  freezeTableSection,
+  getColumnOffsets,
+  HAS_FROZEN_COLUMNS_CLASS,
+} from '../utils/freezeColumns';
 import { TABLE_FRAME_CLASS } from '../../utils/tableStyle';
 
 type ReactElementWithChildren<
@@ -92,6 +97,8 @@ export interface StickyState {
 
 export interface UseStickyTableOptions {
   getTableSize?: GetTableSize;
+  /** Number of leftmost columns kept visible during horizontal scrolling. */
+  freezeColumns?: number;
 }
 
 export interface UseStickyInstanceProps {
@@ -126,12 +133,14 @@ function StickyWrap({
   height: maxHeight,
   children: table,
   setStickyState,
+  freezeColumns = 0,
 }: {
   width: number;
   height: number;
   setStickyState: SetStickyState;
   children: Table;
   sticky?: StickyState; // current sticky element sizes
+  freezeColumns?: number;
 }) {
   const theme = useTheme();
 
@@ -254,6 +263,7 @@ function StickyWrap({
   let headerTable: ReactElement | undefined;
   let footerTable: ReactElement | undefined;
   let bodyTable: ReactElement | undefined;
+  let hasFrozenColumns = false;
 
   const scrollBarStyles = css`
     &::-webkit-scrollbar {
@@ -305,6 +315,21 @@ function StickyWrap({
   const colWidths = columnWidths?.slice(0, columnCount);
 
   if (colWidths && bodyHeight) {
+    // The sizer keeps unmodified sections for measurement; only the three
+    // visible clones get pinned cells. Offsets come from the same measured
+    // widths that drive the shared <colgroup>, so frozen cells line up with
+    // their columns in the header, body and footer.
+    // A free-form control may hold a count larger than the current table
+    // (e.g. after the query loses columns). Clamp it so the freeze boundary
+    // always lands on a real column and keeps its separator.
+    const pinnedColumns = Math.min(freezeColumns, colWidths.length);
+    hasFrozenColumns = pinnedColumns > 0;
+    const offsets = getColumnOffsets(colWidths);
+    const frozenThead = freezeTableSection(thead, offsets, pinnedColumns);
+    const frozenTbody = freezeTableSection(tbody, offsets, pinnedColumns);
+    const frozenTfoot = tfoot
+      ? freezeTableSection(tfoot, offsets, pinnedColumns)
+      : undefined;
     const colgroup = (
       <colgroup>
         {colWidths.map((w, i) => (
@@ -354,7 +379,7 @@ function StickyWrap({
           cloneElement(table, { role: 'presentation' }),
           mergeStyleProp(table, fixedTableLayout),
           colgroup,
-          thead,
+          frozenThead,
         )}
         {headerTable}
       </div>
@@ -377,7 +402,7 @@ function StickyWrap({
           cloneElement(table, { role: 'presentation' }),
           mergeStyleProp(table, fixedTableLayout),
           colgroup,
-          tfoot,
+          frozenTfoot,
         )}
         {footerTable}
       </div>
@@ -410,7 +435,7 @@ function StickyWrap({
           cloneElement(table, { role: 'presentation' }),
           mergeStyleProp(table, fixedTableLayout),
           colgroup,
-          tbody,
+          frozenTbody,
         )}
       </div>
     );
@@ -422,7 +447,11 @@ function StickyWrap({
     // role="table" is the correct ARIA pattern here, not the suggested tag.
     <div
       ref={wrapRef}
-      className={TABLE_FRAME_CLASS}
+      className={
+        hasFrozenColumns
+          ? `${TABLE_FRAME_CLASS} ${HAS_FROZEN_COLUMNS_CLASS}`
+          : TABLE_FRAME_CLASS
+      }
       style={{
         width: maxWidth,
         height: sticky.realHeight || maxHeight,
@@ -448,7 +477,8 @@ function useInstance<D extends object>(instance: TableInstance<D>) {
     rows,
     allColumns,
     getTableSize = () => undefined,
-  } = instance;
+    freezeColumns = 0,
+  } = instance as TableInstance<D> & { freezeColumns?: number };
 
   const setStickyState = useCallback(
     (size?: Partial<StickyState>) => {
@@ -487,6 +517,7 @@ function useInstance<D extends object>(instance: TableInstance<D>) {
         height={height}
         sticky={sticky}
         setStickyState={setStickyState}
+        freezeColumns={freezeColumns}
       >
         {table}
       </StickyWrap>

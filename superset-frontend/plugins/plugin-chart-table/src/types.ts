@@ -79,6 +79,7 @@ export type TableChartFormData = QueryFormData & {
   time_grain_sqla?: TimeGranularity;
   column_config?: Record<string, TableColumnConfig>;
   allow_rearrange_columns?: boolean;
+  freeze_columns?: number | string | null;
   header_groups?: HeaderGroupConfig[];
   header_text_bold?: boolean;
   header_text_color?: TableColorValue;
@@ -128,6 +129,7 @@ export interface TableChartTransformedProps<D extends DataRecord = DataRecord> {
   onChangeFilter?: ChartProps['hooks']['onAddFilter'];
   columnColorFormatters?: ColorFormatters;
   allowRearrangeColumns?: boolean;
+  freezeColumns: number;
   allowRenderHtml?: boolean;
   onContextMenu?: (
     clientX: number,

@@ -429,6 +429,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
     sticky = true, // whether to use sticky header
     columnColorFormatters,
     allowRearrangeColumns = false,
+    freezeColumns = 0,
     allowRenderHtml = true,
     onContextMenu,
     emitCrossFilters,
@@ -1248,7 +1249,22 @@ export default function TableChart<D extends DataRecord = DataRecord>(
         columnKey: key,
         columnLabel: label,
         accessor: ((datum: D) => datum[key]) as never,
-        Cell: ({ value, row }: { value: DataRecordValue; row: Row<D> }) => {
+        // `className`/`style` are injected by `freezeTableSection`, which
+        // clones the element react-table returns. That element is this
+        // function component (not a plain <td>), so without forwarding them
+        // the pinned columns lose their sticky offset, layer and background
+        // in the real chart even though the pure clone tests pass.
+        Cell: ({
+          value,
+          row,
+          className: frozenClassName,
+          style: frozenStyle,
+        }: {
+          value: DataRecordValue;
+          row: Row<D>;
+          className?: string;
+          style?: CSSProperties;
+        }) => {
           const [isHtml, text] = formatColumnValue(
             column,
             value,
@@ -1466,10 +1482,16 @@ export default function TableChart<D extends DataRecord = DataRecord>(
                 ? 'dt-is-null'
                 : '',
               isActiveFilterValue(key, value) ? ' dt-is-active-filter' : '',
-            ].join(' '),
-            style: resolvedTextColor
-              ? ({ color: resolvedTextColor } as CSSProperties)
-              : undefined,
+              frozenClassName,
+            ]
+              .filter(Boolean)
+              .join(' '),
+            style: {
+              ...(resolvedTextColor
+                ? ({ color: resolvedTextColor } as CSSProperties)
+                : {}),
+              ...frozenStyle,
+            },
             tabIndex: 0,
           };
           if (html) {
@@ -1527,56 +1549,74 @@ export default function TableChart<D extends DataRecord = DataRecord>(
             </StyledCell>
           );
         },
-        Header: ({ column: col, onClick, style, onDragStart, onDrop }) => (
-          <th
-            id={`header-${headerId}`}
-            title={
-              description || t('Shift + Click to sort by multiple columns')
-            }
-            className={[className, col.isSorted ? 'is-sorted' : ''].join(' ')}
-            style={{
-              ...sharedStyle,
-              ...style,
-            }}
-            onKeyDown={(e: ReactKeyboardEvent<HTMLElement>) => {
-              // programatically sort column on keypress
-              if (Object.values(ACTION_KEYS).includes(e.key)) {
-                col.toggleSortBy();
+        Header: headerProps => {
+          const {
+            column: col,
+            onClick,
+            style,
+            onDragStart,
+            onDrop,
+            // Injected by freezeTableSection via cloneElement. react-table's
+            // inferred HeaderProps has no className, so widen it here.
+            className: frozenClassName,
+          } = headerProps as typeof headerProps & { className?: string };
+          return (
+            <th
+              id={`header-${headerId}`}
+              title={
+                description || t('Shift + Click to sort by multiple columns')
               }
-            }}
-            onClick={onClick}
-            data-column-name={col.id}
-            {...(allowRearrangeColumns && {
-              draggable: 'true',
-              onDragStart,
-              onDragOver: e => e.preventDefault(),
-              onDragEnter: e => e.preventDefault(),
-              onDrop,
-            })}
-            tabIndex={0}
-          >
-            {/* can't use `columnWidth &&` because it may also be zero */}
-            {config.columnWidth ? (
-              // column width hint
-              <div
-                style={{
-                  width: columnWidth,
-                  height: 0.01,
-                }}
-              />
-            ) : null}
-            <div
-              data-column-name={col.id}
-              css={{
-                display: 'inline-flex',
-                alignItems: 'flex-end',
+              className={[
+                className,
+                col.isSorted ? 'is-sorted' : '',
+                frozenClassName,
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              style={{
+                ...sharedStyle,
+                ...style,
               }}
+              onKeyDown={(e: ReactKeyboardEvent<HTMLElement>) => {
+                // programatically sort column on keypress
+                if (Object.values(ACTION_KEYS).includes(e.key)) {
+                  col.toggleSortBy();
+                }
+              }}
+              onClick={onClick}
+              data-column-name={col.id}
+              {...(allowRearrangeColumns && {
+                draggable: 'true',
+                onDragStart,
+                onDragOver: e => e.preventDefault(),
+                onDragEnter: e => e.preventDefault(),
+                onDrop,
+              })}
+              tabIndex={0}
             >
-              <span data-column-name={col.id}>{displayLabel}</span>
-              <SortIcon column={col} />
-            </div>
-          </th>
-        ),
+              {/* can't use `columnWidth &&` because it may also be zero */}
+              {config.columnWidth ? (
+                // column width hint
+                <div
+                  style={{
+                    width: columnWidth,
+                    height: 0.01,
+                  }}
+                />
+              ) : null}
+              <div
+                data-column-name={col.id}
+                css={{
+                  display: 'inline-flex',
+                  alignItems: 'flex-end',
+                }}
+              >
+                <span data-column-name={col.id}>{displayLabel}</span>
+                <SortIcon column={col} />
+              </div>
+            </th>
+          );
+        },
 
         Footer: displayedTotals ? (
           i === 0 ? (
@@ -1878,6 +1918,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
         selectPageSize={pageSize !== null && SelectPageSize}
         // not in use in Superset, but needed for unit tests
         sticky={sticky}
+        freezeColumns={freezeColumns}
         renderGroupingHeaders={
           !isEmpty(groupHeaderColumns) || hasHeaderGroups
             ? renderGroupingHeaders

@@ -27,6 +27,29 @@ import transformProps from '../src/transformProps';
 import { TABLE_FRAME_CLASS } from '../src/utils/tableStyle';
 import testData from './testData';
 
+test('normalizes the frozen column count from saved form data', () => {
+  const cases: [number | string | null | undefined, number][] = [
+    [undefined, 0],
+    [null, 0],
+    ['', 0],
+    ['3', 3],
+    [2.7, 2],
+    [-4, 0],
+    ['not a number', 0],
+  ];
+
+  cases.forEach(([value, expected]) => {
+    const transformed = transformProps({
+      ...testData.basic,
+      rawFormData: {
+        ...testData.basic.rawFormData,
+        freeze_columns: value,
+      },
+    });
+    expect(transformed.freezeColumns).toBe(expected);
+  });
+});
+
 test('renders authorized chart display labels in table headers without changing data keys', () => {
   const datasource = withChartDisplayLabels(
     {

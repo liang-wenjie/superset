@@ -558,6 +558,7 @@ const transformProps = (
     show_totals: showTotals,
     conditional_formatting: conditionalFormatting,
     allow_rearrange_columns: allowRearrangeColumns,
+    freeze_columns: freezeColumnsValue,
     allow_render_html: allowRenderHtml,
     header_groups: headerGroups = [],
     time_compare,
@@ -830,6 +831,12 @@ const transformProps = (
   });
 
   const startDateOffset = chartProps.rawFormData?.start_date_offset;
+  // Saved form data may hold a string (free-form select) or a stale value.
+  // Clamp to a non-negative integer so it can safely index column widths.
+  const freezeColumns = Math.max(
+    0,
+    Math.floor(Number(freezeColumnsValue) || 0),
+  );
   return {
     height,
     width,
@@ -864,6 +871,7 @@ const transformProps = (
     columnColorFormatters,
     timeGrain,
     allowRearrangeColumns,
+    freezeColumns,
     allowRenderHtml,
     onContextMenu,
     isUsingTimeComparison,

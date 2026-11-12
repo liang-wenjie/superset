@@ -22,6 +22,12 @@ import {
   TABLE_OUTER_BORDER_COLOR_VAR,
   TABLE_OUTER_BORDER_VAR,
 } from './utils/tableStyle';
+import {
+  FROZEN_BODY_Z_INDEX,
+  FROZEN_CELL_CLASS,
+  FROZEN_HEADER_Z_INDEX,
+  HAS_FROZEN_COLUMNS_CLASS,
+} from './DataTable/utils/freezeColumns';
 
 export default styled.div`
   ${({ theme }) => css`
@@ -183,10 +189,77 @@ export default styled.div`
       border-width: 0;
     }
 
+    /* With collapsed borders the browser paints ONE border layer for the whole
+       table. A sticky cell lifted above the scrolling columns therefore covers
+       the header rules, and its own border does not travel with it -- the
+       header lines vanish. Separate borders are painted by each cell, so they
+       stay attached to the pinned cell and remain visible. Scoped to charts
+       that actually have frozen columns so every other table is unchanged. */
+    .${TABLE_FRAME_CLASS}.${HAS_FROZEN_COLUMNS_CLASS} table {
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    /* Pinned cells paint above the default frame layer, which would otherwise
+       hide the outer border along the frozen edge. Lift the (transparent,
+       pointer-events: none) frame one level above them. */
+    .${TABLE_FRAME_CLASS}.${HAS_FROZEN_COLUMNS_CLASS}::after {
+      z-index: ${FROZEN_HEADER_Z_INDEX + 1};
+    }
+
     /* Bootstrap-like striped table styles */
     table.table-striped tbody tr:nth-of-type(odd) {
       background-color: ${theme.colorBgLayout};
     }
+
+    /* Frozen cells sit above the cells scrolling behind them, so they need an
+       opaque background. Body cells are emotion-styled (StyledCell), and a
+       conditional formatter writes its colour into that generated class.
+       :where() keeps this fallback below a single class selector so the
+       formatter still wins; striped/hover rules below are deliberately more
+       specific so they can override it. */
+    thead > tr > th.${FROZEN_CELL_CLASS},
+    tfoot > tr > td.${FROZEN_CELL_CLASS},
+    tfoot > tr > th.${FROZEN_CELL_CLASS} {
+      background-color: ${theme.colorBgBase};
+    }
+
+    tbody > tr > td:where(.${FROZEN_CELL_CLASS}) {
+      background-color: ${theme.colorBgBase};
+    }
+
+    /* Restate the layer from freezeColumns.ts with !important so no later
+       rule on a positioned cell can demote a frozen column and let a scrolled
+       column paint over it. Header/footer stay one level above body cells. */
+    tbody > tr > td.${FROZEN_CELL_CLASS} {
+      z-index: ${FROZEN_BODY_Z_INDEX} !important;
+    }
+
+    thead > tr > th.${FROZEN_CELL_CLASS},
+    tfoot > tr > th.${FROZEN_CELL_CLASS},
+    tfoot > tr > td.${FROZEN_CELL_CLASS} {
+      z-index: ${FROZEN_HEADER_Z_INDEX} !important;
+    }
+
+    .table-striped
+    tbody
+    > tr:nth-of-type(odd)
+    > td:where(.${FROZEN_CELL_CLASS}) {
+      background-color: ${theme.colorBgLayout};
+    }
+
+    /* Keep the cross-filter hover/active highlight on frozen cells; the
+       striped rule above would otherwise outrank the generic selectors. */
+    tbody tr td.${FROZEN_CELL_CLASS}.dt-is-filter:hover,
+    tbody tr td.${FROZEN_CELL_CLASS}.dt-is-active-filter,
+    tbody tr td.${FROZEN_CELL_CLASS}.dt-is-active-filter:hover {
+      background-color: ${theme.colorFillContentHover};
+    }
+
+    /* No override for the frozen-edge class: with separate borders every cell
+       paints its own border, so the boundary cell already keeps the configured
+       header/body line width while it sticks. Zeroing it out and drawing a
+       fixed 1px shadow here was what made the header rules disappear. */
 
     .dt-select-page-size .ant-select .ant-select-suffix {
       color: ${theme.colorTextQuaternary};

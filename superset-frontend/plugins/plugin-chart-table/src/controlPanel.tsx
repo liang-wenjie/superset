@@ -655,6 +655,31 @@ const config: ControlPanelConfig = {
         ],
         [
           {
+            name: 'freeze_columns',
+            config: {
+              type: 'SelectControl',
+              freeForm: true,
+              label: t('Frozen columns'),
+              renderTrigger: true,
+              clearable: false,
+              default: 0,
+              choices: Array.from(
+                { length: 11 },
+                (_, index): [number, string] => [
+                  index,
+                  index === 0 ? t('Do not freeze') : String(index),
+                ],
+              ),
+              description: t(
+                'Keep this many leftmost columns visible while scrolling horizontally. Requires sticky table headers.',
+              ),
+              validators: [withLabel(validateInteger, t('Frozen columns'))],
+            },
+          },
+          null,
+        ],
+        [
+          {
             name: 'allow_render_html',
             config: {
               type: 'CheckboxControl',

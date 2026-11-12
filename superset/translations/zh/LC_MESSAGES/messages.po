@@ -23230,3 +23230,15 @@ msgstr "布尔值"
 #: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
 msgid "Multi-value"
 msgstr "多值"
+
+#: superset-frontend/plugins/plugin-chart-table/src/controlPanel.tsx
+msgid "Frozen columns"
+msgstr "冻结列数"
+
+#: superset-frontend/plugins/plugin-chart-table/src/controlPanel.tsx
+msgid "Do not freeze"
+msgstr "不冻结"
+
+#: superset-frontend/plugins/plugin-chart-table/src/controlPanel.tsx
+msgid "Keep this many leftmost columns visible while scrolling horizontally. Requires sticky table headers."
+msgstr "横向滚动时保持左侧指定数量的列始终可见。需要启用表头固定（Sticky header）。"
