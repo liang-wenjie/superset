@@ -44,6 +44,7 @@ export type SharedColumnConfigProp =
   | 'visible'
   | 'customColumnName'
   | 'displayTypeIcon'
+  | 'displayType'
   | 'currencyFormat';
 
 const d3NumberFormat: ControlFormItemSpec<'Select'> = {
@@ -160,6 +161,27 @@ const displayTypeIcon: ControlFormItemSpec<'Checkbox'> = {
   debounceDelay: 200,
 };
 
+const displayType: ControlFormItemSpec<'Select'> = {
+  controlType: 'Select',
+  label: t('Display type'),
+  description: t(
+    'How this column is treated for formatting, alignment and sorting. Auto uses the type returned by the query, which reports a string for columns that currently have no data.',
+  ),
+  options: [
+    { value: 'auto', label: t('Auto (from data)') },
+    { value: 'numeric', label: t('Number') },
+    { value: 'string', label: t('Text') },
+    { value: 'temporal', label: t('Date / time') },
+    { value: 'boolean', label: t('Boolean') },
+    { value: 'multivalue', label: t('Multi-value') },
+  ],
+  allowNewOptions: false,
+  defaultValue: 'auto',
+  minWidth: '14em',
+  // Switching type changes which settings are available, so apply it at once.
+  debounceDelay: 0,
+};
+
 const truncateLongCells: ControlFormItemSpec<'Checkbox'> = {
   controlType: 'Checkbox',
   label: t('Truncate Cells'),
@@ -202,6 +224,7 @@ export const SHARED_COLUMN_CONFIG_PROPS = {
   columnWidth,
   customColumnName,
   displayTypeIcon,
+  displayType,
   truncateLongCells,
   horizontalAlign,
   showCellBars,

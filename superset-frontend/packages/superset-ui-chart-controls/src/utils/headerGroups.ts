@@ -18,6 +18,7 @@
  */
 
 import { t } from '@apache-superset/core/translation';
+import { GenericDataType } from '@apache-superset/core/common';
 import {
   ComparisonType,
   DTTM_ALIAS,
@@ -525,6 +526,40 @@ export function normalizeColumnConfigKeys<T>(
     }
   });
   return next;
+}
+
+/** Explicit display type overrides accepted in `column_config`. */
+export const DISPLAY_TYPE_TO_DATA_TYPE: Record<string, GenericDataType> = {
+  numeric: GenericDataType.Numeric,
+  string: GenericDataType.String,
+  temporal: GenericDataType.Temporal,
+  boolean: GenericDataType.Boolean,
+  multivalue: GenericDataType.MultiValue,
+};
+
+/**
+ * Resolve the data type a column should be treated as.
+ *
+ * The backend infers `coltypes` from the returned rows, so a column whose
+ * values are all NULL is reported as a string even when it is semantically
+ * numeric. A column-level `displayType` overrides that inference so the
+ * column keeps numeric formatting, alignment, sorting and column settings.
+ * `auto` (or an unrecognized value) falls back to the inferred type.
+ */
+export function resolveColumnDataType(
+  columnConfig: unknown,
+  inferred?: GenericDataType,
+): GenericDataType | undefined {
+  if (!columnConfig || typeof columnConfig !== 'object') {
+    return inferred;
+  }
+  const config = columnConfig as Record<string, unknown>;
+  // Chart props only camel-case top-level keys, so accept both spellings.
+  const override = config.displayType ?? config.display_type;
+  if (typeof override !== 'string') {
+    return inferred;
+  }
+  return DISPLAY_TYPE_TO_DATA_TYPE[override] ?? inferred;
 }
 
 export function headerGroupsHaveSameContent(

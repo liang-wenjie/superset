@@ -751,6 +751,19 @@ export interface ServerPaginationData {
   searchColumn?: string;
 }
 
+/**
+ * How a column is treated when rendering and configuring a table. `auto`
+ * keeps the data type inferred from the query result; the other values are
+ * explicit overrides stored in `column_config`.
+ */
+export type ColumnDisplayType =
+  | 'auto'
+  | 'numeric'
+  | 'string'
+  | 'temporal'
+  | 'boolean'
+  | 'multivalue';
+
 export type TableColumnConfig = {
   d3NumberFormat?: string;
   // Allow null to match JSON round-trips, where an unset value deserializes
@@ -767,6 +780,7 @@ export type TableColumnConfig = {
   visible?: boolean;
   customColumnName?: string;
   displayTypeIcon?: boolean;
+  displayType?: ColumnDisplayType | null;
 };
 
 export interface DataColumnMeta {

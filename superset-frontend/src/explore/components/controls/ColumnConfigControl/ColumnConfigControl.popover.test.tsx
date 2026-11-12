@@ -303,3 +303,54 @@ test('reads a legacy config stored under the alias and saves it by its raw colum
     }),
   );
 });
+
+test('adds a display type selector when the override is enabled', async () => {
+  renderControl({ enableDisplayTypeOverride: true });
+  await userEvent.click(screen.getByText('col_2'));
+
+  expect(await screen.findByText('Display type')).toBeInTheDocument();
+  expect(await findCheckbox('Truncate Cells')).toBeInTheDocument();
+});
+
+test('hides the display type selector when the override is disabled', async () => {
+  renderControl();
+  await userEvent.click(screen.getByText('col_2'));
+
+  expect(await findCheckbox('Truncate Cells')).toBeInTheDocument();
+  expect(screen.queryByText('Display type')).not.toBeInTheDocument();
+});
+
+test('treats an empty string column as numeric when its display type says so', async () => {
+  const { container } = renderControl({
+    enableDisplayTypeOverride: true,
+    columnsPropsObject: {
+      colnames: ['empty_metric', 'region'],
+      coltypes: [GenericDataType.String, GenericDataType.String],
+    },
+    value: { empty_metric: { displayType: 'numeric' } },
+  });
+
+  expect(
+    container.querySelector('[aria-label="numeric type icon"]'),
+  ).toBeInTheDocument();
+
+  await userEvent.click(screen.getByText('empty_metric'));
+  expect(await screen.findByText('Display type')).toBeInTheDocument();
+  const tabs = await screen.findAllByRole('tab');
+  expect(tabs.map(tab => tab.textContent)).toEqual([
+    'Column Settings',
+    'Number formatting',
+  ]);
+});
+
+test('auto keeps the query-inferred column type', async () => {
+  renderControl({
+    enableDisplayTypeOverride: true,
+    value: { col_2: { displayType: 'auto' } },
+  });
+  await userEvent.click(screen.getByText('col_2'));
+
+  expect(await screen.findByText('Display type')).toBeInTheDocument();
+  expect(await findCheckbox('Truncate Cells')).toBeInTheDocument();
+  expect(screen.queryAllByRole('tab')).toHaveLength(0);
+});

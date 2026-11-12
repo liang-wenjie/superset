@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { GenericDataType } from '@apache-superset/core/common';
 import { ComparisonType, DTTM_ALIAS, QueryMode } from '@superset-ui/core';
 import { COLUMN_NAME_ALIASES } from '../constants';
 import {
@@ -38,6 +39,7 @@ import {
   nestColDefsInHeaderGroups,
   normalizeColumnConfigKeys,
   getKnownColumnConfigKeys,
+  resolveColumnDataType,
   orderColumnsByHeaderGroups,
   orderHeaderGroupBlocks,
   parseHeaderGroupAnchor,
@@ -1671,4 +1673,55 @@ describe('header group anchors', () => {
       { kind: 'group', id: 'a' },
     ]);
   });
+});
+
+test('resolveColumnDataType falls back to the inferred type by default', () => {
+  expect(resolveColumnDataType(undefined, GenericDataType.String)).toBe(
+    GenericDataType.String,
+  );
+  expect(resolveColumnDataType({}, GenericDataType.Numeric)).toBe(
+    GenericDataType.Numeric,
+  );
+  expect(
+    resolveColumnDataType({ displayType: 'auto' }, GenericDataType.String),
+  ).toBe(GenericDataType.String);
+  expect(
+    resolveColumnDataType({ displayType: 'unknown' }, GenericDataType.String),
+  ).toBe(GenericDataType.String);
+});
+
+test('resolveColumnDataType honors an explicit display type override', () => {
+  expect(
+    resolveColumnDataType({ displayType: 'numeric' }, GenericDataType.String),
+  ).toBe(GenericDataType.Numeric);
+  expect(
+    resolveColumnDataType({ displayType: 'string' }, GenericDataType.Numeric),
+  ).toBe(GenericDataType.String);
+  expect(
+    resolveColumnDataType({ display_type: 'numeric' }, GenericDataType.String),
+  ).toBe(GenericDataType.Numeric);
+  expect(
+    resolveColumnDataType({ displayType: 'temporal' }, GenericDataType.String),
+  ).toBe(GenericDataType.Temporal);
+  expect(
+    resolveColumnDataType({ displayType: 'boolean' }, GenericDataType.String),
+  ).toBe(GenericDataType.Boolean);
+  expect(
+    resolveColumnDataType(
+      { displayType: 'multivalue' },
+      GenericDataType.String,
+    ),
+  ).toBe(GenericDataType.MultiValue);
+});
+
+test('resolveColumnDataType ignores malformed overrides', () => {
+  expect(resolveColumnDataType(null, GenericDataType.String)).toBe(
+    GenericDataType.String,
+  );
+  expect(
+    resolveColumnDataType({ displayType: null }, GenericDataType.String),
+  ).toBe(GenericDataType.String);
+  expect(
+    resolveColumnDataType({ displayType: 0 }, GenericDataType.String),
+  ).toBe(GenericDataType.String);
 });

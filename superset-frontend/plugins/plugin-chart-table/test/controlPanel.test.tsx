@@ -1132,3 +1132,9 @@ test('visual formatting exposes outer border and blank null value controls', () 
     expect(control?.renderTrigger).toBe(true);
   });
 });
+
+test('lets users override the display type of each column', () => {
+  expect(findNamedControl('column_config')).toEqual(
+    expect.objectContaining({ enableDisplayTypeOverride: true }),
+  );
+});

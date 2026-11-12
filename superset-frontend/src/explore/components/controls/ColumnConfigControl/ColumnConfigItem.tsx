@@ -93,6 +93,9 @@ export default memo(function ColumnConfigItem({
       title={column.name}
       content={() => (
         <ColumnConfigPopover
+          // Rebuild the form when the resolved type changes so controls pick
+          // up the defaults of the new layout (e.g. right-align for numbers).
+          key={column.type}
           column={column}
           onChange={onChange}
           configFormLayout={configFormLayout}

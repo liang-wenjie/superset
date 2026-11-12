@@ -706,6 +706,9 @@ const config: ControlPanelConfig = {
               width: 400,
               height: 320,
               renderTrigger: true,
+              // Query results report a string type for columns whose values are
+              // all NULL. Let users pin the display type per column instead.
+              enableDisplayTypeOverride: true,
               shouldMapStateToProps() {
                 return true;
               },

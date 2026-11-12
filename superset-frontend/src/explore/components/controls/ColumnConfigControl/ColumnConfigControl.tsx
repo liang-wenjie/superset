@@ -24,13 +24,17 @@ import {
   COLUMN_NAME_ALIASES,
   ControlComponentProps,
   normalizeColumnConfigKeys,
+  resolveColumnDataType,
 } from '@superset-ui/chart-controls';
 import { Icons } from '@superset-ui/core/components';
 import ColumnConfigItem from './ColumnConfigItem';
 import {
   ColumnConfigInfo,
   ColumnConfig,
+  ColumnConfigFormItem,
   ColumnConfigFormLayout,
+  isTabLayoutItem,
+  TabLayoutItem,
 } from './types';
 import { DEFAULT_CONFIG_FORM_LAYOUT } from './constants';
 import ControlHeader from '../../ControlHeader';
@@ -46,6 +50,8 @@ export type ColumnConfigControlProps<T extends ColumnConfig> =
     };
     configFormLayout?: ColumnConfigFormLayout;
     appliedColumnNames?: string[];
+    /** Let users override the query-inferred data type per column. */
+    enableDisplayTypeOverride?: boolean;
     width?: number | string;
     height?: number | string;
   };
@@ -54,6 +60,22 @@ export type ColumnConfigControlProps<T extends ColumnConfig> =
  * Max number of columns to show by default.
  */
 const MAX_NUM_COLS = 10;
+
+const DISPLAY_TYPE_ROW: ColumnConfigFormItem[] = ['displayType'];
+
+/** Put the display type selector on the first row/tab of a column layout. */
+function withDisplayTypeRow(
+  layout: ColumnConfigFormItem[][] | TabLayoutItem[],
+): ColumnConfigFormItem[][] | TabLayoutItem[] {
+  if (isTabLayoutItem(layout[0])) {
+    return (layout as TabLayoutItem[]).map((tab, index) =>
+      index === 0
+        ? { ...tab, children: [DISPLAY_TYPE_ROW, ...tab.children] }
+        : tab,
+    );
+  }
+  return [DISPLAY_TYPE_ROW, ...(layout as ColumnConfigFormItem[][])];
+}
 
 /**
  * Add per-column config to queried results.
@@ -64,6 +86,7 @@ export default function ColumnConfigControl<T extends ColumnConfig>({
   value,
   onChange,
   configFormLayout = DEFAULT_CONFIG_FORM_LAYOUT,
+  enableDisplayTypeOverride = false,
   width,
   height,
   ...props
@@ -97,13 +120,30 @@ export default function ColumnConfigControl<T extends ColumnConfig>({
     [colnames, columnConfigKnownKeys, value],
   );
 
+  const effectiveLayout = useMemo(
+    () =>
+      enableDisplayTypeOverride
+        ? (Object.fromEntries(
+            Object.entries(configFormLayout).map(([type, layout]) => [
+              type,
+              withDisplayTypeRow(layout),
+            ]),
+          ) as ColumnConfigFormLayout)
+        : configFormLayout,
+    [configFormLayout, enableDisplayTypeOverride],
+  );
+
   const columnConfigs = useMemo(() => {
     const configs: Record<string, ColumnConfigInfo> = {};
     colnames?.forEach((col, idx) => {
       configs[col] = {
         key: col,
         name: COLUMN_NAME_ALIASES[col] || col,
-        type: coltypes?.[idx],
+        // A user-selected display type wins over the query-inferred type,
+        // which is a string for columns that currently have no data.
+        type: enableDisplayTypeOverride
+          ? resolveColumnDataType(normalizedValue[col], coltypes?.[idx])
+          : coltypes?.[idx],
         config: normalizedValue[col] || {},
         isChildColumn: columnsPropsObject?.childColumnMap?.[col] ?? false,
         isTimeComparisonColumn:
@@ -111,7 +151,13 @@ export default function ColumnConfigControl<T extends ColumnConfig>({
       };
     });
     return configs;
-  }, [colnames, coltypes, columnsPropsObject?.childColumnMap, normalizedValue]);
+  }, [
+    colnames,
+    coltypes,
+    columnsPropsObject?.childColumnMap,
+    normalizedValue,
+    enableDisplayTypeOverride,
+  ]);
 
   const [showAllColumns, setShowAllColumns] = useState(false);
 
@@ -170,12 +216,12 @@ export default function ColumnConfigControl<T extends ColumnConfig>({
                           ['visible'],
                         ],
                       },
-                      ...(configFormLayout?.[
+                      ...(effectiveLayout?.[
                         col.type ?? GenericDataType.String
                       ] ?? []),
                     ],
                   } as ColumnConfigFormLayout)
-                : configFormLayout
+                : effectiveLayout
             }
             width={width}
             height={height}

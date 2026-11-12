@@ -46,6 +46,7 @@ import {
   ColorSchemeEnum,
   normalizeColumnConfigKeys,
   getKnownColumnConfigKeys,
+  resolveColumnDataType,
   resolveHeaderGroups,
 } from '@superset-ui/chart-controls';
 
@@ -253,8 +254,10 @@ const processColumns = memoizeOne(function processColumns(
         !(rawPercentMetricsSet.has(key) && !metricsSet.has(key)),
     )
     .map((key: string, i) => {
-      const dataType = coltypes[i];
       const config = normalizedColumnConfig[key] || {};
+      // A column with no data yet is reported as a string by the backend;
+      // an explicit display type keeps it numeric for formatting and sorting.
+      const dataType = resolveColumnDataType(config, coltypes[i]);
       // for the purpose of presentation, only numeric values are treated as metrics
       // because users can also add things like `MAX(str_col)` as a metric.
       const isFilterable = columnsByName.get(key)?.filterable;

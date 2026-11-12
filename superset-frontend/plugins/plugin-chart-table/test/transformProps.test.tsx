@@ -17,6 +17,7 @@
  * under the License.
  */
 import { ChartProps } from '@superset-ui/core';
+import { GenericDataType } from '@apache-superset/core/common';
 import { supersetTheme } from '@apache-superset/core/theme';
 import { render, screen } from '@superset-ui/core/spec';
 import { withChartDisplayLabels } from 'src/dashboard/util/withChartDisplayLabels';
@@ -311,4 +312,58 @@ test('renders null values as blank when the option is enabled', () => {
   // The cell keeps its null marker so conditional styling still applies.
   expect(cells[8].classList.contains('dt-is-null')).toBe(true);
   expect(screen.queryByText('N/A')).not.toBeInTheDocument();
+});
+
+const emptyNumericColumnProps = (displayType?: 'numeric' | 'auto') => ({
+  ...testData.basic,
+  queriesData: [
+    {
+      ...testData.basic.queriesData[0],
+      colnames: ['name', 'quarter_total'],
+      // The backend reports a string type because every value is NULL.
+      coltypes: [GenericDataType.String, GenericDataType.String],
+      data: [
+        { name: 'Q1', quarter_total: null },
+        { name: 'Q2', quarter_total: null },
+      ],
+    },
+  ],
+  rawFormData: {
+    ...testData.basic.rawFormData,
+    column_config: {
+      quarter_total: {
+        d3NumberFormat: ',.2f',
+        ...(displayType ? { displayType } : {}),
+      },
+    },
+  },
+});
+
+test('applies a numeric display type to a column that currently has no data', () => {
+  const transformed = transformProps(emptyNumericColumnProps('numeric'));
+  const column = transformed.columns.find(({ key }) => key === 'quarter_total');
+
+  expect(column?.dataType).toBe(GenericDataType.Numeric);
+  expect(column?.isNumeric).toBe(true);
+  const formatter = column?.formatter as (value: number) => string;
+  expect(formatter).toBeDefined();
+  expect(formatter(1234.5)).toBe('1,234.50');
+});
+
+test('keeps the query-inferred type when no display type is configured', () => {
+  const transformed = transformProps(emptyNumericColumnProps());
+  const column = transformed.columns.find(({ key }) => key === 'quarter_total');
+
+  expect(column?.dataType).toBe(GenericDataType.String);
+  expect(column?.isNumeric).toBe(false);
+  expect(column?.formatter).toBeUndefined();
+});
+
+test('auto display type keeps the query-inferred type', () => {
+  const transformed = transformProps(emptyNumericColumnProps('auto'));
+  const column = transformed.columns.find(({ key }) => key === 'quarter_total');
+
+  expect(column?.dataType).toBe(GenericDataType.String);
+  expect(column?.isNumeric).toBe(false);
+  expect(column?.formatter).toBeUndefined();
 });
