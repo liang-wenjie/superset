@@ -7111,6 +7111,10 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
         groupby = groupby or []
         rejected_adhoc_filters_columns: list[Union[str, ColumnTyping]] = []
         applied_adhoc_filters_columns: list[Union[str, ColumnTyping]] = []
+        # A ``valueTransform`` clause may name the filter's own field, which is
+        # not a column of this datasource. It still produced a predicate, so it
+        # must be reported as applied rather than "column not in datasource".
+        applied_value_transform_columns: list[str] = []
         db_engine_spec = self.db_engine_spec
         series_column_labels = [
             db_engine_spec.make_label_compatible(column)
@@ -7709,6 +7713,8 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
                         col_sql=col_sql,
                     )
                 )
+                if isinstance(flt_col, str):
+                    applied_value_transform_columns.append(flt_col)
                 continue
 
             if col_obj or sqla_col is not None:
@@ -8626,6 +8632,7 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             and not is_adhoc_column(col)
             and col not in self.column_names
             and col not in applied_template_filters
+            and col not in applied_value_transform_columns
         ] + rejected_adhoc_filters_columns
 
         applied_filter_columns = [
@@ -8633,7 +8640,11 @@ class ExploreMixin:  # pylint: disable=too-many-public-methods
             for col in filter_columns
             if col
             and not is_adhoc_column(col)
-            and (col in self.column_names or col in applied_template_filters)
+            and (
+                col in self.column_names
+                or col in applied_template_filters
+                or col in applied_value_transform_columns
+            )
         ] + applied_adhoc_filters_columns
 
         return SqlaQuery(

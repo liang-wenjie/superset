@@ -7217,6 +7217,10 @@ def test_value_transform_survives_an_unknown_clause_column(
     assert "WHERE" in sql
     assert "SUBSTRING(月份,1,4)" in sql
     assert "2026" in sql
+    # The clause's own column is not in this datasource, but the transform did
+    # reach the SQL, so the filter badge must read "applied" not "incompatible".
+    assert "年份" in transformed.applied_filter_columns
+    assert "年份" not in transformed.rejected_filter_columns
 
     # Reverse check: without a transform the unknown column stays a no-op.
     plain = table.get_sqla_query(
@@ -7227,6 +7231,8 @@ def test_value_transform_survives_an_unknown_clause_column(
         is_timeseries=False,
     )
     assert "SUBSTRING" not in str(plain.sqla_query)
+    assert "年份" in plain.rejected_filter_columns
+    assert "年份" not in plain.applied_filter_columns
 
 
 def test_values_for_column_transforms_with_unknown_clause_column(
