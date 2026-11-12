@@ -23202,3 +23202,31 @@ msgstr "带同比与环比的大数字"
 
 msgid "Showcases a single number along with period-over-period (MoM) and year-over-year (YoY) percentage changes."
 msgstr "展示单个数字及其环比（MoM）、同比（YoY）对比变化。"
+
+#: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
+msgid "Display type"
+msgstr "显示类型"
+
+#: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
+msgid "How this column is treated for formatting, alignment and sorting. Auto uses the type returned by the query, which reports a string for columns that currently have no data."
+msgstr "该列在数值格式化、对齐与排序时采用的类型。自动（默认）使用查询结果返回的类型；若该列暂时没有数据，查询会将其识别为字符串。"
+
+#: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
+msgid "Auto (from data)"
+msgstr "自动（按数据推断）"
+
+#: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
+msgid "Number"
+msgstr "数值"
+
+#: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
+msgid "Date / time"
+msgstr "日期 / 时间"
+
+#: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
+msgid "Boolean"
+msgstr "布尔值"
+
+#: superset-frontend/src/explore/components/controls/ColumnConfigControl/constants.tsx
+msgid "Multi-value"
+msgstr "多值"
