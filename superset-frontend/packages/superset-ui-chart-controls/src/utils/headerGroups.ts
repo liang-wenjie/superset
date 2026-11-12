@@ -41,15 +41,132 @@ export type HeaderGroupLabelAlign = 'left' | 'center' | 'right';
 
 export type HeaderGroupPlacement = 'left' | 'right';
 
+export type HeaderGroupAnchorSide = 'before' | 'after';
+
+/**
+ * Where a group's columns are inserted relative to the loose columns and the
+ * other groups at the same level. A column/group anchor also stores which side
+ * of that target the group goes on. `placement` is kept as the legacy
+ * left/right fallback for charts saved before anchors existed.
+ */
+export type HeaderGroupAnchor =
+  | { type: 'start' }
+  | { type: 'end' }
+  | { type: 'column'; key: string; side?: HeaderGroupAnchorSide }
+  | { type: 'group'; id: string; side?: HeaderGroupAnchorSide };
+
+export const HEADER_GROUP_ANCHOR_COLUMN_PREFIX = 'column:';
+export const HEADER_GROUP_ANCHOR_GROUP_PREFIX = 'group:';
+/** Editor value for "the whole table"; the side control picks its left/right. */
+export const HEADER_GROUP_ANCHOR_TABLE = 'table';
+
 export type HeaderGroupConfig = {
   id: string;
   label: string;
   columns: string[];
   labelAlign?: HeaderGroupLabelAlign;
   placement?: HeaderGroupPlacement;
+  anchor?: HeaderGroupAnchor;
   source?: 'time_compare';
   children?: HeaderGroupConfig[];
 };
+
+function isHeaderGroupAnchor(value: unknown): value is HeaderGroupAnchor {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const { type } = value as { type?: unknown };
+  if (type === 'start' || type === 'end') {
+    return true;
+  }
+  if (type === 'column') {
+    const { key } = value as { key?: unknown };
+    return typeof key === 'string' && key.length > 0;
+  }
+  if (type === 'group') {
+    const { id } = value as { id?: unknown };
+    return typeof id === 'string' && id.length > 0;
+  }
+  return false;
+}
+
+/** Anchors win over `placement`; old configs keep their original table side. */
+export function getHeaderGroupAnchor(
+  group: HeaderGroupConfig,
+): HeaderGroupAnchor {
+  if (isHeaderGroupAnchor(group.anchor)) {
+    return group.anchor;
+  }
+  return group.placement === 'left' ? { type: 'start' } : { type: 'end' };
+}
+
+/** Encode an anchor as a single string so it can drive a Select value. */
+export function encodeHeaderGroupAnchor(anchor: HeaderGroupAnchor): string {
+  switch (anchor.type) {
+    case 'column':
+      return `${HEADER_GROUP_ANCHOR_COLUMN_PREFIX}${anchor.key}`;
+    case 'group':
+      return `${HEADER_GROUP_ANCHOR_GROUP_PREFIX}${anchor.id}`;
+    default:
+      return anchor.type;
+  }
+}
+
+export function parseHeaderGroupAnchor(
+  value?: string | null,
+): HeaderGroupAnchor | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (value === 'start' || value === 'end') {
+    return { type: value };
+  }
+  if (value.startsWith(HEADER_GROUP_ANCHOR_COLUMN_PREFIX)) {
+    const key = value.slice(HEADER_GROUP_ANCHOR_COLUMN_PREFIX.length);
+    return key ? { type: 'column', key } : undefined;
+  }
+  if (value.startsWith(HEADER_GROUP_ANCHOR_GROUP_PREFIX)) {
+    const id = value.slice(HEADER_GROUP_ANCHOR_GROUP_PREFIX.length);
+    return id ? { type: 'group', id } : undefined;
+  }
+  return undefined;
+}
+
+/** The editor splits one anchor into a target Select and a side Radio. */
+export function getHeaderGroupAnchorTarget(group: HeaderGroupConfig): string {
+  const anchor = getHeaderGroupAnchor(group);
+  return anchor.type === 'start' || anchor.type === 'end'
+    ? HEADER_GROUP_ANCHOR_TABLE
+    : encodeHeaderGroupAnchor(anchor);
+}
+
+export function getHeaderGroupAnchorSide(
+  group: HeaderGroupConfig,
+): HeaderGroupAnchorSide {
+  const anchor = getHeaderGroupAnchor(group);
+  if (anchor.type === 'start') {
+    return 'before';
+  }
+  if (anchor.type === 'end') {
+    return 'after';
+  }
+  return anchor.side ?? 'after';
+}
+
+/** Rebuild an anchor from the two editor controls. */
+export function buildHeaderGroupAnchor(
+  target: string,
+  side: HeaderGroupAnchorSide,
+): HeaderGroupAnchor | undefined {
+  if (target === HEADER_GROUP_ANCHOR_TABLE) {
+    return side === 'before' ? { type: 'start' } : { type: 'end' };
+  }
+  const parsed = parseHeaderGroupAnchor(target);
+  if (!parsed || parsed.type === 'start' || parsed.type === 'end') {
+    return undefined;
+  }
+  return { ...parsed, side };
+}
 
 export type HeaderGroupCell = {
   key: string;
@@ -483,24 +600,173 @@ export function resolveHeaderGroups(
   );
 }
 
-function splitChildGroups(group: HeaderGroupConfig): {
-  left: HeaderGroupConfig[];
-  right: HeaderGroupConfig[];
-} {
-  const children = group.children ?? [];
-  return {
-    left: children.filter(child => child.placement === 'left'),
-    right: children.filter(child => child.placement !== 'left'),
-  };
+/** All column identifiers in a group's subtree, ignoring display order. */
+function collectGroupIdentifiers(group: HeaderGroupConfig): string[] {
+  return [
+    ...(group.columns ?? []),
+    ...(group.children ?? []).flatMap(collectGroupIdentifiers),
+  ];
 }
 
-export function collectHeaderGroupLeaves(group: HeaderGroupConfig): string[] {
-  const { left, right } = splitChildGroups(group);
-  return [
-    ...left.flatMap(collectHeaderGroupLeaves),
-    ...(group.columns ?? []),
-    ...right.flatMap(collectHeaderGroupLeaves),
-  ];
+export type HeaderGroupBlockToken =
+  | { kind: 'column'; key: string }
+  | { kind: 'group'; id: string };
+
+/**
+ * Arrange sibling groups around the loose columns at the same level.
+ *
+ * Anchors resolve incrementally: a group anchored to another group (or to a
+ * column owned by another group) waits until that group has been placed. A
+ * pass with no progress means the remaining anchors are cyclic or dangling,
+ * so they fall back to the legacy left/right placement. `after` only skips
+ * groups that share the exact same anchor (target + side), and `before`
+ * inserts just ahead of the target, so equal anchors stay together without
+ * dragging a group past unrelated blocks that happen to sit next to them.
+ */
+export function orderHeaderGroupBlocks(
+  looseColumns: string[],
+  groups: HeaderGroupConfig[],
+  visibleKeys: string[] = [],
+): HeaderGroupBlockToken[] {
+  const tokens: HeaderGroupBlockToken[] = looseColumns.map(key => ({
+    kind: 'column',
+    key,
+  }));
+  const ownerByKey = new Map<string, string>();
+  groups.forEach(group => {
+    collectGroupIdentifiers(group).forEach(identifier => {
+      [identifier, ...expandGroupColumnKey(identifier, visibleKeys)].forEach(
+        key => {
+          if (!ownerByKey.has(key)) {
+            ownerByKey.set(key, group.id);
+          }
+        },
+      );
+    });
+  });
+
+  // An `after` insertion may only step over groups that were placed by the
+  // very same anchor. Unrelated groups (for example several independent
+  // end-of-table groups) must stay between the anchor and this group.
+  const anchorKeyByToken = new Map<HeaderGroupBlockToken, string>();
+
+  type AnchorPosition = {
+    index: number;
+    side: HeaderGroupAnchorSide;
+    anchorKey: string;
+  };
+
+  const findAnchorPosition = (
+    group: HeaderGroupConfig,
+  ): AnchorPosition | undefined => {
+    const anchor = getHeaderGroupAnchor(group);
+    if (anchor.type === 'start') {
+      return { index: -1, side: 'after', anchorKey: 'start' };
+    }
+    if (anchor.type === 'end') {
+      return { index: tokens.length - 1, side: 'after', anchorKey: 'end' };
+    }
+    const side = anchor.side ?? 'after';
+    const anchorKey =
+      anchor.type === 'column'
+        ? `column:${anchor.key}:${side}`
+        : `group:${anchor.id}:${side}`;
+    if (anchor.type === 'group') {
+      const index = tokens.findIndex(
+        token => token.kind === 'group' && token.id === anchor.id,
+      );
+      return index < 0 ? undefined : { index, side, anchorKey };
+    }
+    const candidates = new Set([
+      anchor.key,
+      ...expandGroupColumnKey(anchor.key, visibleKeys),
+    ]);
+    const columnIndex = tokens.findIndex(
+      token => token.kind === 'column' && candidates.has(token.key),
+    );
+    if (columnIndex >= 0) {
+      return { index: columnIndex, side, anchorKey };
+    }
+    const ownerId = [...candidates]
+      .map(key => ownerByKey.get(key))
+      .find((id): id is string => Boolean(id));
+    if (ownerId) {
+      const groupIndex = tokens.findIndex(
+        token => token.kind === 'group' && token.id === ownerId,
+      );
+      if (groupIndex >= 0) {
+        return { index: groupIndex, side, anchorKey };
+      }
+    }
+    return undefined;
+  };
+
+  const insertAt = ({ index, side, anchorKey }: AnchorPosition, id: string) => {
+    const token: HeaderGroupBlockToken = { kind: 'group', id };
+    if (side === 'before') {
+      tokens.splice(index, 0, token);
+    } else {
+      let at = index + 1;
+      while (
+        at < tokens.length &&
+        tokens[at].kind === 'group' &&
+        anchorKeyByToken.get(tokens[at]) === anchorKey
+      ) {
+        at += 1;
+      }
+      tokens.splice(at, 0, token);
+    }
+    anchorKeyByToken.set(token, anchorKey);
+  };
+
+  let pending = [...groups];
+  while (pending.length > 0) {
+    const deferred: HeaderGroupConfig[] = [];
+    pending.forEach(group => {
+      const position = findAnchorPosition(group);
+      if (position === undefined) {
+        deferred.push(group);
+        return;
+      }
+      insertAt(position, group.id);
+    });
+    if (deferred.length === pending.length) {
+      deferred.forEach(group =>
+        insertAt(
+          {
+            index: group.placement === 'left' ? -1 : tokens.length - 1,
+            side: 'after',
+            anchorKey: group.placement === 'left' ? 'start' : 'end',
+          },
+          group.id,
+        ),
+      );
+      break;
+    }
+    pending = deferred;
+  }
+  return tokens;
+}
+
+export function collectHeaderGroupLeaves(
+  group: HeaderGroupConfig,
+  visibleKeys: string[] = [],
+): string[] {
+  const ownColumns = group.columns ?? [];
+  const children = group.children ?? [];
+  if (children.length === 0) {
+    return ownColumns;
+  }
+  const childrenById = new Map(children.map(child => [child.id, child]));
+  return orderHeaderGroupBlocks(ownColumns, children, visibleKeys).flatMap(
+    token => {
+      if (token.kind === 'column') {
+        return [token.key];
+      }
+      const child = childrenById.get(token.id);
+      return child ? collectHeaderGroupLeaves(child, visibleKeys) : [];
+    },
+  );
 }
 
 export function getHeaderGroupDepth(group: HeaderGroupConfig): number {
@@ -557,30 +823,34 @@ function collectGroupedColumns<T extends { key: string; metricName?: string }>(
   seen: Set<string>,
 ): T[] {
   const visibleKeys = columns.map(column => column.key);
-  return groups.flatMap(collectHeaderGroupLeaves).reduce<T[]>((acc, key) => {
-    const resolvedKeys = [
-      ...expandGroupColumnKey(key, visibleKeys),
-      ...columns
-        .filter(column => column.metricName === key && !seen.has(column.key))
-        .map(column => column.key),
-    ];
-    resolvedKeys.forEach(resolvedKey => {
-      const column = byKey.get(resolvedKey);
-      if (!column || seen.has(resolvedKey)) {
-        return;
-      }
-      seen.add(resolvedKey);
-      acc.push(column);
-    });
-    return acc;
-  }, []);
+  return groups
+    .flatMap(group => collectHeaderGroupLeaves(group, visibleKeys))
+    .reduce<T[]>((acc, key) => {
+      const resolvedKeys = [
+        ...expandGroupColumnKey(key, visibleKeys),
+        ...columns
+          .filter(column => column.metricName === key && !seen.has(column.key))
+          .map(column => column.key),
+      ];
+      resolvedKeys.forEach(resolvedKey => {
+        const column = byKey.get(resolvedKey);
+        if (!column || seen.has(resolvedKey)) {
+          return;
+        }
+        seen.add(resolvedKey);
+        acc.push(column);
+      });
+      return acc;
+    }, []);
 }
 
 export function orderColumnsByHeaderGroups<
   T extends { key: string; metricName?: string },
 >(columns: T[], groups: HeaderGroupConfig[]): T[] {
   const visibleKeys = columns.map(column => column.key);
-  const identifiers = groups.flatMap(collectHeaderGroupLeaves);
+  const identifiers = groups.flatMap(group =>
+    collectHeaderGroupLeaves(group, visibleKeys),
+  );
   const leafSet = new Set([
     ...identifiers.flatMap(key => expandGroupColumnKey(key, visibleKeys)),
     ...columns
@@ -590,13 +860,35 @@ export function orderColumnsByHeaderGroups<
       .map(column => column.key),
   ]);
   const byKey = new Map(columns.map(column => [column.key, column]));
-  const ungrouped = columns.filter(column => !leafSet.has(column.key));
+  const groupsById = new Map(groups.map(group => [group.id, group]));
+  const looseKeys = columns
+    .filter(column => !leafSet.has(column.key))
+    .map(column => column.key);
+  const tokens = orderHeaderGroupBlocks(looseKeys, groups, visibleKeys);
   const seen = new Set<string>();
-  const leftGroups = groups.filter(group => group.placement === 'left');
-  const rightGroups = groups.filter(group => group.placement !== 'left');
-  const leftGrouped = collectGroupedColumns(leftGroups, columns, byKey, seen);
-  const rightGrouped = collectGroupedColumns(rightGroups, columns, byKey, seen);
-  return [...leftGrouped, ...ungrouped, ...rightGrouped];
+  const ordered: T[] = [];
+  tokens.forEach(token => {
+    if (token.kind === 'column') {
+      const column = byKey.get(token.key);
+      if (column && !seen.has(column.key)) {
+        seen.add(column.key);
+        ordered.push(column);
+      }
+      return;
+    }
+    const group = groupsById.get(token.id);
+    if (group) {
+      ordered.push(...collectGroupedColumns([group], columns, byKey, seen));
+    }
+  });
+  // Every input column must survive, even if a stale anchor hid it.
+  columns.forEach(column => {
+    if (!seen.has(column.key)) {
+      seen.add(column.key);
+      ordered.push(column);
+    }
+  });
+  return ordered;
 }
 
 export function buildHeaderGroupRows(
@@ -769,23 +1061,26 @@ export function nestColDefsInHeaderGroups<
     group: HeaderGroupConfig,
   ): Record<string, unknown> | null => {
     const children: Array<C | Record<string, unknown>> = [];
-    const { left, right } = splitChildGroups(group);
-    left.forEach(child => {
-      const built = buildGroup(child);
-      if (built) {
-        children.push(built);
+    const childGroups = group.children ?? [];
+    const childrenById = new Map(childGroups.map(child => [child.id, child]));
+    orderHeaderGroupBlocks(
+      group.columns ?? [],
+      childGroups,
+      visibleKeys,
+    ).forEach(token => {
+      if (token.kind === 'column') {
+        columnsForIdentifier(token.key).forEach(column => {
+          used.add(column.key);
+          children.push(toColDef(column));
+        });
+        return;
       }
-    });
-    (group.columns ?? []).forEach(key => {
-      columnsForIdentifier(key).forEach(column => {
-        used.add(column.key);
-        children.push(toColDef(column));
-      });
-    });
-    right.forEach(child => {
-      const built = buildGroup(child);
-      if (built) {
-        children.push(built);
+      const child = childrenById.get(token.id);
+      if (child) {
+        const built = buildGroup(child);
+        if (built) {
+          children.push(built);
+        }
       }
     });
     if (children.length === 0) {
@@ -800,7 +1095,9 @@ export function nestColDefsInHeaderGroups<
     };
   };
 
-  const identifiers = groups.flatMap(collectHeaderGroupLeaves);
+  const identifiers = groups.flatMap(group =>
+    collectHeaderGroupLeaves(group, visibleKeys),
+  );
   const leafSet = new Set([
     ...identifiers.flatMap(key => expandGroupColumnKey(key, visibleKeys)),
     ...ordered
@@ -809,29 +1106,30 @@ export function nestColDefsInHeaderGroups<
       )
       .map(column => column.key),
   ]);
+  const orderedByKey = new Map(ordered.map(column => [column.key, column]));
+  const groupsById = new Map(groups.map(group => [group.id, group]));
+  const looseKeys = ordered
+    .filter(column => !leafSet.has(column.key))
+    .map(column => column.key);
+  const tokens = orderHeaderGroupBlocks(looseKeys, groups, visibleKeys);
   const result: Array<C | Record<string, unknown>> = [];
-  groups
-    .filter(group => group.placement === 'left')
-    .forEach(group => {
+  tokens.forEach(token => {
+    if (token.kind === 'column') {
+      const column = orderedByKey.get(token.key);
+      if (column && !used.has(column.key) && !leafSet.has(column.key)) {
+        used.add(column.key);
+        result.push(toColDef(column));
+      }
+      return;
+    }
+    const group = groupsById.get(token.id);
+    if (group) {
       const built = buildGroup(group);
       if (built) {
         result.push(built);
       }
-    });
-  ordered.forEach(column => {
-    if (!used.has(column.key) && !leafSet.has(column.key)) {
-      used.add(column.key);
-      result.push(toColDef(column));
     }
   });
-  groups
-    .filter(group => group.placement !== 'left')
-    .forEach(group => {
-      const built = buildGroup(group);
-      if (built) {
-        result.push(built);
-      }
-    });
   return result;
 }
 

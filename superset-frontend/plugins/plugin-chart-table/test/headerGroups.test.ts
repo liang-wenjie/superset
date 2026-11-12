@@ -299,3 +299,55 @@ test('hasRenderableHeaderGroups is false for empty and label-only groups', () =>
     ),
   ).toBe(false);
 });
+
+test('honors an anchor that inserts a group in the middle of the table', () => {
+  const columns = [
+    { key: 'country' },
+    { key: 'region' },
+    { key: 'SUM(sales)' },
+    { key: 'SUM(cost)' },
+  ];
+  const anchoredGroups: HeaderGroupConfig[] = [
+    {
+      id: 'sales',
+      label: 'Sales',
+      columns: ['SUM(sales)'],
+      anchor: { type: 'column', key: 'country' },
+    },
+    {
+      id: 'costs',
+      label: 'Costs',
+      columns: ['SUM(cost)'],
+      anchor: { type: 'group', id: 'sales' },
+    },
+  ];
+
+  const orderedKeys = orderColumnsByHeaderGroups(columns, anchoredGroups).map(
+    column => column.key,
+  );
+  expect(orderedKeys).toEqual(['country', 'SUM(sales)', 'SUM(cost)', 'region']);
+
+  const rows = buildHeaderGroupRows(anchoredGroups, orderedKeys);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].map(cell => cell.label)).toEqual(['', 'Sales', 'Costs', '']);
+});
+
+test('honors a before anchor when inserting a group', () => {
+  const columns = [
+    { key: 'country' },
+    { key: 'region' },
+    { key: 'SUM(sales)' },
+  ];
+  const anchoredGroups: HeaderGroupConfig[] = [
+    {
+      id: 'sales',
+      label: 'Sales',
+      columns: ['SUM(sales)'],
+      anchor: { type: 'column', key: 'region', side: 'before' },
+    },
+  ];
+
+  expect(
+    orderColumnsByHeaderGroups(columns, anchoredGroups).map(col => col.key),
+  ).toEqual(['country', 'SUM(sales)', 'region']);
+});

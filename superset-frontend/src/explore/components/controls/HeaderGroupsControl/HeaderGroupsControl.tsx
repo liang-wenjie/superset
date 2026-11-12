@@ -116,6 +116,7 @@ type SortableGroupRowProps = {
   group: HeaderGroupConfig;
   index: number;
   columnOptions: NonNullable<HeaderGroupsControlProps['columnOptions']>;
+  groups: HeaderGroupConfig[];
   usedColumns: Set<string>;
   onChange: (path: number[], next: HeaderGroupConfig) => void;
   onRemove: (path: number[]) => void;
@@ -125,6 +126,7 @@ function SortableGroupRow({
   group,
   index,
   columnOptions,
+  groups,
   usedColumns,
   onChange,
   onRemove,
@@ -167,6 +169,7 @@ function SortableGroupRow({
           mode="edit"
           group={group}
           path={[index]}
+          groups={groups}
           columnOptions={columnOptions}
           usedColumns={usedColumns}
           onChange={onChange}
@@ -267,6 +270,7 @@ export default function HeaderGroupsControl({
                 group={group}
                 index={index}
                 columnOptions={columnOptions}
+                groups={groups}
                 usedColumns={usedColumns}
                 onChange={handleGroupChange}
                 onRemove={handleRemove}
@@ -277,6 +281,7 @@ export default function HeaderGroupsControl({
         <HeaderGroupEditor
           mode="add"
           path={[groups.length]}
+          groups={groups}
           columnOptions={columnOptions}
           usedColumns={usedColumns}
           onSave={handleAddGroup}

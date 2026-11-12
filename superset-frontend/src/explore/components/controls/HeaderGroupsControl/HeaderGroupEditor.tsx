@@ -19,14 +19,22 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { t } from '@apache-superset/core/translation';
 import { css, styled } from '@apache-superset/core/theme';
-import { Button, Input, Popover } from '@superset-ui/core/components';
+import {
+  buildHeaderGroupAnchor,
+  encodeHeaderGroupAnchor,
+  getHeaderGroupAnchor,
+  getHeaderGroupAnchorSide,
+  getHeaderGroupAnchorTarget,
+  HEADER_GROUP_ANCHOR_TABLE,
+} from '@superset-ui/chart-controls';
+import { Button, Input, Popover, Select } from '@superset-ui/core/components';
 import { Radio } from '@superset-ui/core/components/Radio';
 import { Icons } from '@superset-ui/core/components/Icons';
 import {
+  HeaderGroupAnchorSide,
   HeaderGroupColumnOption,
   HeaderGroupConfig,
   HeaderGroupLabelAlign,
-  HeaderGroupPlacement,
   MAX_HEADER_GROUP_DEPTH,
 } from './types';
 import {
@@ -34,6 +42,7 @@ import {
   collectUsedHeaderGroupColumns,
   createHeaderGroup,
   moveHeaderGroupAt,
+  normalizeSelectedColumns,
   removeHeaderGroupAt,
   updateHeaderGroupAt,
 } from './utils';
@@ -42,6 +51,8 @@ import GroupColumnSorter from './GroupColumnSorter';
 export type HeaderGroupEditorProps = {
   group?: HeaderGroupConfig;
   path: number[];
+  /** All top-level groups, so a group can be anchored after a sibling. */
+  groups?: HeaderGroupConfig[];
   columnOptions: HeaderGroupColumnOption[];
   usedColumns: Set<string>;
   onChange?: (path: number[], next: HeaderGroupConfig) => void;
@@ -50,6 +61,12 @@ export type HeaderGroupEditorProps = {
   onSave?: (group: HeaderGroupConfig) => void;
   mode?: 'add' | 'edit';
   children?: ReactNode;
+};
+
+export type HeaderGroupAnchorOption = { label: string; value: string };
+export type HeaderGroupAnchorOptionGroup = {
+  label: string;
+  options: HeaderGroupAnchorOption[];
 };
 
 const FormStack = styled.div`
@@ -76,12 +93,27 @@ const InlineFields = styled.div`
     align-items: flex-start;
     gap: ${theme.sizeUnit * 3}px;
 
+    & > * {
+      min-width: 0;
+    }
+
     & > *:first-of-type {
       flex: 1.4 1 auto;
     }
 
     & > *:last-of-type {
       flex: 1 1 auto;
+    }
+  `}
+`;
+
+const AnchorSelectWrapper = styled.div`
+  ${({ theme }) => css`
+    min-width: 0;
+    font-size: ${theme.fontSizeSM}px;
+
+    .ant-select {
+      width: 100%;
     }
   `}
 `;
@@ -191,10 +223,90 @@ const LABEL_ALIGN_OPTIONS: { label: string; value: HeaderGroupLabelAlign }[] = [
   { label: t('Right'), value: 'right' },
 ];
 
-const PLACEMENT_OPTIONS: { label: string; value: HeaderGroupPlacement }[] = [
-  { label: t('Left'), value: 'left' },
-  { label: t('Right'), value: 'right' },
+/** All column identifiers claimed by a group and its nested subgroups. */
+function collectSubtreeColumns(group: HeaderGroupConfig): string[] {
+  return [
+    ...(group.columns ?? []),
+    ...(group.children ?? []).flatMap(collectSubtreeColumns),
+  ];
+}
+
+function getGroupAtPath(
+  groups: HeaderGroupConfig[],
+  path: number[],
+): HeaderGroupConfig | undefined {
+  let level = groups;
+  let current: HeaderGroupConfig | undefined;
+  path.forEach(index => {
+    current = level[index];
+    level = current?.children ?? [];
+  });
+  return current;
+}
+
+const ANCHOR_SIDE_OPTIONS: {
+  label: string;
+  value: HeaderGroupAnchorSide;
+}[] = [
+  { label: t('Before'), value: 'before' },
+  { label: t('After'), value: 'after' },
 ];
+
+/** The first control only picks a target (whole table, a column, or a group).
+ * Labels stay plain so the list reads like the chart itself; the separate
+ * side control decides which side of that target the group lands on.
+ * Options are scoped to the current level: a subgroup can only anchor to a
+ * sibling group or to a column that lives under its own parent.
+ * Columns already owned by a group in this scope are addressed through the
+ * Groups section instead, so they are not offered twice as column targets.
+ * The one exception is a column that is the currently saved anchor: keeping
+ * it visible avoids silently resetting an existing chart's insert position. */
+export function buildHeaderGroupAnchorTargetOptions({
+  scope,
+  candidateGroups,
+  columnOptions,
+  groupedColumnKeys = new Set<string>(),
+  pinnedColumnKeys = new Set<string>(),
+}: {
+  scope: 'table' | 'group';
+  candidateGroups: HeaderGroupConfig[];
+  columnOptions: HeaderGroupColumnOption[];
+  groupedColumnKeys?: Set<string>;
+  pinnedColumnKeys?: Set<string>;
+}): HeaderGroupAnchorOptionGroup[] {
+  const isTable = scope === 'table';
+  return [
+    {
+      label: t('Position'),
+      options: [
+        {
+          label: isTable ? t('Whole table') : t('Whole group'),
+          value: HEADER_GROUP_ANCHOR_TABLE,
+        },
+      ],
+    },
+    {
+      label: t('Columns'),
+      options: columnOptions
+        .filter(
+          option =>
+            !groupedColumnKeys.has(option.value) ||
+            pinnedColumnKeys.has(option.value),
+        )
+        .map(option => ({
+          label: option.label,
+          value: encodeHeaderGroupAnchor({ type: 'column', key: option.value }),
+        })),
+    },
+    {
+      label: t('Groups'),
+      options: candidateGroups.map(group => ({
+        label: group.label?.trim() || t('Untitled group'),
+        value: encodeHeaderGroupAnchor({ type: 'group', id: group.id }),
+      })),
+    },
+  ].filter(section => section.options.length > 0);
+}
 
 export function getGroupTitle(path: number[]): string {
   const numberedPath = path.map(index => index + 1).join('.');
@@ -226,6 +338,7 @@ function HeaderGroupForm({
   settingsCollapsed: settingsCollapsedProp,
   onToggleSettings,
   showNameError = false,
+  anchorOptionsForPath,
 }: {
   group: HeaderGroupConfig;
   path: number[];
@@ -241,7 +354,41 @@ function HeaderGroupForm({
   settingsCollapsed?: boolean;
   onToggleSettings?: () => void;
   showNameError?: boolean;
+  anchorOptionsForPath: (
+    path: number[],
+    pinnedColumnKey?: string,
+  ) => HeaderGroupAnchorOptionGroup[];
 }) {
+  const activeAnchor = getHeaderGroupAnchor(group);
+  const anchorOptions = anchorOptionsForPath(
+    path,
+    activeAnchor.type === 'column' ? activeAnchor.key : undefined,
+  );
+  const anchorTarget = getHeaderGroupAnchorTarget(group);
+  const availableTargets = new Set(
+    anchorOptions.flatMap(section =>
+      section.options.map(option => option.value),
+    ),
+  );
+  const hasValidTarget = availableTargets.has(anchorTarget);
+  const selectedTarget = hasValidTarget
+    ? anchorTarget
+    : HEADER_GROUP_ANCHOR_TABLE;
+  const selectedSide = hasValidTarget
+    ? getHeaderGroupAnchorSide(group)
+    : group.placement === 'left'
+      ? 'before'
+      : 'after';
+  const applyAnchor = (target: string, side: HeaderGroupAnchorSide) => {
+    const anchor = buildHeaderGroupAnchor(target, side);
+    if (anchor) {
+      onChange(path, {
+        ...group,
+        anchor,
+        placement: side === 'before' ? 'left' : 'right',
+      });
+    }
+  };
   const [localCollapsed, setLocalCollapsed] = useState(false);
   const [nameTouched, setNameTouched] = useState(false);
   const hadNameOnOpen = useRef(Boolean(group.label?.trim()));
@@ -253,7 +400,6 @@ function HeaderGroupForm({
       ? t('Name is required')
       : undefined;
   const isTimeCompareGroup = group.source === 'time_compare';
-  const isTopLevel = path.length === 1;
   const hasSubgroups = (group.children ?? []).length > 0;
   const canCollapse = showRemove || hasSubgroups;
   const isCollapseControlled = settingsCollapsedProp !== undefined;
@@ -329,46 +475,61 @@ function HeaderGroupForm({
               onChange={columns => onChange(path, { ...group, columns })}
             />
           </FieldRow>
+          <FieldRow>
+            <FieldLabel>{t('Label position')}</FieldLabel>
+            <CompactRadioGroup>
+              <Radio.Group
+                size="small"
+                optionType="button"
+                value={group.labelAlign ?? 'center'}
+                onChange={event =>
+                  onChange(path, {
+                    ...group,
+                    labelAlign: event.target.value as HeaderGroupLabelAlign,
+                  })
+                }
+              >
+                {LABEL_ALIGN_OPTIONS.map(option => (
+                  <Radio.Button key={option.value} value={option.value}>
+                    {option.label}
+                  </Radio.Button>
+                ))}
+              </Radio.Group>
+            </CompactRadioGroup>
+          </FieldRow>
           <InlineFields>
             <FieldRow>
-              <FieldLabel>{t('Label position')}</FieldLabel>
-              <CompactRadioGroup>
-                <Radio.Group
-                  size="small"
-                  optionType="button"
-                  value={group.labelAlign ?? 'center'}
-                  onChange={event =>
-                    onChange(path, {
-                      ...group,
-                      labelAlign: event.target.value as HeaderGroupLabelAlign,
-                    })
-                  }
-                >
-                  {LABEL_ALIGN_OPTIONS.map(option => (
-                    <Radio.Button key={option.value} value={option.value}>
-                      {option.label}
-                    </Radio.Button>
-                  ))}
-                </Radio.Group>
-              </CompactRadioGroup>
+              <FieldLabel>{t('Insert near')}</FieldLabel>
+              <AnchorSelectWrapper>
+                <Select
+                  ariaLabel={t('Insert near')}
+                  value={selectedTarget}
+                  options={anchorOptions}
+                  showSearch
+                  allowClear={false}
+                  placeholder={t('Select a column or group')}
+                  onChange={selected => {
+                    const [raw] = normalizeSelectedColumns([selected]);
+                    applyAnchor(raw, selectedSide);
+                  }}
+                />
+              </AnchorSelectWrapper>
             </FieldRow>
             <FieldRow>
-              <FieldLabel>
-                {isTopLevel ? t('Table side') : t('Position')}
-              </FieldLabel>
+              <FieldLabel>{t('Side')}</FieldLabel>
               <CompactRadioGroup>
                 <Radio.Group
                   size="small"
                   optionType="button"
-                  value={group.placement ?? 'right'}
+                  value={selectedSide}
                   onChange={event =>
-                    onChange(path, {
-                      ...group,
-                      placement: event.target.value as HeaderGroupPlacement,
-                    })
+                    applyAnchor(
+                      selectedTarget,
+                      event.target.value as HeaderGroupAnchorSide,
+                    )
                   }
                 >
-                  {PLACEMENT_OPTIONS.map(option => (
+                  {ANCHOR_SIDE_OPTIONS.map(option => (
                     <Radio.Button key={option.value} value={option.value}>
                       {option.label}
                     </Radio.Button>
@@ -395,6 +556,7 @@ function HeaderGroupForm({
                 showRemove
                 siblingCount={(group.children ?? []).length}
                 showNameError={showNameError}
+                anchorOptionsForPath={anchorOptionsForPath}
               />
             </NestedCard>
           ))}
@@ -430,6 +592,7 @@ export default function HeaderGroupEditor({
   children,
   group,
   path,
+  groups = [],
   columnOptions,
   usedColumns,
   onChange,
@@ -456,6 +619,45 @@ export default function HeaderGroupEditor({
 
   const toDraftPath = (nextPath: number[]) =>
     isAddMode ? nextPath : [0, ...nextPath.slice(path.length)];
+
+  const anchorOptionsForPath = (
+    nextPath: number[],
+    pinnedColumnKey?: string,
+  ): HeaderGroupAnchorOptionGroup[] => {
+    const draftPath = toDraftPath(nextPath);
+    const self = getGroupAtPath([draft], draftPath);
+    const parent = getGroupAtPath([draft], draftPath.slice(0, -1));
+    const isTableScope = draftPath.length === 1;
+    const siblings = isTableScope ? groups : (parent?.children ?? []);
+    const candidateGroups = siblings.filter(item => item.id !== self?.id);
+    const scopedKeys = isTableScope
+      ? undefined
+      : new Set([
+          ...(parent?.columns ?? []),
+          ...candidateGroups.flatMap(collectSubtreeColumns),
+        ]);
+    // At the top level a grouped column already has its group name in the
+    // list, so only loose columns need a column target. Inside a parent group
+    // the parent's own columns are still the only way to anchor between two
+    // columns; drop the columns claimed by sibling subgroups instead.
+    const groupedColumnKeys = new Set(
+      collectUsedHeaderGroupColumns(
+        isTableScope
+          ? [...candidateGroups, ...(self ? [self] : [])]
+          : (parent?.children ?? []),
+        columnOptions,
+      ),
+    );
+    return buildHeaderGroupAnchorTargetOptions({
+      scope: isTableScope ? 'table' : 'group',
+      candidateGroups,
+      columnOptions: scopedKeys
+        ? columnOptions.filter(option => scopedKeys.has(option.value))
+        : columnOptions,
+      groupedColumnKeys,
+      pinnedColumnKeys: new Set(pinnedColumnKey ? [pinnedColumnKey] : []),
+    });
+  };
 
   const handleOpenChange = (open: boolean) => {
     setVisible(open);
@@ -551,6 +753,7 @@ export default function HeaderGroupEditor({
           onApply={isAddMode ? handleApply : undefined}
           showNameError={!isAddMode}
           settingsCollapsed={settingsCollapsed}
+          anchorOptionsForPath={anchorOptionsForPath}
         />
       }
     >

@@ -27,7 +27,9 @@ import {
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import HeaderGroupsControl from './HeaderGroupsControl';
-import HeaderGroupEditor from './HeaderGroupEditor';
+import HeaderGroupEditor, {
+  buildHeaderGroupAnchorTargetOptions,
+} from './HeaderGroupEditor';
 import { HeaderGroupConfig } from './types';
 import * as headerGroupUtils from './utils';
 
@@ -116,6 +118,28 @@ const createGroup = (
   ...overrides,
 });
 
+async function openAnchorDropdownFrom(container: HTMLElement) {
+  await userEvent.click(
+    within(container).getByRole('combobox', { name: 'Insert near' }),
+  );
+  return waitFor(() => {
+    const node = Array.from(document.querySelectorAll('.ant-select-dropdown'))
+      .find(item => !item.classList.contains('ant-select-dropdown-hidden'))
+      ?.querySelector('.ant-select-dropdown-list') as HTMLElement | undefined;
+    expect(node).toBeTruthy();
+    return node!;
+  });
+}
+
+async function openAnchorDropdown() {
+  return openAnchorDropdownFrom(document.body);
+}
+
+async function selectAnchorTarget(label: string) {
+  const dropdown = await openAnchorDropdown();
+  await userEvent.click(within(dropdown).getByText(label));
+}
+
 async function selectNestedGroupColumn(option: string) {
   const childEditor = screen
     .getByText('Subgroup 1.1')
@@ -195,7 +219,7 @@ test('opens the add popover immediately without creating a group', async () => {
   await userEvent.click(screen.getByText('Add group'));
 
   expect(screen.getByLabelText('Group name')).toBeInTheDocument();
-  expect(screen.getByText('Table side')).toBeInTheDocument();
+  expect(screen.getByText('Insert near')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Apply' })).toBeInTheDocument();
   expect(onChange).not.toHaveBeenCalled();
 });
@@ -285,7 +309,7 @@ test('renders existing groups with their names and edits them in a popover', asy
 
   expect(screen.getByDisplayValue('Sales')).toBeInTheDocument();
   expect(screen.getByText('Label position')).toBeInTheDocument();
-  expect(screen.getByText('Table side')).toBeInTheDocument();
+  expect(screen.getByText('Insert near')).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole('button', { name: /Add subgroup/ }));
 
@@ -345,12 +369,12 @@ test('collapses group settings with an icon when a subgroup exists', async () =>
   expect(collapseParent).toBeInTheDocument();
   expect(screen.queryByText('Hide settings')).not.toBeInTheDocument();
   expect(screen.getByDisplayValue('Sales')).toBeInTheDocument();
-  expect(screen.getByText('Table side')).toBeInTheDocument();
+  expect(screen.getAllByText('Insert near')).toHaveLength(2);
 
   await userEvent.click(collapseParent);
 
   expect(screen.queryByDisplayValue('Sales')).not.toBeInTheDocument();
-  expect(screen.queryByText('Table side')).not.toBeInTheDocument();
+  expect(screen.getAllByText('Insert near')).toHaveLength(1);
   expect(screen.getAllByLabelText('Group name')).toHaveLength(1);
   expect(screen.getByText('Subgroup 1.1')).toBeInTheDocument();
   expect(
@@ -360,7 +384,7 @@ test('collapses group settings with an icon when a subgroup exists', async () =>
   await userEvent.click(screen.getByLabelText('Expand settings'));
 
   expect(screen.getByDisplayValue('Sales')).toBeInTheDocument();
-  expect(screen.getByText('Table side')).toBeInTheDocument();
+  expect(screen.getAllByText('Insert near')).toHaveLength(2);
 });
 
 test('collapses a nested subgroup with an icon only', async () => {
@@ -385,7 +409,7 @@ test('collapses a nested subgroup with an icon only', async () => {
   await userEvent.click(screen.getAllByLabelText('Collapse settings')[1]);
 
   expect(screen.queryByDisplayValue('Online')).not.toBeInTheDocument();
-  expect(screen.queryByText('Position')).not.toBeInTheDocument();
+  expect(screen.getAllByText('Insert near')).toHaveLength(1);
   expect(screen.getByText('Subgroup 1.1')).toBeInTheDocument();
   expect(screen.getByDisplayValue('Sales')).toBeInTheDocument();
 });
@@ -696,7 +720,7 @@ test('does not persist an empty name or last column while editing', async () => 
   expect(screen.getByLabelText('Group name')).toHaveValue('Revenue');
 });
 
-test('edits name, columns, alignment, and placement from the popover', async () => {
+test('edits name, columns, alignment, and anchor from the popover', async () => {
   const onChange = jest.fn();
   render(
     <HeaderGroupsControl
@@ -713,9 +737,9 @@ test('edits name, columns, alignment, and placement from the popover', async () 
   });
 
   await selectOption('AVG(sales)', 'Group columns');
-  const leftRadios = screen.getAllByRole('radio', { name: 'Left' });
-  await userEvent.click(leftRadios[0].closest('label') ?? leftRadios[0]);
-  await userEvent.click(leftRadios[1].closest('label') ?? leftRadios[1]);
+  const leftRadio = screen.getByRole('radio', { name: 'Left' });
+  await userEvent.click(leftRadio.closest('label') ?? leftRadio);
+  await selectAnchorTarget('SUM(cost)');
 
   const payloads = onChange.mock.calls.map(
     ([next]) => next as HeaderGroupConfig[],
@@ -727,7 +751,14 @@ test('edits name, columns, alignment, and placement from the popover', async () 
     payloads.some(groups => groups[0].columns.includes('AVG(sales)')),
   ).toBe(true);
   expect(payloads.some(groups => groups[0].labelAlign === 'left')).toBe(true);
-  expect(payloads.some(groups => groups[0].placement === 'left')).toBe(true);
+  expect(
+    payloads.some(
+      groups =>
+        groups[0].anchor?.type === 'column' &&
+        groups[0].anchor.key === 'SUM(cost)',
+    ),
+  ).toBe(true);
+  expect(payloads.some(groups => groups[0].placement === 'right')).toBe(true);
 });
 
 test('removes a group from the list', async () => {
@@ -1101,4 +1132,295 @@ test('adds several columns picked in one pass in the picker order', async () => 
         groups[0].columns.join('|') === 'SUM(sales)|AVG(sales)|SUM(cost)',
     ),
   ).toBe(true);
+});
+
+test('offers plain column and group names as anchor targets', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup({ id: 'a', label: 'Sales' })]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Add group'));
+  const dropdown = await openAnchorDropdown();
+
+  expect(within(dropdown).getByText('Whole table')).toBeInTheDocument();
+  expect(within(dropdown).getByText('SUM(cost)')).toBeInTheDocument();
+  expect(within(dropdown).getByText('Sales')).toBeInTheDocument();
+  expect(
+    within(dropdown).queryByText('After column SUM(cost)'),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dropdown).queryByText('After group Sales'),
+  ).not.toBeInTheDocument();
+});
+
+test('filters grouped column targets but pins the saved anchor column', () => {
+  const columnLabels = (
+    sections: ReturnType<typeof buildHeaderGroupAnchorTargetOptions>,
+  ) =>
+    (sections.find(section => section.label === 'Columns')?.options ?? []).map(
+      option => option.label,
+    );
+  const options = {
+    scope: 'table' as const,
+    candidateGroups: [createGroup({ id: 'a', label: 'Sales' })],
+    columnOptions,
+  };
+  const grouped = {
+    ...options,
+    groupedColumnKeys: new Set(['SUM(sales)']),
+  };
+
+  expect(columnLabels(buildHeaderGroupAnchorTargetOptions(options))).toEqual([
+    'SUM(sales)',
+    'AVG(sales)',
+    'SUM(cost)',
+  ]);
+  expect(columnLabels(buildHeaderGroupAnchorTargetOptions(grouped))).toEqual([
+    'AVG(sales)',
+    'SUM(cost)',
+  ]);
+  expect(
+    columnLabels(
+      buildHeaderGroupAnchorTargetOptions({
+        ...grouped,
+        pinnedColumnKeys: new Set(['SUM(sales)']),
+      }),
+    ),
+  ).toEqual(['SUM(sales)', 'AVG(sales)', 'SUM(cost)']);
+});
+
+test('omits columns already assigned to a group from anchor targets', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({ id: 'a', label: 'Sales', columns: ['SUM(sales)'] }),
+      ]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Add group'));
+  const dropdown = await openAnchorDropdown();
+
+  expect(within(dropdown).getByText('AVG(sales)')).toBeInTheDocument();
+  expect(within(dropdown).getByText('SUM(cost)')).toBeInTheDocument();
+  expect(within(dropdown).getByText('Sales')).toBeInTheDocument();
+  expect(within(dropdown).queryByText('SUM(sales)')).not.toBeInTheDocument();
+});
+
+test('keeps a saved column anchor visible when that column is grouped', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({ id: 'a', label: 'Sales', columns: ['SUM(sales)'] }),
+        createGroup({
+          id: 'b',
+          label: 'Cost',
+          columns: ['SUM(cost)'],
+          anchor: { type: 'column', key: 'SUM(sales)', side: 'after' },
+        }),
+      ]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Cost'));
+
+  expect(
+    screen
+      .getByRole('combobox', { name: 'Insert near' })
+      .closest('.ant-select'),
+  ).toHaveTextContent('SUM(sales)');
+  expect(screen.getByRole('radio', { name: 'After' })).toBeChecked();
+
+  const dropdown = await openAnchorDropdown();
+  expect(within(dropdown).getByText('SUM(sales)')).toBeInTheDocument();
+  expect(within(dropdown).queryByText('SUM(cost)')).not.toBeInTheDocument();
+});
+
+test('keeps parent columns but drops sibling group columns as subgroup anchors', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({
+          id: 'parent',
+          label: 'All metrics',
+          columns: ['SUM(sales)', 'AVG(sales)'],
+          children: [
+            createGroup({
+              id: 'child-a',
+              label: 'Child A',
+              columns: ['SUM(cost)'],
+            }),
+            createGroup({ id: 'child-b', label: 'Child B', columns: [] }),
+          ],
+        }),
+      ]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('All metrics'));
+  const childEditor = screen
+    .getByText('Subgroup 1.2')
+    .closest('[data-test="header-group-editor"]') as HTMLElement;
+  const dropdown = await openAnchorDropdownFrom(childEditor);
+
+  expect(within(dropdown).getByText('Whole group')).toBeInTheDocument();
+  expect(within(dropdown).getByText('SUM(sales)')).toBeInTheDocument();
+  expect(within(dropdown).getByText('AVG(sales)')).toBeInTheDocument();
+  expect(within(dropdown).getByText('Child A')).toBeInTheDocument();
+  expect(within(dropdown).queryByText('SUM(cost)')).not.toBeInTheDocument();
+});
+
+test('does not offer the group being edited as its own anchor', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({ id: 'a', label: 'Sales' }),
+        createGroup({ id: 'b', label: 'Cost', columns: ['SUM(cost)'] }),
+      ]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Cost'));
+  const dropdown = await openAnchorDropdown();
+
+  expect(within(dropdown).getByText('Sales')).toBeInTheDocument();
+  expect(within(dropdown).queryByText('Cost')).not.toBeInTheDocument();
+});
+
+test('stores a group target with the selected side', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({ id: 'a', label: 'Sales' }),
+        createGroup({ id: 'b', label: 'Cost', columns: ['SUM(cost)'] }),
+      ]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Cost'));
+  await selectAnchorTarget('Sales');
+
+  const payloads = onChange.mock.calls.map(
+    ([next]) => next as HeaderGroupConfig[],
+  );
+  expect(
+    payloads.some(
+      groups =>
+        groups[1].anchor?.type === 'group' &&
+        groups[1].anchor.id === 'a' &&
+        groups[1].anchor.side === 'after',
+    ),
+  ).toBe(true);
+});
+
+test('switches an anchor to the left side of its target', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({
+          anchor: { type: 'column', key: 'SUM(cost)', side: 'after' },
+        }),
+      ]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+  const beforeRadio = screen.getByRole('radio', { name: 'Before' });
+  await userEvent.click(beforeRadio.closest('label') ?? beforeRadio);
+
+  const payloads = onChange.mock.calls.map(
+    ([next]) => next as HeaderGroupConfig[],
+  );
+  expect(
+    payloads.some(
+      groups =>
+        groups[0].anchor?.type === 'column' &&
+        groups[0].anchor.key === 'SUM(cost)' &&
+        groups[0].anchor.side === 'before',
+    ),
+  ).toBe(true);
+});
+
+test('picking before on the whole table writes a start anchor', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup()]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+  const beforeRadio = screen.getByRole('radio', { name: 'Before' });
+  await userEvent.click(beforeRadio.closest('label') ?? beforeRadio);
+
+  const payloads = onChange.mock.calls.map(
+    ([next]) => next as HeaderGroupConfig[],
+  );
+  expect(payloads.some(groups => groups[0].anchor?.type === 'start')).toBe(
+    true,
+  );
+  expect(payloads.some(groups => groups[0].placement === 'left')).toBe(true);
+});
+
+test('shows the saved target and side as the selected insert position', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup({ anchor: { type: 'column', key: 'SUM(cost)' } })]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+
+  expect(
+    screen
+      .getByRole('combobox', { name: 'Insert near' })
+      .closest('.ant-select'),
+  ).toHaveTextContent('SUM(cost)');
+  expect(screen.getByRole('radio', { name: 'After' })).toBeChecked();
+});
+
+test('falls back to the legacy table side when an anchor is stale', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({
+          placement: 'left',
+          anchor: { type: 'group', id: 'deleted' },
+        }),
+      ]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+
+  expect(
+    screen
+      .getByRole('combobox', { name: 'Insert near' })
+      .closest('.ant-select'),
+  ).toHaveTextContent('Whole table');
+  expect(screen.getByRole('radio', { name: 'Before' })).toBeChecked();
 });

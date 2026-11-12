@@ -19,9 +19,16 @@
 import { ComparisonType, DTTM_ALIAS, QueryMode } from '@superset-ui/core';
 import { COLUMN_NAME_ALIASES } from '../constants';
 import {
+  buildHeaderGroupAnchor,
   buildHeaderGroupRows,
   buildTimeComparisonHeaderGroups,
+  collectHeaderGroupLeaves,
+  encodeHeaderGroupAnchor,
+  getHeaderGroupAnchorSide,
+  getHeaderGroupAnchorTarget,
+  HEADER_GROUP_ANCHOR_TABLE,
   expandGroupColumnKey,
+  getHeaderGroupAnchor,
   getHeaderGroupDepth,
   getHeaderGroupsControlProps,
   getHeaderGroupsMaxDepth,
@@ -31,6 +38,9 @@ import {
   nestColDefsInHeaderGroups,
   normalizeColumnConfigKeys,
   getKnownColumnConfigKeys,
+  orderColumnsByHeaderGroups,
+  orderHeaderGroupBlocks,
+  parseHeaderGroupAnchor,
   resolveHeaderGroups,
   syncTimeComparisonGroups,
   toStoredTimeComparisonColumnKey,
@@ -1236,4 +1246,429 @@ test('getHeaderGroupsControlProps reads query_mode and comparison_type from cont
       source: 'time_compare',
     }),
   ]);
+});
+
+describe('header group anchors', () => {
+  const anchorColumns = [
+    { key: 'region' },
+    { key: 'quarter' },
+    { key: 'revenue' },
+    { key: 'profit' },
+    { key: 'cost' },
+  ];
+  const keys = (groups: HeaderGroupConfig[]) =>
+    orderColumnsByHeaderGroups(anchorColumns, groups).map(column => column.key);
+
+  test('getHeaderGroupAnchor prefers an anchor over the legacy placement', () => {
+    expect(getHeaderGroupAnchor({ id: 'a', label: 'A', columns: [] })).toEqual({
+      type: 'end',
+    });
+    expect(
+      getHeaderGroupAnchor({
+        id: 'a',
+        label: 'A',
+        columns: [],
+        placement: 'left',
+      }),
+    ).toEqual({ type: 'start' });
+    expect(
+      getHeaderGroupAnchor({
+        id: 'a',
+        label: 'A',
+        columns: [],
+        placement: 'left',
+        anchor: { type: 'column', key: 'region' },
+      }),
+    ).toEqual({ type: 'column', key: 'region' });
+  });
+
+  test('anchor encoding round-trips keys and ids containing colons', () => {
+    const anchors = [
+      { type: 'start' } as const,
+      { type: 'end' } as const,
+      { type: 'column', key: 'SUM(a:b)' } as const,
+      { type: 'group', id: 'group:1' } as const,
+    ];
+    anchors.forEach(anchor => {
+      expect(parseHeaderGroupAnchor(encodeHeaderGroupAnchor(anchor))).toEqual(
+        anchor,
+      );
+    });
+    expect(parseHeaderGroupAnchor('column:')).toBeUndefined();
+    expect(parseHeaderGroupAnchor('group:')).toBeUndefined();
+    expect(parseHeaderGroupAnchor('unknown')).toBeUndefined();
+    expect(parseHeaderGroupAnchor(undefined)).toBeUndefined();
+  });
+
+  test('splits an anchor into a target and a side for the editor', () => {
+    const legacyLeft: HeaderGroupConfig = {
+      id: 'a',
+      label: 'A',
+      columns: [],
+      placement: 'left',
+    };
+    expect(getHeaderGroupAnchorTarget(legacyLeft)).toBe(
+      HEADER_GROUP_ANCHOR_TABLE,
+    );
+    expect(getHeaderGroupAnchorSide(legacyLeft)).toBe('before');
+    expect(
+      getHeaderGroupAnchorSide({ ...legacyLeft, placement: 'right' }),
+    ).toBe('after');
+
+    const beforeColumn: HeaderGroupConfig = {
+      id: 'a',
+      label: 'A',
+      columns: [],
+      anchor: { type: 'column', key: 'region', side: 'before' },
+    };
+    expect(getHeaderGroupAnchorTarget(beforeColumn)).toBe('column:region');
+    expect(getHeaderGroupAnchorSide(beforeColumn)).toBe('before');
+    expect(
+      getHeaderGroupAnchorSide({
+        ...beforeColumn,
+        anchor: { type: 'group', id: 'b' },
+      }),
+    ).toBe('after');
+
+    expect(buildHeaderGroupAnchor('column:region', 'before')).toEqual({
+      type: 'column',
+      key: 'region',
+      side: 'before',
+    });
+    expect(buildHeaderGroupAnchor('group:b', 'after')).toEqual({
+      type: 'group',
+      id: 'b',
+      side: 'after',
+    });
+    expect(buildHeaderGroupAnchor(HEADER_GROUP_ANCHOR_TABLE, 'before')).toEqual(
+      {
+        type: 'start',
+      },
+    );
+    expect(buildHeaderGroupAnchor(HEADER_GROUP_ANCHOR_TABLE, 'after')).toEqual({
+      type: 'end',
+    });
+    expect(buildHeaderGroupAnchor('unknown', 'after')).toBeUndefined();
+    expect(buildHeaderGroupAnchor('start', 'after')).toBeUndefined();
+  });
+
+  test('keeps the legacy left/right layout when no anchor is present', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue'],
+          placement: 'left',
+        },
+        { id: 'costs', label: 'Costs', columns: ['cost'] },
+      ]),
+    ).toEqual(['revenue', 'region', 'quarter', 'profit', 'cost']);
+  });
+
+  test('inserts a group immediately after a chosen column', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue', 'profit'],
+          anchor: { type: 'column', key: 'region' },
+        },
+        { id: 'costs', label: 'Costs', columns: ['cost'] },
+      ]),
+    ).toEqual(['region', 'revenue', 'profit', 'quarter', 'cost']);
+  });
+
+  test('keeps equal anchors in their saved order', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue'],
+          anchor: { type: 'column', key: 'region' },
+        },
+        {
+          id: 'costs',
+          label: 'Costs',
+          columns: ['cost'],
+          anchor: { type: 'column', key: 'region' },
+        },
+      ]),
+    ).toEqual(['region', 'revenue', 'cost', 'quarter', 'profit']);
+  });
+
+  test('inserts a group before a chosen column', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue'],
+          anchor: { type: 'column', key: 'region', side: 'before' },
+        },
+        { id: 'costs', label: 'Costs', columns: ['cost'] },
+      ]),
+    ).toEqual(['revenue', 'region', 'quarter', 'profit', 'cost']);
+  });
+
+  test('keeps equal before-anchors in their saved order', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue'],
+          anchor: { type: 'column', key: 'quarter', side: 'before' },
+        },
+        {
+          id: 'costs',
+          label: 'Costs',
+          columns: ['cost'],
+          anchor: { type: 'column', key: 'quarter', side: 'before' },
+        },
+      ]),
+    ).toEqual(['region', 'revenue', 'cost', 'quarter', 'profit']);
+  });
+
+  test('places a group on the left side of another group', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue'],
+          anchor: { type: 'column', key: 'region' },
+        },
+        {
+          id: 'costs',
+          label: 'Costs',
+          columns: ['cost'],
+          anchor: { type: 'group', id: 'sales', side: 'before' },
+        },
+      ]),
+    ).toEqual(['region', 'cost', 'revenue', 'quarter', 'profit']);
+  });
+
+  test('chains groups anchored after another group', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue'],
+          anchor: { type: 'column', key: 'region' },
+        },
+        {
+          id: 'costs',
+          label: 'Costs',
+          columns: ['cost'],
+          anchor: { type: 'group', id: 'sales' },
+        },
+        {
+          id: 'margin',
+          label: 'Margin',
+          columns: ['profit'],
+          anchor: { type: 'group', id: 'costs' },
+        },
+      ]),
+    ).toEqual(['region', 'revenue', 'cost', 'profit', 'quarter']);
+  });
+
+  test('resolves a column anchor onto the group that owns that column', () => {
+    expect(
+      keys([
+        { id: 'sales', label: 'Sales', columns: ['revenue'] },
+        {
+          id: 'costs',
+          label: 'Costs',
+          columns: ['cost'],
+          anchor: { type: 'column', key: 'revenue' },
+        },
+      ]),
+    ).toEqual(['region', 'quarter', 'profit', 'revenue', 'cost']);
+  });
+
+  test('falls back to the legacy side when the anchor target is gone', () => {
+    expect(
+      keys([
+        {
+          id: 'sales',
+          label: 'Sales',
+          columns: ['revenue'],
+          placement: 'left',
+          anchor: { type: 'group', id: 'deleted' },
+        },
+      ]),
+    ).toEqual(['revenue', 'region', 'quarter', 'profit', 'cost']);
+  });
+
+  test('breaks cyclic group anchors without losing any column', () => {
+    expect(
+      keys([
+        {
+          id: 'a',
+          label: 'A',
+          columns: ['revenue'],
+          anchor: { type: 'group', id: 'b' },
+        },
+        {
+          id: 'b',
+          label: 'B',
+          columns: ['cost'],
+          anchor: { type: 'group', id: 'a' },
+        },
+      ]),
+    ).toEqual(['region', 'quarter', 'profit', 'revenue', 'cost']);
+  });
+
+  test('applies anchors to nested subgroups relative to parent columns', () => {
+    const parent: HeaderGroupConfig = {
+      id: 'parent',
+      label: 'Parent',
+      columns: ['revenue', 'profit'],
+      children: [
+        {
+          id: 'child',
+          label: 'Child',
+          columns: ['cost'],
+          anchor: { type: 'column', key: 'revenue' },
+        },
+      ],
+    };
+    expect(collectHeaderGroupLeaves(parent, ['cost'])).toEqual([
+      'revenue',
+      'cost',
+      'profit',
+    ]);
+    expect(keys([parent])).toEqual([
+      'region',
+      'quarter',
+      'revenue',
+      'cost',
+      'profit',
+    ]);
+  });
+
+  test('buildHeaderGroupRows spans a group inserted in the middle', () => {
+    const group: HeaderGroupConfig = {
+      id: 'sales',
+      label: 'Sales',
+      columns: ['revenue'],
+      anchor: { type: 'column', key: 'region' },
+    };
+    const rows = buildHeaderGroupRows([group], keys([group]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].map(cell => cell.label)).toEqual(['', 'Sales', '', '', '']);
+  });
+
+  test('nestColDefsInHeaderGroups uses the same anchored order', () => {
+    const group: HeaderGroupConfig = {
+      id: 'sales',
+      label: 'Sales',
+      columns: ['revenue'],
+      anchor: { type: 'column', key: 'region' },
+    };
+    const nested = nestColDefsInHeaderGroups(
+      anchorColumns,
+      [group],
+      column => ({ field: column.key }),
+    );
+    expect(
+      nested.map(item =>
+        'field' in item
+          ? item.field
+          : (item as { headerName: string }).headerName,
+      ),
+    ).toEqual(['region', 'Sales', 'quarter', 'profit', 'cost']);
+  });
+
+  test('nestColDefsInHeaderGroups honors a before anchor too', () => {
+    const group: HeaderGroupConfig = {
+      id: 'sales',
+      label: 'Sales',
+      columns: ['revenue'],
+      anchor: { type: 'column', key: 'quarter', side: 'before' },
+    };
+    const nested = nestColDefsInHeaderGroups(
+      anchorColumns,
+      [group],
+      column => ({ field: column.key }),
+    );
+    expect(
+      nested.map(item =>
+        'field' in item
+          ? item.field
+          : (item as { headerName: string }).headerName,
+      ),
+    ).toEqual(['region', 'Sales', 'quarter', 'profit', 'cost']);
+  });
+
+  test('does not skip unrelated groups sitting after the anchor', () => {
+    // Regression for a saved chart where "Months" was anchored after
+    // "Ratios" but landed at the very end of the table: several independent
+    // end-of-table groups sat between the anchor and the end of the token
+    // list, and the insertion used to step over all of them.
+    const columns = [
+      { key: 'seq' },
+      { key: 'ratio_a' },
+      { key: 'ratio_b' },
+      { key: 'annual' },
+      { key: 'quarter' },
+      { key: 'm1' },
+      { key: 'm2' },
+    ];
+    const chartGroups: HeaderGroupConfig[] = [
+      {
+        id: 'months',
+        label: 'Months',
+        columns: ['m1', 'm2'],
+        placement: 'right',
+        anchor: { type: 'group', id: 'ratios', side: 'after' },
+      },
+      {
+        id: 'annual',
+        label: 'Annual',
+        columns: ['annual'],
+        placement: 'right',
+      },
+      {
+        id: 'ratios',
+        label: 'Ratios',
+        columns: ['ratio_a', 'ratio_b'],
+        placement: 'left',
+        anchor: { type: 'group', id: 'annual', side: 'before' },
+      },
+      {
+        id: 'quarter',
+        label: 'Quarter',
+        columns: ['quarter'],
+        placement: 'right',
+      },
+    ];
+    expect(
+      orderColumnsByHeaderGroups(columns, chartGroups).map(col => col.key),
+    ).toEqual(['seq', 'ratio_a', 'ratio_b', 'm1', 'm2', 'annual', 'quarter']);
+  });
+
+  test('orderHeaderGroupBlocks never drops a loose column', () => {
+    expect(
+      orderHeaderGroupBlocks(
+        ['region', 'quarter'],
+        [
+          {
+            id: 'a',
+            label: 'A',
+            columns: [],
+            anchor: { type: 'column', key: 'missing' },
+          },
+        ],
+      ),
+    ).toEqual([
+      { kind: 'column', key: 'region' },
+      { kind: 'column', key: 'quarter' },
+      { kind: 'group', id: 'a' },
+    ]);
+  });
 });

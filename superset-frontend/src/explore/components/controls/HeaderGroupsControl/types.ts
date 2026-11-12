@@ -18,6 +18,8 @@
  */
 import { ControlComponentProps } from 'src/explore/components/Control';
 import type {
+  HeaderGroupAnchor,
+  HeaderGroupAnchorSide,
   HeaderGroupConfig,
   HeaderGroupLabelAlign,
   HeaderGroupPlacement,
@@ -25,7 +27,13 @@ import type {
 
 export const MAX_HEADER_GROUP_DEPTH = 3;
 
-export type { HeaderGroupConfig, HeaderGroupLabelAlign, HeaderGroupPlacement };
+export type {
+  HeaderGroupAnchor,
+  HeaderGroupAnchorSide,
+  HeaderGroupConfig,
+  HeaderGroupLabelAlign,
+  HeaderGroupPlacement,
+};
 
 export type HeaderGroupColumnOption = {
   value: string;

@@ -1243,3 +1243,73 @@ test('valueGetter handles missing node or rowIndex gracefully', () => {
   expect(serverGetter({})).toBe(2 * 5 + 1);
   expect(serverGetter({ node: {} })).toBe(11);
 });
+
+test('places anchored header groups between loose columns', () => {
+  const columns = [
+    makeColumn({ key: 'region', label: 'Region' }),
+    makeColumn({ key: 'quarter', label: 'Quarter' }),
+    makeColumn({ key: 'revenue', label: 'Revenue' }),
+  ];
+  const { result } = renderHook(
+    () =>
+      useColDefs({
+        ...defaultProps,
+        columns,
+        data: [{ region: 'APAC', quarter: 'Q1', revenue: 10 }],
+        headerGroups: [
+          {
+            id: 'sales',
+            label: 'Sales',
+            columns: ['revenue'],
+            anchor: { type: 'column', key: 'region' },
+          },
+        ],
+      }),
+    { wrapper: defaultThemeWrapper },
+  );
+
+  const colDefs = result.current as Array<{
+    field?: string;
+    headerName?: string;
+  }>;
+  expect(colDefs.map(def => def.field ?? def.headerName)).toEqual([
+    'region',
+    'Sales',
+    'quarter',
+  ]);
+});
+
+test('places a header group before its anchor column', () => {
+  const columns = [
+    makeColumn({ key: 'region', label: 'Region' }),
+    makeColumn({ key: 'quarter', label: 'Quarter' }),
+    makeColumn({ key: 'revenue', label: 'Revenue' }),
+  ];
+  const { result } = renderHook(
+    () =>
+      useColDefs({
+        ...defaultProps,
+        columns,
+        data: [{ region: 'APAC', quarter: 'Q1', revenue: 10 }],
+        headerGroups: [
+          {
+            id: 'sales',
+            label: 'Sales',
+            columns: ['revenue'],
+            anchor: { type: 'column', key: 'quarter', side: 'before' },
+          },
+        ],
+      }),
+    { wrapper: defaultThemeWrapper },
+  );
+
+  const colDefs = result.current as Array<{
+    field?: string;
+    headerName?: string;
+  }>;
+  expect(colDefs.map(def => def.field ?? def.headerName)).toEqual([
+    'region',
+    'Sales',
+    'quarter',
+  ]);
+});
