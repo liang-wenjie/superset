@@ -38,6 +38,7 @@ import {
   useAutoRefreshContext,
 } from 'src/dashboard/contexts/AutoRefreshContext';
 import Chart from './Chart';
+import getFormDataWithExtraFilters from 'src/dashboard/util/charts/getFormDataWithExtraFilters';
 import {
   DashboardDatasetsContext,
   type DashboardDatasetsContextValue,
@@ -62,6 +63,17 @@ jest.mock('../../InlineFilters', () => ({
     return <div data-test="inline-filter-bar" />;
   },
 }));
+
+jest.mock('src/dashboard/util/charts/getFormDataWithExtraFilters', () => {
+  const actual = jest.requireActual(
+    'src/dashboard/util/charts/getFormDataWithExtraFilters',
+  );
+  return {
+    __esModule: true,
+    ...actual,
+    default: jest.fn(actual.default),
+  };
+});
 
 const props = {
   id: queryId,
@@ -194,6 +206,16 @@ beforeAll(() => {
 
 afterEach(() => {
   jest.clearAllMocks();
+});
+
+test('passes the layout holder id even for a single-instance chart', () => {
+  // Per-holder (``instanceIds``) filter targets must resolve for charts that
+  // appear only once on the dashboard; otherwise their ``valueTransform`` is
+  // never injected and the filter silently does nothing.
+  setup();
+  expect(getFormDataWithExtraFilters).toHaveBeenCalledWith(
+    expect.objectContaining({ instanceId: props.componentId }),
+  );
 });
 
 const kpiSizingState = (

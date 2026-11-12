@@ -559,7 +559,11 @@ const Chart = (props: ChartProps) => {
       colorScheme,
       colorNamespace,
       sliceId: props.id,
-      instanceId: instanceCount > 1 ? props.componentId : undefined,
+      // A per-holder (``instanceIds``) filter target has to resolve even when
+      // the slice appears only once on this dashboard. The holder id is always
+      // meaningful: gating it on duplicate holders silently dropped
+      // ``valueTransform`` mappings for single-instance charts.
+      instanceId: props.componentId,
       nativeFilters,
       allSliceIds,
       dataMask,
