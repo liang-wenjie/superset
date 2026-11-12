@@ -237,6 +237,11 @@ export default function HeaderGroupsControl({
       }
       const fromIndex = groups.findIndex(group => group.id === active.id);
       const toIndex = groups.findIndex(group => group.id === over.id);
+      // The column editor nests its own DndContext inside this one. A drag
+      // started there can bubble up with column ids, which are not groups.
+      if (fromIndex < 0 || toIndex < 0) {
+        return;
+      }
       onChange?.(moveHeaderGroup(groups, fromIndex, toIndex));
     },
     [groups, onChange],

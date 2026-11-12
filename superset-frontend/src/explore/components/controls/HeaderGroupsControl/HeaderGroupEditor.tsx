@@ -19,7 +19,7 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { t } from '@apache-superset/core/translation';
 import { css, styled } from '@apache-superset/core/theme';
-import { Button, Input, Popover, Select } from '@superset-ui/core/components';
+import { Button, Input, Popover } from '@superset-ui/core/components';
 import { Radio } from '@superset-ui/core/components/Radio';
 import { Icons } from '@superset-ui/core/components/Icons';
 import {
@@ -33,11 +33,11 @@ import {
   canSaveHeaderGroup,
   collectUsedHeaderGroupColumns,
   createHeaderGroup,
-  normalizeSelectedColumns,
   moveHeaderGroupAt,
   removeHeaderGroupAt,
   updateHeaderGroupAt,
 } from './utils';
+import GroupColumnSorter from './GroupColumnSorter';
 
 export type HeaderGroupEditorProps = {
   group?: HeaderGroupConfig;
@@ -242,11 +242,6 @@ function HeaderGroupForm({
   onToggleSettings?: () => void;
   showNameError?: boolean;
 }) {
-  const availableOptions = columnOptions.filter(
-    option =>
-      (group.columns ?? []).includes(option.value) ||
-      !usedColumns.has(option.value),
-  );
   const [localCollapsed, setLocalCollapsed] = useState(false);
   const [nameTouched, setNameTouched] = useState(false);
   const hadNameOnOpen = useRef(Boolean(group.label?.trim()));
@@ -326,22 +321,12 @@ function HeaderGroupForm({
           </FieldRow>
           <FieldRow>
             <FieldLabel>{t('Columns')}</FieldLabel>
-            <Select
-              ariaLabel={t('Group columns')}
-              mode="multiple"
-              allowClear={!isTimeCompareGroup}
-              showSearch={!isTimeCompareGroup}
+            <GroupColumnSorter
+              columns={group.columns ?? []}
+              columnOptions={columnOptions}
+              usedColumns={usedColumns}
               disabled={isTimeCompareGroup}
-              value={group.columns ?? []}
-              options={availableOptions}
-              placeholder={t('Select columns')}
-              maxTagCount={3}
-              onChange={columns => {
-                onChange(path, {
-                  ...group,
-                  columns: normalizeSelectedColumns(columns),
-                });
-              }}
+              onChange={columns => onChange(path, { ...group, columns })}
             />
           </FieldRow>
           <InlineFields>

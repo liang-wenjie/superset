@@ -37,37 +37,64 @@ jest.mock('@dnd-kit/core', () => {
     ...actual,
     DndContext: ({
       children,
+      id,
       onDragEnd,
     }: {
       children: ReactNode;
+      id?: string;
       onDragEnd?: (event: {
         active: { id: string };
         over: { id: string } | null;
       }) => void;
-    }) => (
-      <div>
-        <button
-          type="button"
-          aria-label="Simulate drag to another group"
-          onClick={() =>
-            onDragEnd?.({ active: { id: 'a' }, over: { id: 'b' } })
-          }
-        />
-        <button
-          type="button"
-          aria-label="Simulate drag onto the same group"
-          onClick={() =>
-            onDragEnd?.({ active: { id: 'a' }, over: { id: 'a' } })
-          }
-        />
-        <button
-          type="button"
-          aria-label="Simulate drag with no drop target"
-          onClick={() => onDragEnd?.({ active: { id: 'a' }, over: null })}
-        />
-        {children}
-      </div>
-    ),
+    }) =>
+      id === 'header-group-columns' ? (
+        <div>
+          <button
+            type="button"
+            aria-label="Simulate column drag"
+            onClick={() =>
+              onDragEnd?.({
+                active: { id: 'SUM(sales)' },
+                over: { id: 'AVG(sales)' },
+              })
+            }
+          />
+          <button
+            type="button"
+            aria-label="Simulate column drag onto itself"
+            onClick={() =>
+              onDragEnd?.({
+                active: { id: 'SUM(sales)' },
+                over: { id: 'SUM(sales)' },
+              })
+            }
+          />
+          {children}
+        </div>
+      ) : (
+        <div>
+          <button
+            type="button"
+            aria-label="Simulate drag to another group"
+            onClick={() =>
+              onDragEnd?.({ active: { id: 'a' }, over: { id: 'b' } })
+            }
+          />
+          <button
+            type="button"
+            aria-label="Simulate drag onto the same group"
+            onClick={() =>
+              onDragEnd?.({ active: { id: 'a' }, over: { id: 'a' } })
+            }
+          />
+          <button
+            type="button"
+            aria-label="Simulate drag with no drop target"
+            onClick={() => onDragEnd?.({ active: { id: 'a' }, over: null })}
+          />
+          {children}
+        </div>
+      ),
   };
 });
 
@@ -541,6 +568,11 @@ test('locks columns on automatically created time comparison groups', async () =
       .closest('.ant-select'),
   ).toHaveClass('ant-select-disabled');
   expect(screen.getByLabelText('Group name')).toBeDisabled();
+  const editor = screen.getByTestId('header-group-editor');
+  expect(within(editor).getAllByLabelText('Drag to reorder')[0]).toBeDisabled();
+  expect(
+    within(editor).getAllByRole('button', { name: /Remove column/ })[0],
+  ).toBeDisabled();
   expect(
     screen.queryByRole('button', { name: /Add subgroup/ }),
   ).not.toBeInTheDocument();
@@ -655,11 +687,11 @@ test('does not persist an empty name or last column while editing', async () => 
   ]);
 
   onChange.mockClear();
-  const columnTagRemove = screen
-    .getByTestId('header-group-editor')
-    .querySelector('.ant-select-selection-item-remove');
-  expect(columnTagRemove).toBeTruthy();
-  await userEvent.click(columnTagRemove as HTMLElement);
+  const removeLastColumn = within(
+    screen.getByTestId('header-group-editor'),
+  ).getByRole('button', { name: 'Remove column SUM(sales)' });
+  expect(removeLastColumn).toBeDisabled();
+  await userEvent.click(removeLastColumn);
   expect(onChange).not.toHaveBeenCalled();
   expect(screen.getByLabelText('Group name')).toHaveValue('Revenue');
 });
@@ -931,4 +963,142 @@ test('removes stale columns that are no longer available', () => {
     undefined,
     { programmatic: true },
   );
+});
+
+test('renders the selected columns vertically in their saved order', async () => {
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({
+          columns: ['SUM(cost)', 'SUM(sales)', 'AVG(sales)'],
+        }),
+      ]}
+      onChange={jest.fn()}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+
+  const rows = within(screen.getByTestId('header-group-editor')).getAllByTestId(
+    'header-group-column-row',
+  );
+  expect(rows.map(row => row.textContent)).toEqual([
+    'SUM(cost)',
+    'SUM(sales)',
+    'AVG(sales)',
+  ]);
+});
+
+test('reorders columns when a column drag ends on another column', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[
+        createGroup({
+          columns: ['SUM(sales)', 'AVG(sales)', 'SUM(cost)'],
+        }),
+      ]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+  await userEvent.click(screen.getByLabelText('Simulate column drag'));
+
+  expect(onChange).toHaveBeenCalledWith([
+    expect.objectContaining({
+      columns: ['AVG(sales)', 'SUM(sales)', 'SUM(cost)'],
+    }),
+  ]);
+});
+
+test('does not reorder columns when a column is dropped on itself', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup({ columns: ['SUM(sales)', 'AVG(sales)'] })]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+  await userEvent.click(
+    screen.getByLabelText('Simulate column drag onto itself'),
+  );
+
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+test('removes a column from the vertical list', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup({ columns: ['SUM(sales)', 'AVG(sales)'] })]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+  await userEvent.click(
+    within(screen.getByTestId('header-group-editor')).getByRole('button', {
+      name: 'Remove column SUM(sales)',
+    }),
+  );
+
+  expect(onChange).toHaveBeenCalledWith([
+    expect.objectContaining({ columns: ['AVG(sales)'] }),
+  ]);
+});
+
+test('appends a newly picked column after the existing ones', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup({ columns: ['SUM(sales)'] })]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+  await selectOption('AVG(sales)', 'Group columns');
+
+  expect(onChange).toHaveBeenCalledWith([
+    expect.objectContaining({ columns: ['SUM(sales)', 'AVG(sales)'] }),
+  ]);
+});
+
+test('adds several columns picked in one pass in the picker order', async () => {
+  const onChange = jest.fn();
+  render(
+    <HeaderGroupsControl
+      {...baseProps}
+      value={[createGroup({ columns: ['SUM(sales)'] })]}
+      onChange={onChange}
+    />,
+  );
+
+  await userEvent.click(screen.getByText('Sales'));
+  await userEvent.click(
+    screen.getByRole('combobox', { name: 'Group columns' }),
+  );
+
+  const dropdown = () =>
+    document.querySelector('.ant-select-dropdown-list') as HTMLElement;
+  await userEvent.click(within(dropdown()).getByText('AVG(sales)'));
+  await userEvent.click(within(dropdown()).getByText('SUM(cost)'));
+
+  const payloads = onChange.mock.calls.map(
+    ([next]) => next as HeaderGroupConfig[],
+  );
+  expect(
+    payloads.some(
+      groups =>
+        groups[0].columns.join('|') === 'SUM(sales)|AVG(sales)|SUM(cost)',
+    ),
+  ).toBe(true);
 });
