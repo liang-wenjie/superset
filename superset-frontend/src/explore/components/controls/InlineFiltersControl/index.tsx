@@ -33,6 +33,7 @@ import type {
   InlineFilterChangeValue,
   InlineFilterConfig,
   InlineFilterMatchMode,
+  InlineFilterQueryScope,
   InlineFilterType,
   InlineFilterValue,
 } from 'src/dashboard/components/InlineFilters/types';
@@ -198,6 +199,8 @@ export interface InlineFiltersControlProps {
   datasourceType?: string;
   /** Datasource metrics offered in the "Sort metric" picker. */
   metrics?: MetricOption[];
+  /** Show the "Apply to" picker on charts with two query sections. */
+  supportsMultipleQueries?: boolean;
   onChange?: (value: InlineFilterConfig[]) => void;
   renderTrigger?: boolean;
   hovered?: boolean;
@@ -230,6 +233,22 @@ const FILTER_TYPE_LABELS: Record<InlineFilterType, string> = {
   single: t('Single'),
   multiple: t('Multi'),
   input: t('Input'),
+};
+
+const QUERY_SCOPE_OPTIONS: { label: string; value: InlineFilterQueryScope }[] =
+  [
+    { label: t('Both queries'), value: 'all' },
+    { label: t('Query A'), value: 'A' },
+    { label: t('Query B'), value: 'B' },
+  ];
+
+/** Labels are only shown for a filter explicitly bound to one query. */
+const getQueryScopeLabel = (
+  scope?: InlineFilterQueryScope,
+): string | undefined => {
+  if (scope === 'A') return t('Query A');
+  if (scope === 'B') return t('Query B');
+  return undefined;
 };
 
 type ColumnValuesStatus = 'idle' | 'loading' | 'loaded' | 'empty' | 'error';
@@ -280,6 +299,7 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
   datasourceId,
   datasourceType,
   metrics = [],
+  supportsMultipleQueries = false,
   onChange,
   renderTrigger,
   hovered,
@@ -288,6 +308,7 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
   const theme = useTheme();
   const groups: InlineFilterConfig[] = Array.isArray(value) ? value : [];
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [createPair, setCreatePair] = useState(false);
 
   const emit = useCallback(
     (next: InlineFilterConfig[]) => {
@@ -302,11 +323,15 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
     );
   };
 
-  const openNew = () =>
+  const openNew = () => {
+    setCreatePair(false);
     setEditor({ index: null, draft: { id: nextId(), column: '', label: '' } });
+  };
 
-  const openEdit = (idx: number) =>
+  const openEdit = (idx: number) => {
+    setCreatePair(false);
     setEditor({ index: idx, draft: { ...groups[idx] } });
+  };
 
   const removeGroup = (idx: number) => {
     emit(groups.filter((_, i) => i !== idx));
@@ -329,11 +354,27 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
     // A text-input filter has no option list, so a first-item default can
     // never be resolved; drop it so the custom default picker stays reachable.
     if (isInlineFilterInput(draft)) draft.defaultToFirstItem = false;
-    emit(
+    // `all` is the legacy shape: leaving the key out keeps charts saved before
+    // this field existed unchanged and preserves the broadcast behaviour.
+    draft.queryScope =
+      draft.queryScope === 'A' || draft.queryScope === 'B'
+        ? draft.queryScope
+        : undefined;
+    const next =
       editor.index === null
         ? [...groups, draft]
-        : groups.map((group, idx) => (idx === editor.index ? draft : group)),
-    );
+        : groups.map((group, idx) => (idx === editor.index ? draft : group));
+    // The paired shortcut only applies while creating a filter. Each button
+    // gets its own id, which is what keeps the two selections independent in
+    // the runtime selection map.
+    if (createPair && editor.index === null && draft.queryScope !== undefined) {
+      next.push({
+        ...draft,
+        id: nextId(),
+        queryScope: draft.queryScope === 'A' ? 'B' : 'A',
+      });
+    }
+    emit(next);
     setEditor(null);
   };
 
@@ -475,6 +516,7 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
         )}
         {groups.map((group, idx) => {
           const defaultValueText = describeDefault(group);
+          const scopeLabel = getQueryScopeLabel(group.queryScope);
           return (
             <ListRow key={group.id} data-test="inline-filter-row">
               <RowTitle>
@@ -483,6 +525,9 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
                   {group.label ? group.column : defaultValueText || ''}
                 </RowSubtitle>
               </RowTitle>
+              {scopeLabel && (
+                <Chip data-test="inline-filter-scope-chip">{scopeLabel}</Chip>
+              )}
               <Chip data-test="inline-filter-chip">
                 {FILTER_TYPE_LABELS[getInlineFilterType(group)]}
               </Chip>
@@ -675,6 +720,57 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
             )}
 
             <SectionTitle>{t('Filter settings')}</SectionTitle>
+            {supportsMultipleQueries && (
+              <>
+                <Row>
+                  <FieldLabel>{t('Apply to')}</FieldLabel>
+                  <StyledSelect
+                    aria-label={t('Apply to query')}
+                    value={draft.queryScope ?? 'all'}
+                    options={QUERY_SCOPE_OPTIONS}
+                    onChange={(scope: string) =>
+                      patchDraft({
+                        queryScope: scope as InlineFilterQueryScope,
+                      })
+                    }
+                    showSearch={false}
+                    popupMatchSelectWidth={220}
+                  />
+                </Row>
+                <Hint>
+                  {t(
+                    'Bind this filter to one query, or leave it on Both queries to filter every query with the same value. Two filters on the same column, one per query, let you compare them.',
+                  )}
+                </Hint>
+                {editor?.index === null &&
+                  (draft.queryScope === 'A' || draft.queryScope === 'B') && (
+                    <>
+                      <Row>
+                        <Switch
+                          size="small"
+                          aria-label={t(
+                            'Also create a matching filter for the other query',
+                          )}
+                          checked={createPair}
+                          onChange={(checked: boolean) =>
+                            setCreatePair(checked)
+                          }
+                        />
+                        <SwitchLabel>
+                          {t(
+                            'Also create a matching filter for the other query',
+                          )}
+                        </SwitchLabel>
+                      </Row>
+                      <Hint>
+                        {t(
+                          'Creates a second button with the same settings, bound to the other query. Each button keeps its own selection.',
+                        )}
+                      </Hint>
+                    </>
+                  )}
+              </>
+            )}
             <Row>
               <FieldLabel>{t('Filter type')}</FieldLabel>
               <StyledSelect

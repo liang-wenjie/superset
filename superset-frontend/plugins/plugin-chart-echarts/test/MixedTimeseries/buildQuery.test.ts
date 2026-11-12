@@ -692,6 +692,71 @@ test('Query B keeps its own filters when filter sharing is enabled', () => {
   expect(queryB.extras?.where).toContain("name in ('c', 'd')");
 });
 
+const inlineSqlFilter = (name: string, value: string) =>
+  ({
+    clause: 'WHERE',
+    expressionType: 'SQL',
+    sqlExpression: `category = '${value}'`,
+    isExtra: true,
+    filterOptionName: name,
+  }) as unknown as BinaryAdhocFilter;
+
+test('filter sharing keeps Query A inline buttons out of Query B', () => {
+  // A scoped inline button is injected into adhoc_filters at render time.
+  // `share_query_filters` must still share the chart's saved filters, but
+  // must not drag that button selection into the other query.
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_filters: true,
+    adhoc_filters: [
+      ...categoricalXAxisFormData.adhoc_filters,
+      inlineSqlFilter('inline_fa', 'East'),
+    ],
+    adhoc_filters_b: undefined,
+  };
+  const { queries } = buildQuery(formData);
+  const [queryA, queryB] = queries;
+  expect(queryA.extras?.where ?? '').toContain('East');
+  const whereB = queryB.extras?.where ?? '';
+  expect(whereB).toContain("foo in ('a', 'b')");
+  expect(whereB).not.toContain('East');
+});
+
+test('a Query B inline button survives filter sharing', () => {
+  // A button selection is not a saved Query B filter: A's saved filters are
+  // still shared to keep the x-axis aligned, while B keeps its own button.
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_filters: true,
+    adhoc_filters_b: [inlineSqlFilter('inline_fb', 'West')],
+  };
+  const { queries } = buildQuery(formData);
+  const [, queryB] = queries;
+  const where = queryB.extras?.where ?? '';
+  expect(where).toContain('West');
+  expect(where).toContain("foo in ('a', 'b')");
+});
+
+test('two query-scoped inline buttons never cross into the other query', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_filters: true,
+    adhoc_filters: [
+      ...categoricalXAxisFormData.adhoc_filters,
+      inlineSqlFilter('inline_fa', 'East'),
+    ],
+    adhoc_filters_b: [inlineSqlFilter('inline_fb', 'West')],
+  };
+  const { queries } = buildQuery(formData);
+  const [queryA, queryB] = queries;
+  const whereA = queryA.extras?.where ?? '';
+  const whereB = queryB.extras?.where ?? '';
+  expect(whereA).toContain('East');
+  expect(whereA).not.toContain('West');
+  expect(whereB).toContain('West');
+  expect(whereB).not.toContain('East');
+});
+
 test('Query B settings stay independent when sharing is disabled', () => {
   const formData = {
     ...categoricalXAxisFormData,

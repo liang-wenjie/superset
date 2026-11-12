@@ -535,6 +535,11 @@ const ExploreChartPanel = ({
             chartAdhocFilters={
               (formData as JsonObject).adhoc_filters as JsonObject[] | undefined
             }
+            chartAdhocFiltersB={
+              (formData as JsonObject).adhoc_filters_b as
+                | JsonObject[]
+                | undefined
+            }
             chartLegacyFilters={
               (formData as JsonObject).filters as JsonObject[] | undefined
             }

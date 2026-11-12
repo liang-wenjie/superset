@@ -20,6 +20,7 @@ import { QueryFormData } from '@superset-ui/core';
 import {
   getDimensionColumnNames,
   getHiddenDimensionLabels,
+  getHiddenDimensionLabelsByQuery,
   stripDimensionValueLabels,
 } from '../../src/utils/inlineFilterSeriesName';
 
@@ -195,6 +196,86 @@ describe('getHiddenDimensionLabels', () => {
         }),
       ),
     ).toEqual([{ column: 'gender', value: 'girl' }]);
+  });
+});
+
+describe('getHiddenDimensionLabelsByQuery', () => {
+  test('a Query A filter never hides a Query B dimension label', () => {
+    expect(
+      getHiddenDimensionLabelsByQuery(
+        makeFormData({ config: [{ ...singleConfig, queryScope: 'A' }] }),
+      ),
+    ).toEqual({
+      A: [{ column: 'gender', value: 'girl' }],
+      B: [],
+    });
+  });
+
+  test('a Query B filter never hides a Query A dimension label', () => {
+    expect(
+      getHiddenDimensionLabelsByQuery(
+        makeFormData({
+          key: 'adhoc_filters_b',
+          config: [{ ...singleConfig, queryScope: 'B' }],
+        }),
+      ),
+    ).toEqual({
+      A: [],
+      B: [{ column: 'gender', value: 'girl' }],
+    });
+  });
+
+  test('two query sections keep independently injected values', () => {
+    const both = asFormData({
+      inline_filters: [
+        { ...singleConfig, queryScope: 'A' },
+        { ...singleConfig, id: 'f2', queryScope: 'B' },
+      ],
+      adhoc_filters: [injected()],
+      adhoc_filters_b: [
+        injected({ filterOptionName: 'inline_f2', comparator: 'boy' }),
+      ],
+    });
+    expect(getHiddenDimensionLabelsByQuery(both)).toEqual({
+      A: [{ column: 'gender', value: 'girl' }],
+      B: [{ column: 'gender', value: 'boy' }],
+    });
+  });
+
+  test('a legacy unscoped filter still affects both queries', () => {
+    // Charts saved before query scopes existed may only carry the injected
+    // clause on Query A. Their selection must keep rewriting both queries'
+    // series names exactly as before.
+    expect(getHiddenDimensionLabelsByQuery(makeFormData())).toEqual({
+      A: [{ column: 'gender', value: 'girl' }],
+      B: [{ column: 'gender', value: 'girl' }],
+    });
+  });
+
+  test('an unscoped injection present in both sections reaches both queries', () => {
+    const both = asFormData({
+      inline_filters: [singleConfig],
+      adhoc_filters: [injected()],
+      adhoc_filters_b: [injected()],
+    });
+    expect(getHiddenDimensionLabelsByQuery(both)).toEqual({
+      A: [{ column: 'gender', value: 'girl' }],
+      B: [{ column: 'gender', value: 'girl' }],
+    });
+    expect(getHiddenDimensionLabels(both)).toEqual([
+      { column: 'gender', value: 'girl' },
+    ]);
+  });
+
+  test('reads camelCased Query B sections into the B bucket only', () => {
+    const camelCased = asFormData({
+      inlineFilters: [{ ...singleConfig, queryScope: 'B' }],
+      adhocFiltersB: [injected()],
+    });
+    expect(getHiddenDimensionLabelsByQuery(camelCased)).toEqual({
+      A: [],
+      B: [{ column: 'gender', value: 'girl' }],
+    });
   });
 });
 

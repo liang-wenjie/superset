@@ -29,6 +29,7 @@ import type {
   InlineFilterChangeValue,
   InlineFilterConfig,
   InlineFilterOption,
+  InlineFilterQueryScope,
   InlineFilterSelection,
   InlineFilterSelectionValue,
   InlineFilterValue,
@@ -47,6 +48,11 @@ import { fetchInlineSortMetricOptions } from './sortMetricOptions';
 
 const BAR_HEIGHT = 28;
 const SEARCH_DEBOUNCE_MS = 250;
+
+const QUERY_SCOPE_LABELS: Partial<Record<InlineFilterQueryScope, string>> = {
+  A: t('Query A'),
+  B: t('Query B'),
+};
 
 // Distinct values are usually much longer than the compact filter trigger.
 // rc-select sizes the popup to the trigger by default, so every value was
@@ -212,6 +218,16 @@ const FilterLabel = styled.span`
   flex-shrink: 0;
 `;
 
+// Two buttons on the same column are indistinguishable without a query tag.
+const ScopeTag = styled.span`
+  font-size: ${({ theme }) => theme.fontSizeSM}px;
+  color: ${({ theme }) => theme.colorTextSecondary};
+  background: ${({ theme }) => theme.colorFillTertiary};
+  border-radius: ${({ theme }) => theme.borderRadiusSM}px;
+  padding: 0 ${({ theme }) => theme.sizeUnit}px;
+  flex-shrink: 0;
+`;
+
 // Grow with the selected value instead of showing a fixed 100px box; the bar
 // scrolls horizontally when several filters are configured. Both select
 // variants match the table chart's "Entries per page" pagination selector,
@@ -274,6 +290,12 @@ export interface ChartInlineFilterBarProps {
    * values that survive the chart's own filters.
    */
   chartAdhocFilters?: JsonObject[];
+  /**
+   * Query B's saved adhoc filters (``adhoc_filters_b``). A filter bound to
+   * Query B must inherit its own query's WHERE clauses when asking the values
+   * endpoint for suggestions, not Query A's.
+   */
+  chartAdhocFiltersB?: JsonObject[];
   /** Legacy ``formData.filters`` (``{col, op, val}``), inherited the same way. */
   chartLegacyFilters?: JsonObject[];
   /**
@@ -295,6 +317,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   datasourceId,
   datasourceType,
   chartAdhocFilters,
+  chartAdhocFiltersB,
   chartLegacyFilters,
   dashboardFilters,
 }) => {
@@ -313,6 +336,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   const filtersKey = JSON.stringify(filters);
   const selectionKey = JSON.stringify(selection);
   const chartAdhocFiltersKey = JSON.stringify(chartAdhocFilters);
+  const chartAdhocFiltersBKey = JSON.stringify(chartAdhocFiltersB);
   const chartLegacyFiltersKey = JSON.stringify(chartLegacyFilters);
   const dashboardFiltersKey = JSON.stringify(dashboardFilters);
   const searchTermsKey = JSON.stringify(searchTerms);
@@ -385,7 +409,11 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
           }
         }
         try {
-          const whereAdhoc = (chartAdhocFilters ?? []).filter(
+          const adhocForQuery =
+            f.queryScope === 'B'
+              ? (chartAdhocFiltersB ?? [])
+              : (chartAdhocFilters ?? []);
+          const whereAdhoc = adhocForQuery.filter(
             filter => (filter?.clause ?? 'WHERE') === 'WHERE',
           );
           const query = buildInlineValuesQuery({
@@ -436,6 +464,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     datasourceType,
     selectionKey,
     chartAdhocFiltersKey,
+    chartAdhocFiltersBKey,
     chartLegacyFiltersKey,
     dashboardFiltersKey,
     searchTermsKey,
@@ -563,6 +592,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
               ? effective
               : [effective]
           : (effective ?? undefined);
+        const scopeLabel = QUERY_SCOPE_LABELS[f.queryScope ?? 'all'];
         const labelNode = (
           <FilterLabel>
             {f.label}
@@ -572,6 +602,11 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
         );
         return (
           <React.Fragment key={f.id}>
+            {scopeLabel && (
+              <ScopeTag data-test="inline-filter-scope-tag">
+                {scopeLabel}
+              </ScopeTag>
+            )}
             {f.label ? (
               f.description ? (
                 <Tooltip title={f.description}>{labelNode}</Tooltip>

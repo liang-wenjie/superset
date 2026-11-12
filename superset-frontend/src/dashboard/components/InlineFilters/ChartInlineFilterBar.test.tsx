@@ -735,3 +735,49 @@ test('requests values with the holder runtime filters and refetches when they ch
     { col: '年份', op: 'IN', val: ['2025'] },
   ]);
 });
+
+test('scoped filters are tagged with their query so two buttons stay distinct', () => {
+  render(
+    <ChartInlineFilterBar
+      filters={[
+        { ...filters[0], id: 'fa', queryScope: 'A' },
+        { ...filters[0], id: 'fb', queryScope: 'B' },
+      ]}
+      selection={{}}
+      onSelect={jest.fn()}
+    />,
+  );
+  expect(
+    screen
+      .getAllByTestId('inline-filter-scope-tag')
+      .map(tag => tag.textContent),
+  ).toEqual(['Query A', 'Query B']);
+});
+
+test('a Query B filter inherits Query B saved filters for its value list', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['A'] } });
+  render(
+    <ChartInlineFilterBar
+      filters={[{ ...filters[0], queryScope: 'B' }]}
+      selection={{}}
+      onSelect={jest.fn()}
+      datasourceId={1}
+      datasourceType="table"
+      chartAdhocFilters={[
+        { clause: 'WHERE', subject: 'from_a', operator: '==', comparator: 'x' },
+      ]}
+      chartAdhocFiltersB={[
+        { clause: 'WHERE', subject: 'from_b', operator: '==', comparator: 'y' },
+      ]}
+    />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalled());
+  const { endpoint } = mockGet.mock.calls[0][0] as { endpoint: string };
+  const params = new URLSearchParams(endpoint.split('?')[1] ?? '');
+  const chartFilters = JSON.parse(params.get('chart_filters') ?? '{}');
+  expect(
+    (chartFilters.adhoc_filters ?? []).map(
+      (filter: { subject: string }) => filter.subject,
+    ),
+  ).toEqual(['from_b']);
+});

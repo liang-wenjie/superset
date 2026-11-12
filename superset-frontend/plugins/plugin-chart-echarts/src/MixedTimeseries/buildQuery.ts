@@ -180,15 +180,28 @@ export default function buildQuery(formData: QueryFormData) {
   // on and B defines no meaningful filters of its own, inherit A's filters.
   // The default `created_at (No filter)` temporal range does not constrain the
   // query, so it must not block the inheritance either.
+  // Inline-filter buttons are injected into formData by the chart holder at
+  // render time and belong to exactly one query. They are neither inherited
+  // from A nor treated as Query B defining its own saved filters: sharing A's
+  // saved filters must keep the x-axis aligned even when B has a button, and
+  // that button's own clause must survive the inheritance.
+  const isInlineFilter = (filter: unknown): boolean => {
+    const name = (filter as Record<string, unknown> | undefined)
+      ?.filterOptionName;
+    return typeof name === 'string' && name.startsWith('inline_');
+  };
+  const stripInlineFilters = (filters: QueryFormData['adhoc_filters']) =>
+    ensureIsArray(filters).filter(filter => !isInlineFilter(filter));
+  const keepInlineFilters = (filters: QueryFormData['adhoc_filters']) =>
+    ensureIsArray(filters).filter(filter => isInlineFilter(filter));
   const hasMeaningfulFilters = (filters: QueryFormData['adhoc_filters']) =>
-    ensureIsArray(filters).some(filter => {
-      const comparator = filter.comparator;
-      const operator = filter.operator;
+    stripInlineFilters(filters).some(filter => {
+      const record = filter as unknown as Record<string, unknown>;
       return !(
-        operator === 'TEMPORAL_RANGE' &&
-        (comparator === 'No filter' ||
-          comparator == null ||
-          comparator === '')
+        record.operator === 'TEMPORAL_RANGE' &&
+        (record.comparator === 'No filter' ||
+          record.comparator == null ||
+          record.comparator === '')
       );
     });
   if (
@@ -197,7 +210,10 @@ export default function buildQuery(formData: QueryFormData) {
   ) {
     formData2 = {
       ...formData2,
-      adhoc_filters: formData1.adhoc_filters,
+      adhoc_filters: [
+        ...stripInlineFilters(formData1.adhoc_filters),
+        ...keepInlineFilters(formData2Raw.adhoc_filters),
+      ],
     };
   }
 

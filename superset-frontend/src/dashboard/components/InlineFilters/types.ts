@@ -86,6 +86,33 @@ export type InlineFilterType = 'single' | 'multiple' | 'input';
 export type InlineFilterMatchMode = 'exact' | 'contains';
 
 /**
+ * Which query section a filter targets in a multi-query chart. `all` (and a
+ * missing value, for charts saved before this field existed) applies the
+ * filter to every query section, preserving the original behaviour.
+ */
+export type InlineFilterQueryScope = 'all' | 'A' | 'B';
+
+/** Query A stores its adhoc filters on the unsuffixed key. */
+export const INLINE_FILTER_ADHOC_KEY_A = 'adhoc_filters';
+
+/** Mixed charts keep Query B's adhoc filters on the `_b` suffixed key. */
+export const INLINE_FILTER_ADHOC_KEY_B = 'adhoc_filters_b';
+
+/**
+ * Keys a filter's WHERE clause belongs in. Scoped filters always target their
+ * own key; the injection layer materializes a missing key so Query B never
+ * silently inherits Query A's filters through `retainFormDataSuffix`.
+ */
+export function getInlineFilterTargetKeys(
+  config: InlineFilterConfig,
+  availableKeys: string[],
+): string[] {
+  if (config.queryScope === 'A') return [INLINE_FILTER_ADHOC_KEY_A];
+  if (config.queryScope === 'B') return [INLINE_FILTER_ADHOC_KEY_B];
+  return availableKeys;
+}
+
+/**
  * One inline filter, bound to a single datasource column.
  * Saved on the chart's formData under `inline_filters`.
  *
@@ -173,6 +200,12 @@ export interface InlineFilterConfig {
    * query, so the filter bar falls back to value sorting when it fails.
    */
   sortMetric?: string;
+  /**
+   * Query section this filter applies to in a multi-query chart. A missing
+   * value means `all`, so charts saved before this field existed keep
+   * filtering every query section unchanged.
+   */
+  queryScope?: InlineFilterQueryScope;
 }
 
 /**
@@ -272,18 +305,30 @@ export function resolveInlineFilterValue(
 
 /**
  * Sibling filters whose selections narrow this filter's option list.
- * `dependsOn === undefined` preserves the original cascading behaviour (all
- * siblings); an explicit empty array turns cascading off.
+ * `dependsOn === undefined` cascades from the siblings that can affect the
+ * same query: filters scoped to that query plus unscoped (`all`) ones. Two
+ * filters bound to different queries are independent, so one must not shrink
+ * the other's option list. An explicit `dependsOn` still wins and may cross
+ * query boundaries; an explicit empty array turns cascading off.
  */
 export function getInlineFilterDependencies(
   config: InlineFilterConfig,
   all: InlineFilterConfig[],
 ): InlineFilterConfig[] {
-  if (config.dependsOn === undefined) {
-    return all.filter(f => f.id !== config.id && f.column !== config.column);
+  if (config.dependsOn !== undefined) {
+    const ids = new Set(config.dependsOn);
+    return all.filter(f => f.id !== config.id && ids.has(f.id));
   }
-  const ids = new Set(config.dependsOn);
-  return all.filter(f => f.id !== config.id && ids.has(f.id));
+  const scope = config.queryScope ?? 'all';
+  return all.filter(
+    f =>
+      f.id !== config.id &&
+      f.column !== config.column &&
+      (scope === 'all' ||
+        f.queryScope === undefined ||
+        f.queryScope === 'all' ||
+        f.queryScope === scope),
+  );
 }
 
 /**

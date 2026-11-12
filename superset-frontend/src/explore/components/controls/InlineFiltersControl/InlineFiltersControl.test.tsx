@@ -178,6 +178,7 @@ interface InlineFiltersControlConfig {
     datasourceId?: string | number;
     datasourceType?: string;
     metrics: { label: string; value: string }[];
+    supportsMultipleQueries: boolean;
   };
 }
 
@@ -226,6 +227,28 @@ test('falls back to the form_data datasource key before metadata loads', () => {
   expect(result.metrics).toEqual([{ label: 'count', value: 'count' }]);
 });
 
+test('the query picker is offered only for charts with two query sections', () => {
+  expect(
+    inlineFiltersConfig.mapStateToProps({
+      form_data: { viz_type: 'mixed_timeseries', datasource: '7__table' },
+    }).supportsMultipleQueries,
+  ).toBe(true);
+  expect(
+    inlineFiltersConfig.mapStateToProps({
+      form_data: {
+        viz_type: 'line',
+        datasource: '7__table',
+        metrics_b: ['count'],
+      },
+    }).supportsMultipleQueries,
+  ).toBe(true);
+  expect(
+    inlineFiltersConfig.mapStateToProps({
+      form_data: { viz_type: 'table', datasource: '7__table' },
+    }).supportsMultipleQueries,
+  ).toBe(false);
+});
+
 test('the config actually rendered by Explore supplies datasource and metrics', () => {
   // Regression: the plain 'inline_filters' string shortcut resolves through
   // sharedControls, whose mapStateToProps only returns `columns`. That left
@@ -241,6 +264,7 @@ test('the config actually rendered by Explore supplies datasource and metrics', 
         datasourceId?: string | number;
         datasourceType?: string;
         metrics: { label: string; value: string }[];
+        supportsMultipleQueries: boolean;
       };
     };
   };
@@ -908,6 +932,106 @@ test('list rows show only the filter type chip', () => {
   ['Exclude', 'Required', 'No search', 'By metric', 'Input'].forEach(chip => {
     expect(row).not.toHaveTextContent(chip);
   });
+});
+
+test('a single-query chart hides the query scope picker', async () => {
+  render(<InlineFiltersControl {...props} value={[]} />);
+  await userEvent.click(
+    screen.getByRole('button', { name: '+ Add inline filter' }),
+  );
+  expect(screen.queryByLabelText('Apply to query')).not.toBeInTheDocument();
+});
+
+test('binding a new filter to Query A is saved on the config', async () => {
+  const onChange = jest.fn();
+  render(
+    <InlineFiltersControl
+      {...props}
+      value={[]}
+      supportsMultipleQueries
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: '+ Add inline filter' }),
+  );
+  await userEvent.selectOptions(
+    screen.getByLabelText('Column'),
+    '本年度销售额',
+  );
+  await userEvent.selectOptions(screen.getByLabelText('Apply to query'), 'A');
+  await save();
+  expect(lastEmitted(onChange)[0]).toMatchObject({
+    column: '本年度销售额',
+    queryScope: 'A',
+  });
+});
+
+test('the default Both queries keeps the legacy config shape', async () => {
+  const onChange = jest.fn();
+  render(
+    <InlineFiltersControl
+      {...props}
+      value={[]}
+      supportsMultipleQueries
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: '+ Add inline filter' }),
+  );
+  await userEvent.selectOptions(
+    screen.getByLabelText('Column'),
+    '本年度销售额',
+  );
+  await save();
+  expect(lastEmitted(onChange)[0].queryScope).toBeUndefined();
+});
+
+test('the paired shortcut creates two independent filters', async () => {
+  const onChange = jest.fn();
+  render(
+    <InlineFiltersControl
+      {...props}
+      value={[]}
+      supportsMultipleQueries
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: '+ Add inline filter' }),
+  );
+  await userEvent.selectOptions(
+    screen.getByLabelText('Column'),
+    '本年度销售额',
+  );
+  await userEvent.selectOptions(screen.getByLabelText('Apply to query'), 'B');
+  await userEvent.click(
+    screen.getByRole('switch', {
+      name: 'Also create a matching filter for the other query',
+    }),
+  );
+  await save();
+  const emitted = lastEmitted(onChange);
+  expect(emitted).toHaveLength(2);
+  expect(
+    emitted.map((filter: { queryScope: string }) => filter.queryScope),
+  ).toEqual(['B', 'A']);
+  expect(emitted[0].id).not.toBe(emitted[1].id);
+  expect(emitted[1].column).toBe(emitted[0].column);
+});
+
+test('a scoped filter is labelled with its query in the compact list', () => {
+  render(
+    <InlineFiltersControl
+      {...props}
+      supportsMultipleQueries
+      value={[{ ...props.value[0], queryScope: 'A' }]}
+    />,
+  );
+  expect(screen.getByTestId('inline-filter-scope-chip')).toHaveTextContent(
+    'Query A',
+  );
 });
 
 test('a fuzzy text-input filter also shows only its type chip', () => {

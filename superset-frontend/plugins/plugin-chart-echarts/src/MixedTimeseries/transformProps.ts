@@ -129,7 +129,7 @@ import { getMetricDisplayName } from '../utils/metricDisplayName';
 import { mergeCustomEChartOptions } from '../utils/mergeCustomEChartOptions';
 import {
   getDimensionColumnNames,
-  getHiddenDimensionLabels,
+  getHiddenDimensionLabelsByQuery,
   stripDimensionValueLabels,
 } from '../utils/inlineFilterSeriesName';
 
@@ -278,7 +278,7 @@ export default function transformProps(
   // `chartProps.formData` is camelCased by `ChartProps`, while `rawFormData`
   // keeps the original keys. Read both so the injected inline filters are
   // found regardless of which copy carries them.
-  const hiddenDimensionLabels = getHiddenDimensionLabels(
+  const hiddenDimensionLabels = getHiddenDimensionLabelsByQuery(
     formData as unknown as QueryFormData,
     chartProps.rawFormData as unknown as QueryFormData | undefined,
   );
@@ -287,19 +287,21 @@ export default function transformProps(
   // A query without a declared groupby can still receive series names with a
   // dimension suffix from the backend label map; in that case the selected
   // value itself is the only reliable match, and stripDimensionValueLabels
-  // only removes it when it appears as a non-metric segment.
+  // only removes it when it appears as a non-metric segment. Each query reads
+  // only the filters injected into its own section, so a Query A button never
+  // rewrites a Query B series name.
   const hiddenValuesA =
     groupby.length === 0
-      ? hiddenDimensionLabels.map(({ value }) => value)
-      : hiddenDimensionLabels
-          .filter(({ column }) => groupbyColumns.has(column))
-          .map(({ value }) => value);
+      ? hiddenDimensionLabels.A.map(({ value }) => value)
+      : hiddenDimensionLabels.A.filter(({ column }) =>
+          groupbyColumns.has(column),
+        ).map(({ value }) => value);
   const hiddenValuesB =
     groupbyB.length === 0
-      ? hiddenDimensionLabels.map(({ value }) => value)
-      : hiddenDimensionLabels
-          .filter(({ column }) => groupbyBColumns.has(column))
-          .map(({ value }) => value);
+      ? hiddenDimensionLabels.B.map(({ value }) => value)
+      : hiddenDimensionLabels.B.filter(({ column }) =>
+          groupbyBColumns.has(column),
+        ).map(({ value }) => value);
 
   // The orientation control is always visible and is the single source of
   // truth. Series data is stored as [category, value] for vertical charts

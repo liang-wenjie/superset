@@ -26,7 +26,9 @@ export const INLINE_FILTERS_CONTROL_DESCRIPTION = t(
     '(ascending / descending), "Select first filter value by default" ' +
     '(otherwise pick a real column value as the default), sort metric, ' +
     'search box, required, an inverse selection switch and dependencies ' +
-    'on the other filters. Changes are saved when the dialog is confirmed.',
+    'on the other filters. On charts with two queries, each filter can be ' +
+    'bound to Query A or Query B so two buttons filter them independently ' +
+    'for comparison. Changes are saved when the dialog is confirmed.',
 );
 
 export type InlineFilterMetricOption = { label: string; value: string };
@@ -36,6 +38,8 @@ export type InlineFiltersControlProps = {
   datasourceId?: string | number;
   datasourceType?: string;
   metrics: InlineFilterMetricOption[];
+  /** True for charts that declare a second query section (`*_b`). */
+  supportsMultipleQueries: boolean;
 };
 
 /**
@@ -70,7 +74,8 @@ export function getInlineFiltersControlProps(
 ): InlineFiltersControlProps {
   const exploreState = (state ?? {}) as ControlPanelStateLike;
   const datasource = exploreState.datasource ?? undefined;
-  const datasourceKey = exploreState.form_data?.datasource;
+  const formData = exploreState.form_data ?? {};
+  const datasourceKey = formData.datasource;
   const [keyId, keyType] =
     typeof datasourceKey === 'string' ? datasourceKey.split('__') : [];
 
@@ -116,10 +121,20 @@ export function getInlineFiltersControlProps(
     else addMetric(entry);
   });
 
+  // `viz_type` is always present in formData, while the `_b` controls may not
+  // have been written yet when the control panel is first initialized. Check
+  // both so the query picker appears as soon as a mixed chart is opened.
+  const hasQueryBControls = Object.keys(formData).some(key =>
+    ['adhoc_filters_b', 'metrics_b', 'metric_b', 'groupby_b'].includes(key),
+  );
+  const supportsMultipleQueries =
+    formData.viz_type === 'mixed_timeseries' || hasQueryBControls;
+
   return {
     columns: datasource?.columns ?? [],
     datasourceId: datasource?.id ?? keyId,
     datasourceType: datasource?.type ?? keyType,
     metrics: metricOptions,
+    supportsMultipleQueries,
   };
 }

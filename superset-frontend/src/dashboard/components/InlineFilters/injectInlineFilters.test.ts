@@ -21,7 +21,10 @@ import { injectInlineFilters } from './injectInlineFilters';
 import {
   buildInlineAdhocFilter,
   getInlineFilterDependencies,
+  getInlineFilterTargetKeys,
   getInlineFilterType,
+  INLINE_FILTER_ADHOC_KEY_A,
+  INLINE_FILTER_ADHOC_KEY_B,
   isInlineFilterInput,
   isInlineFilterInverse,
   isInlineFilterMulti,
@@ -404,4 +407,148 @@ test('re-injecting strips the previous inline clause and covers every query sect
   expect(injectedFilters(second)).toHaveLength(1);
   expect(injectedFilters(second)[0].operator).toBe('IN');
   expect(queryB(second)).toHaveLength(1);
+});
+
+test('getInlineFilterTargetKeys maps a scope onto its query section', () => {
+  const keys = [INLINE_FILTER_ADHOC_KEY_A, INLINE_FILTER_ADHOC_KEY_B];
+  expect(
+    getInlineFilterTargetKeys({ ...single, queryScope: 'A' }, keys),
+  ).toEqual([INLINE_FILTER_ADHOC_KEY_A]);
+  expect(
+    getInlineFilterTargetKeys({ ...single, queryScope: 'B' }, keys),
+  ).toEqual([INLINE_FILTER_ADHOC_KEY_B]);
+  expect(getInlineFilterTargetKeys(single, keys)).toEqual(keys);
+  expect(
+    getInlineFilterTargetKeys({ ...single, queryScope: 'all' }, keys),
+  ).toEqual(keys);
+});
+
+test('a Query A scope injects only into Query A and materializes Query B', () => {
+  const result = injectInlineFilters(
+    makeFormData(),
+    [{ ...single, queryScope: 'A' }],
+    { f1: 'East' },
+  );
+  expect(injectedFilters(result).map(f => f.comparator)).toEqual(['East']);
+  // A missing adhoc_filters_b would make retainFormDataSuffix fall back to
+  // Query A's filters, silently applying this button to Query B as well.
+  expect(INLINE_FILTER_ADHOC_KEY_B in result).toBe(true);
+  expect(queryB(result)).toEqual([]);
+});
+
+test('a Query B scope injects only into Query B', () => {
+  const result = injectInlineFilters(
+    makeFormData(),
+    [{ ...single, queryScope: 'B' }],
+    { f1: 'West' },
+  );
+  expect(injectedFilters(result)).toHaveLength(0);
+  expect(result.adhoc_filters).toHaveLength(1);
+  expect(queryB(result)).toHaveLength(1);
+  expect(queryB(result)[0]).toMatchObject({
+    subject: 'category',
+    operator: '==',
+    comparator: 'West',
+    filterOptionName: 'inline_f1',
+  });
+});
+
+test('two scoped filters keep their selections on separate queries', () => {
+  const config: InlineFilterConfig[] = [
+    { ...single, id: 'fa', queryScope: 'A' },
+    { ...single, id: 'fb', queryScope: 'B' },
+  ];
+  const result = injectInlineFilters(
+    makeFormData({ adhoc_filters_b: [] }),
+    config,
+    { fa: 'East', fb: 'West' },
+  );
+  expect(injectedFilters(result).map(f => f.comparator)).toEqual(['East']);
+  expect(queryB(result).map(f => f.comparator)).toEqual(['West']);
+  // Reverse check: neither selection leaks into the other query.
+  expect(injectedFilters(result).map(f => f.comparator)).not.toContain('West');
+  expect(queryB(result).map(f => f.comparator)).not.toContain('East');
+});
+
+test('an unscoped filter on a two-query chart materializes and reaches both sections', () => {
+  const result = injectInlineFilters(
+    makeFormData({ metrics_b: ['count'] }),
+    [single],
+    { f1: 'Both' },
+  );
+  expect(injectedFilters(result).map(f => f.comparator)).toEqual(['Both']);
+  expect(queryB(result).map(f => f.comparator)).toEqual(['Both']);
+});
+
+test('a single-query chart never grows a Query B section', () => {
+  const result = injectInlineFilters(makeFormData(), [single], { f1: 'A' });
+  expect(INLINE_FILTER_ADHOC_KEY_B in result).toBe(false);
+  expect(injectedFilters(result)).toHaveLength(1);
+});
+
+test('an unscoped filter still targets every query section', () => {
+  const result = injectInlineFilters(
+    makeFormData({ adhoc_filters_b: [] }),
+    [{ ...single, queryScope: 'all' }],
+    { f1: 'Both' },
+  );
+  expect(injectedFilters(result).map(f => f.comparator)).toEqual(['Both']);
+  expect(queryB(result).map(f => f.comparator)).toEqual(['Both']);
+});
+
+test('switching a filter to Query B strips its stale Query A clause', () => {
+  const first = injectInlineFilters(
+    makeFormData({ adhoc_filters_b: [] }),
+    [{ ...single, queryScope: 'A' }],
+    { f1: 'East' },
+  );
+  expect(injectedFilters(first)).toHaveLength(1);
+  const second = injectInlineFilters(first, [{ ...single, queryScope: 'B' }], {
+    f1: 'West',
+  });
+  expect(injectedFilters(second)).toHaveLength(0);
+  expect(queryB(second).map(f => f.comparator)).toEqual(['West']);
+});
+
+test('scoped filters keep their own required and cleared semantics', () => {
+  const required: InlineFilterConfig = {
+    ...single,
+    queryScope: 'B',
+    required: true,
+    defaultValue: 'Default',
+  };
+  expect(
+    queryB(injectInlineFilters(makeFormData(), [required], { f1: null })).map(
+      f => f.comparator,
+    ),
+  ).toEqual(['Default']);
+  const cleared = injectInlineFilters(
+    makeFormData(),
+    [{ ...single, queryScope: 'B' }],
+    { f1: null },
+  );
+  expect(queryB(cleared)).toEqual([]);
+  expect(cleared.adhoc_filters).toHaveLength(1);
+});
+
+test('cascading defaults to siblings on the same query plus unscoped ones', () => {
+  const all: InlineFilterConfig[] = [
+    { id: 'a', column: 'region', queryScope: 'A' },
+    { id: 'b', column: 'country', queryScope: 'A' },
+    { id: 'c', column: 'city', queryScope: 'B' },
+    { id: 'd', column: 'channel' },
+  ];
+  expect(getInlineFilterDependencies(all[0], all).map(f => f.id)).toEqual([
+    'b',
+    'd',
+  ]);
+  expect(getInlineFilterDependencies(all[2], all).map(f => f.id)).toEqual([
+    'd',
+  ]);
+  // An explicit dependency list still wins across query boundaries.
+  expect(
+    getInlineFilterDependencies({ ...all[0], dependsOn: ['c'] }, all).map(
+      f => f.id,
+    ),
+  ).toEqual(['c']);
 });
