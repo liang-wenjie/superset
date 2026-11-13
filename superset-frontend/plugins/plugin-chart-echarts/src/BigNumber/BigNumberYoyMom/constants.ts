@@ -44,7 +44,14 @@ export const DEFAULT_COMPARISON1_OFFSET = '1 month ago';
 
 export const DEFAULT_COMPARISON2_LABEL = 'YoY';
 export const DEFAULT_COMPARISON2_OFFSET = '1 year ago';
+// The value at which the shared columns are EXACTLY 1/N of the available
+// width. It stays the reference for the spacing slider's delta, so charts
+// saved with 24 keep their old equal-split layout.
 export const DEFAULT_COMPARISON_GAP = 24;
+// New charts start at the widest spacing that still fits inside the tile.
+// The renderer caps the real step by the canvas width, so this is a "pull as
+// far apart as possible" default, not a literal pixel distance.
+export const MAX_COMPARISON_GAP = 240;
 
 export const DEFAULT_COMPARISON_FONT_SIZE = 0.15;
 export const DEFAULT_COMPARISON_TOP = 0;

@@ -34,7 +34,6 @@ import {
   DEFAULT_BIG_NUMBER_COLOR,
   DEFAULT_BIG_NUMBER_LEFT,
   DEFAULT_BIG_NUMBER_TOP,
-  DEFAULT_COMPARISON_GAP,
   DEFAULT_COMPARISON_NEGATIVE_COLOR,
   DEFAULT_COMPARISON_POSITIVE_COLOR,
   DEFAULT_COMPARISON_SHOW_ARROW,
@@ -45,6 +44,7 @@ import {
   DEFAULT_TITLE_FONT_SIZE,
   DEFAULT_TITLE_LEFT,
   DEFAULT_TITLE_TOP,
+  MAX_COMPARISON_GAP,
 } from './constants';
 import { resolveMetricRows } from './metricRows';
 
@@ -339,12 +339,15 @@ const config: ControlPanelConfig = {
               type: 'SliderControl',
               label: t('Comparison spacing'),
               min: 0,
-              max: 240,
+              max: MAX_COMPARISON_GAP,
               step: 4,
-              default: DEFAULT_COMPARISON_GAP,
+              // New charts default to the widest possible spacing. The
+              // renderer caps the step by the tile width, so text can never
+              // be clipped by the right border at this default.
+              default: MAX_COMPARISON_GAP,
               renderTrigger: true,
               description: t(
-                'Pulls the equal-width columns apart (larger) or together (smaller). N is the LARGEST indicator count of any row, so a two-indicator row uses the same 1/3 columns as a three-indicator row and the two rows stay aligned. At the default value columns are exactly 1/N of the available width - three indicators start at 0, 1/3 and 2/3. It only moves the indicators and never changes the font size.',
+                'Distance between indicators in a row. The default is the WIDEST spacing that still keeps every indicator inside the tile - drag left to bring the shared columns back to the exact 1/N split (at 24) or closer together. N is the LARGEST indicator count of any row, so a two-indicator row uses the same 1/3 columns as a three-indicator row and the two rows stay aligned. It only moves the indicators and never changes the font size, and the text is never clipped by the tile border.',
               ),
             },
           },

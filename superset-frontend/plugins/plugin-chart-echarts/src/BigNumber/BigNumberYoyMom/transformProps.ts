@@ -42,6 +42,7 @@ import {
   DEFAULT_TITLE_FONT_SIZE,
   DEFAULT_TITLE_LEFT,
   DEFAULT_UNIFORM_BIG_NUMBER_FONT_SIZE,
+  MAX_COMPARISON_GAP,
 } from './constants';
 import {
   BigNumberYoyMomChartProps,
@@ -179,8 +180,9 @@ const DEFAULT_UNIFORM_BIG_NUMBER_REFERENCE_PX = 40;
 const MIN_COMPARISON_FONT_SIZE_PX = 10;
 // Sizing splits the available width into EQUAL columns, one per visible
 // indicator. The comparison_gap control is never read here: pulling the
-// slider may move the columns but must NEVER change the font size. At the
-// slider's default value each column is exactly 1/N of the available width.
+// slider may move the columns but must NEVER change the font size. At 24
+// each column is exactly 1/N of the available width; the default slider
+// value only asks for the widest spacing that still fits on the canvas.
 // The YoY/MoM row is secondary information. Its Tiny..Huge ratios are
 // converted against a FIXED reference height instead of the tile's real
 // height: on a tall tile 0.15 * 190 = 29px made the comparison text as large
@@ -326,7 +328,9 @@ export default function transformProps(
   // Unified metric rows: MoM/YoY are simply the two slots of row 1. Charts
   // saved before `metric_rows` existed resolve to that same legacy pair.
   const metricRows = resolveMetricRows(formDataRecord);
-  const comparisonGap = pick<number>('comparisonGap') ?? DEFAULT_COMPARISON_GAP;
+  // Charts saved before the slider existed get the new "widest spacing"
+  // default; charts saved with an explicit value keep their own layout.
+  const comparisonGap = pick<number>('comparisonGap') ?? MAX_COMPARISON_GAP;
   // The old `comparison_use_center_gap` checkbox is intentionally NOT read:
   // every row now splits its width into equal columns instead of pinning the
   // second indicator to the tile center line. The control stays registered
@@ -768,11 +772,15 @@ export default function transformProps(
   // big_number_left keeps both rows in sync, and the available-width rule
   // stays symmetric with the big number.
   const comparisonLeft = bigNumberLeft;
+  // HARD border guard: both the font fit and the column layout must stop at
+  // this right edge. Leaving the layout bound at `width` let the last
+  // indicator sit flush against the tile border and get visually clipped.
+  const comparisonRightEdge = Math.max(0, width - TEXT_FIT_SAFETY_MARGIN);
   const comparisonGapPx = scaleGap(Math.max(0, Number(comparisonGap) || 0));
-  // The slider's DEFAULT is the exact equal split; dragging it away from the
-  // default pulls the columns apart (larger) or together (smaller) by the
-  // delta. Keeping the slider centred on the default means saved charts keep
-  // their old value while every row still starts from a clean 1/N layout.
+  // 24 is still the exact equal split (1/N columns). The slider's DEFAULT is
+  // the maximum value, which simply asks the layout to pull the columns as
+  // far apart as `maxStep` allows; saved charts keep their own value and can
+  // be dragged back down to the clean 1/N split.
   const gapPullPx = comparisonGapPx - scaleGap(DEFAULT_COMPARISON_GAP);
 
   const slotComparisonValue = (
@@ -950,7 +958,7 @@ export default function transformProps(
   // Leave a little air on the right when there is room, but never let that
   // preference win over legibility. This is the only "soft" fit: it stops at
   // the readability floor.
-  const preferredComparisonWidth = Math.max(0, width - TEXT_FIT_SAFETY_MARGIN);
+  const preferredComparisonWidth = comparisonRightEdge;
   while (
     comparisonFontSizePx > minComparisonFontSizePx &&
     !comparisonRowFits(comparisonFontSizePx, preferredComparisonWidth)
@@ -976,15 +984,31 @@ export default function transformProps(
   // together. Nothing above reads the slider, so it can never change the font
   // size or make one row drift away from another.
   const slotWidths = comparisonSlotWidthsAt(comparisonFontSizePx);
-  // Never let a pulled column push its text off the canvas.
+  // Uniform sizing measures a data-independent DESIGN text to keep one font
+  // size across tiles. The border guard must nevertheless use the REAL text:
+  // a longer real value can be wider than that design text by a few pixels,
+  // which matters once the last indicator sits against the right border.
+  const renderWidths = visibleRows.map(contents =>
+    contents.map(content =>
+      content
+        ? estimateComparisonTextWidth(content.text, comparisonFontSizePx)
+        : 0,
+    ),
+  );
+  // Never let a pulled column push its text into (or past) the tile border.
+  // This is the last line of defence even when the font hits its readability
+  // floor and the estimated widths alone cannot guarantee a fit.
   const clampLeft = (left: number, textWidth: number): number =>
-    Math.min(Math.max(0, left), Math.max(0, width - textWidth));
+    Math.min(Math.max(0, left), Math.max(0, comparisonRightEdge - textWidth));
   // Absolute positions saved by very old charts only apply to row 1's first
   // two slots, and only while the whole chart still uses a two-column grid.
   // Adding a third indicator to any row switches on the shared grid instead.
   const legacyLefts = metricRows[0]?.slots.map(slot => slot.left) ?? [];
   const hasLegacyComparisonLefts = legacyLefts.some(left => left !== undefined);
+  // Column WIDTHS keep using the full canvas width so the exact 1/N split is
+  // unchanged; only the right-edge guard below reserves the safety margin.
   const availableWidth = Math.max(0, width - comparisonLeft);
+  const layoutWidth = Math.max(0, comparisonRightEdge - comparisonLeft);
   const columnWidth = availableWidth / maxSlotCount;
   const rowLayouts = visibleRows.map((contents, rowIndex) => {
     const widths = slotWidths[rowIndex] ?? [];
@@ -1015,14 +1039,14 @@ export default function transformProps(
     ...rowLayouts.flatMap(layout => layout.displayWidths.slice(0, -1)),
   );
   const maxStep = Math.min(
-    availableWidth,
+    layoutWidth,
     ...rowLayouts
       .filter(layout => layout.displayIndexes.length > 1)
       .map(layout => {
         const count = layout.displayIndexes.length;
         return Math.max(
           0,
-          (availableWidth - layout.displayWidths[count - 1]) / (count - 1),
+          (layoutWidth - layout.displayWidths[count - 1]) / (count - 1),
         );
       }),
   );
@@ -1033,7 +1057,13 @@ export default function transformProps(
     const lefts: (number | null)[] = contents.map(() => null);
     displayIndexes.forEach((slotIndex, positionIndex) => {
       const desired = comparisonLeft + positionIndex * step;
-      lefts[slotIndex] = clampLeft(desired, displayWidths[positionIndex]);
+      // Clamp against the WIDER of the fit text and the text really drawn,
+      // so a long value can never be cut off by the tile border.
+      const textWidth = Math.max(
+        displayWidths[positionIndex],
+        renderWidths[rowIndex]?.[slotIndex] ?? 0,
+      );
+      lefts[slotIndex] = clampLeft(desired, textWidth);
     });
     if (rowIndex === 0 && hasLegacyComparisonLefts && maxSlotCount <= 2) {
       [0, 1].forEach(slotIndex => {
@@ -1041,7 +1071,7 @@ export default function transformProps(
         const saved = legacyLefts[slotIndex];
         lefts[slotIndex] = clampLeft(
           saved ?? lefts[slotIndex] ?? comparisonLeft,
-          widths[slotIndex] ?? 0,
+          Math.max(widths[slotIndex] ?? 0, renderWidths[0]?.[slotIndex] ?? 0),
         );
       });
     }

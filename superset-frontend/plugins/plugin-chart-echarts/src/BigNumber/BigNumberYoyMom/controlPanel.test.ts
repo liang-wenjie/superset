@@ -17,6 +17,7 @@
  * under the License.
  */
 import { applyMapStateToPropsToControl } from 'src/explore/controlUtils/getControlState';
+import { MAX_COMPARISON_GAP } from './constants';
 import config from './controlPanel';
 import { resolveMetricRows } from './metricRows';
 
@@ -261,7 +262,12 @@ describe('BigNumberYoyMom metric rows controls', () => {
     expect(checkbox?.type).toBe('CheckboxControl');
     expect(spacing?.type).toBe('SliderControl');
     expect(checkbox?.default).toBe(false);
-    expect(spacing?.default).toBe(24);
+    // New charts start at the widest spacing; 24 remains the exact 1/N split
+    // that charts already saved with that value keep using.
+    expect(spacing?.default).toBe(MAX_COMPARISON_GAP);
+    expect(spacing?.max).toBe(MAX_COMPARISON_GAP);
+    expect(spacing?.description as string).toMatch(/WIDEST spacing/);
+    expect(spacing?.description as string).toMatch(/never clipped/);
     expect(spacing?.renderTrigger).toBe(true);
     // The deprecated center anchor is kept registered for charts that saved
     // the flag, but is hidden from the editor and no longer read by the

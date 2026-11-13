@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { DEFAULT_COMPARISON_GAP } from './constants';
 import { BigNumberYoyMomChartProps } from './types';
 import transformProps from './transformProps';
 
@@ -51,6 +52,10 @@ describe('BigNumberYoyMom transformProps', () => {
     headerText: '本月销售额',
     yAxisFormat: 'SMART_NUMBER',
     currencyFormat: undefined,
+    // Pin the value saved by existing charts. New charts (no comparison_gap)
+    // default to the widest spacing; these assertions describe the exact 1/N
+    // equal split that 24 has always produced.
+    comparisonGap: DEFAULT_COMPARISON_GAP,
   };
 
   const baseDatasource = {
@@ -1493,6 +1498,8 @@ describe('BigNumberYoyMom transformProps', () => {
     const snakeCase = buildSizedTile(400, 200, {
       bigNumberLeft: 0,
       comparison_use_center_gap: true,
+      // Let `pick` fall through to the snake_case gap below.
+      comparisonGap: undefined,
       comparison_gap: 12,
     });
     // 200 - (24 - 12): the slider pulls the columns together by its delta.
@@ -1925,6 +1932,99 @@ describe('BigNumberYoyMom transformProps', () => {
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     expect(graphic).toHaveLength(3);
     expect(graphic[2].style.text).toContain('42');
+  });
+
+  describe('maximum default spacing with a hard border guard', () => {
+    // `undefined` removes the pinned legacy value from baseFormData, so
+    // `pick` falls back to the control's new maximum-spacing default.
+    const noSavedGap = { comparisonGap: undefined };
+
+    test('a chart with no saved gap uses the widest spacing', () => {
+      const equal = buildSizedTile(400, 200, { bigNumberLeft: 0 });
+      const widest = buildSizedTile(400, 200, {
+        bigNumberLeft: 0,
+        ...noSavedGap,
+      });
+      expect(widest[2].left).toBe(equal[2].left);
+      expect(widest[3].left).toBeGreaterThan(equal[3].left);
+      // The last indicator ends just inside the border, never clipped by it.
+      expect(comparisonRightEdge(widest)).toBeLessThanOrEqual(400 - 3);
+      expect(comparisonRightEdge(widest)).toBeGreaterThan(400 - 60);
+    });
+
+    test('a chart saved with gap 24 keeps its exact 1/N split', () => {
+      const graphic = buildSizedTile(400, 200, {
+        bigNumberLeft: 0,
+        comparisonGap: DEFAULT_COMPARISON_GAP,
+      });
+      expect(graphic[3].left).toBe(200);
+    });
+
+    test('dragging the slider down from the maximum pulls columns together', () => {
+      const widest = buildSizedTile(400, 200, {
+        bigNumberLeft: 0,
+        ...noSavedGap,
+      });
+      const equal = buildSizedTile(400, 200, { bigNumberLeft: 0 });
+      const tight = buildSizedTile(400, 200, {
+        bigNumberLeft: 0,
+        comparisonGap: 0,
+      });
+      expect(widest[3].left).toBeGreaterThan(equal[3].left);
+      expect(equal[3].left).toBeGreaterThan(tight[3].left);
+    });
+
+    test('three indicators on a narrow tile all stay inside the border', () => {
+      const graphic = buildSizedTile(240, 200, {
+        bigNumberLeft: 0,
+        ...noSavedGap,
+        metric_rows: [
+          {
+            slots: [
+              { label: '环比', mode: 'time_shift', offset: '1 month ago' },
+              { label: '同比', mode: 'time_shift', offset: '1 year ago' },
+              { label: '累计', mode: 'time_shift', offset: '1 year ago' },
+            ],
+          },
+        ],
+      });
+      expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(240 - 3);
+      // Widest spacing must not make neighbouring indicators overlap.
+      expect(graphic[3].left).toBeGreaterThanOrEqual(
+        graphic[2].left + comparisonTextWidth(graphic[2]),
+      );
+      expect(graphic[4].left).toBeGreaterThanOrEqual(
+        graphic[3].left + comparisonTextWidth(graphic[3]),
+      );
+    });
+
+    test('uniform mode guards the REAL text, not only the design text', () => {
+      // Uniform sizing measures a data-independent design text to keep one
+      // font size across tiles. A long real value is wider than that design
+      // text, which used to clip once the last slot hugged the border.
+      const graphic = transformProps({
+        ...buildChartProps(
+          [
+            {
+              'SUM(sales)': 1000,
+              'SUM(sales)__1 month ago': 10,
+              'SUM(sales)__1 year ago': 20,
+            },
+          ],
+          {
+            uniformBigNumberFontSize: true,
+            uniformBigNumberReferenceTexts: ['$3,808,637.34'],
+            comparison1Label: '同比',
+            comparison2Label: '环比',
+            bigNumberLeft: 0,
+            ...noSavedGap,
+          },
+        ),
+        width: 160,
+      }).echartOptions.graphic as Record<string, any>[];
+      expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(160 - 3);
+      expect(graphic[3].left).toBeGreaterThan(graphic[2].left);
+    });
   });
 
   describe('per-indicator style overrides', () => {
