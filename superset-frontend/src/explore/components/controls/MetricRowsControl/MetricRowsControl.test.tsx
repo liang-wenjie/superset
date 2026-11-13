@@ -466,6 +466,50 @@ test('a new slot stores a saved metric name from the native popover', async () =
   expect(rows[0].slots[1].column).toBeUndefined();
 });
 
+test('number format is a preset dropdown, not a free-text input', async () => {
+  const onChange = jest.fn();
+  const rows: BigNumberMetricRow[] = [
+    {
+      id: 'row_custom_format',
+      slots: [
+        {
+          label: '同比',
+          mode: 'metric',
+          column: 'headcount',
+          numberFormat: ',.2%',
+        },
+      ],
+    },
+  ];
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={rows}
+      onChange={onChange}
+      {...datasetProps}
+    />,
+  );
+  await userEvent.click(screen.getByText('Edit'));
+  const formatSelect = screen.getByLabelText('Number format');
+  expect(formatSelect.tagName).toBe('SELECT');
+  expect(
+    screen.queryByPlaceholderText('Number format (e.g. SMART_NUMBER)'),
+  ).not.toBeInTheDocument();
+  // The exact presets of the chart-level Number format control are reused.
+  expect(
+    screen.getByRole('option', { name: 'Adaptive formatting' }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: /^,\.1%/ })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: /^\.3s/ })).toBeInTheDocument();
+  // A legacy custom value stays visible instead of being silently dropped.
+  expect(screen.getByRole('option', { name: ',.2%' })).toBeInTheDocument();
+
+  await userEvent.selectOptions(formatSelect, 'SMART_NUMBER');
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(lastEmitted(onChange)[0].slots[0].numberFormat).toBe('SMART_NUMBER');
+});
+
 test('a saved metric string selects the matching Saved tab entry', async () => {
   const row: BigNumberMetricRow[] = [
     {

@@ -22,6 +22,7 @@ import { css, styled, useTheme } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
 import { getMetricLabel } from '@superset-ui/core';
 import type { QueryFormMetric } from '@superset-ui/core';
+import { D3_FORMAT_OPTIONS } from '@superset-ui/chart-controls';
 import {
   Button,
   Input,
@@ -255,6 +256,23 @@ const MODE_OPTIONS: { label: string; value: BigNumberMetricSlotMode }[] = [
   { label: t('Time comparison (percentage)'), value: 'time_shift' },
   { label: t('Metric value'), value: 'metric' },
 ];
+
+// Reuse the EXACT presets of the chart-level Number format (y_axis_format)
+// control instead of asking the user to type a D3 format string.
+const NUMBER_FORMAT_OPTIONS = D3_FORMAT_OPTIONS.map(([value, label]) => ({
+  value,
+  label,
+}));
+
+/**
+ * Charts saved while this field was free text may carry a custom format such
+ * as `,.2%` that is not a preset. Keep it visible and selectable as a one-off
+ * option so opening + saving an old row never silently drops the format.
+ */
+const numberFormatOptions = (current: string) =>
+  !current || NUMBER_FORMAT_OPTIONS.some(option => option.value === current)
+    ? NUMBER_FORMAT_OPTIONS
+    : [{ value: current, label: current }, ...NUMBER_FORMAT_OPTIONS];
 
 type SlotDraft = {
   id?: string;
@@ -838,13 +856,16 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
               )}
               <Row>
                 <FieldLabel>{t('Number format')}</FieldLabel>
-                <StyledInput
+                <StyledSelect
                   aria-label={t('Number format')}
-                  placeholder={t('Number format (e.g. SMART_NUMBER)')}
-                  value={slot.numberFormat}
-                  onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-                    patchSlot(slotIndex, { numberFormat: event.target.value })
+                  placeholder={t('Use chart format')}
+                  value={slot.numberFormat || undefined}
+                  options={numberFormatOptions(slot.numberFormat)}
+                  onChange={(format: string) =>
+                    patchSlot(slotIndex, { numberFormat: format ?? '' })
                   }
+                  allowClear
+                  showSearch
                 />
               </Row>
             </React.Fragment>
