@@ -33,9 +33,54 @@ jest.mock('@dnd-kit/sortable', () => ({
 }));
 
 const sortables: CapturedSortables = { items: [] };
+const mockMetricTriggerProps: Record<string, any>[] = [];
+
+// Stand in for the native Saved / Simple / Custom SQL popover. Saving the
+// popover calls onMetricEdit with either a saved metric object or a plain
+// adhoc metric, exactly like AdhocMetricEditPopover#onSave does.
+jest.mock(
+  'src/explore/components/controls/MetricControl/AdhocMetricPopoverTrigger',
+  () => {
+    const ReactModule = jest.requireActual('react');
+    return {
+      __esModule: true,
+      default: (props: Record<string, any>) => {
+        mockMetricTriggerProps.push(props);
+        return ReactModule.createElement(
+          'button',
+          {
+            type: 'button',
+            'data-test': 'native-metric-trigger',
+            'aria-label': props.isNew ? 'Native metric (new)' : 'Native metric',
+            onClick: () =>
+              props.onMetricEdit(
+                props.isNew
+                  ? {
+                      metric_name: 'saved_headcount',
+                      expression: 'SUM(headcount)',
+                      label: 'saved_headcount',
+                    }
+                  : {
+                      expressionType: 'SIMPLE',
+                      column: { column_name: 'headcount' },
+                      aggregate: 'SUM',
+                      sqlExpression: null,
+                      label: 'SUM(headcount)',
+                      hasCustomLabel: false,
+                      optionName: 'metric_test',
+                    },
+              ),
+          },
+          props.children,
+        );
+      },
+    };
+  },
+);
 
 beforeEach(() => {
   sortables.items = [];
+  mockMetricTriggerProps.length = 0;
   (useSortable as jest.Mock).mockImplementation(captureSortableData(sortables));
 });
 
@@ -324,4 +369,122 @@ test('dragging a row back up keeps the other rows in order', () => {
   expect(
     lastEmitted(onChange).map((row: BigNumberMetricRow) => row.id),
   ).toEqual(['row_c', 'row_a', 'row_b']);
+});
+
+const datasetProps = {
+  columns: [{ column_name: 'headcount', type: 'BIGINT' }],
+  savedMetrics: [
+    {
+      metric_name: 'saved_headcount',
+      expression: 'SUM(headcount)',
+      verbose_name: 'Headcount',
+    },
+  ],
+  datasource: { id: 2, type: 'table' },
+} as any;
+
+test('the slot editor reuses the native metric popover, not two custom fields', async () => {
+  const onChange = jest.fn();
+  const rows: BigNumberMetricRow[] = [
+    {
+      id: 'row_sql',
+      slots: [
+        {
+          label: '同比',
+          mode: 'metric',
+          column: {
+            expressionType: 'SQL',
+            sqlExpression: 'SUM(a)/SUM(b)',
+            label: 'SUM(a)/SUM(b)',
+          },
+        },
+      ],
+    },
+  ];
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={rows}
+      onChange={onChange}
+      {...datasetProps}
+    />,
+  );
+  expect(screen.getByText(/SUM\(a\)\/SUM\(b\)/)).toBeInTheDocument();
+  await userEvent.click(screen.getByText('Edit'));
+  // The old simplified "saved metric select + custom SQL input" is gone.
+  expect(screen.queryByLabelText('Metric')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Custom SQL')).not.toBeInTheDocument();
+  expect(screen.getByText('Metric')).toBeInTheDocument();
+  const trigger = screen.getByTestId('native-metric-trigger');
+  expect(trigger).toBeInTheDocument();
+  // The popover receives the same datasource metadata as MetricsControl.
+  expect(mockMetricTriggerProps[0].columns).toEqual(datasetProps.columns);
+  expect(mockMetricTriggerProps[0].savedMetricsOptions).toEqual(
+    datasetProps.savedMetrics,
+  );
+  expect(mockMetricTriggerProps[0].datasource).toEqual(datasetProps.datasource);
+  expect(mockMetricTriggerProps[0].isNew).toBe(false);
+  // A legacy SQL metric opens the popover on the Custom SQL tab.
+  expect(mockMetricTriggerProps[0].adhocMetric.expressionType).toBe('SQL');
+  expect(mockMetricTriggerProps[0].adhocMetric.sqlExpression).toBe(
+    'SUM(a)/SUM(b)',
+  );
+
+  // A "Simple" tab save writes a complete QueryFormMetric object.
+  await userEvent.click(trigger);
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(lastEmitted(onChange)[0].slots[0].column).toMatchObject({
+    expressionType: 'SIMPLE',
+    aggregate: 'SUM',
+    label: 'SUM(headcount)',
+    column: { column_name: 'headcount' },
+  });
+});
+
+test('a new slot stores a saved metric name from the native popover', async () => {
+  const onChange = jest.fn();
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={[]}
+      onChange={onChange}
+      {...datasetProps}
+    />,
+  );
+  await userEvent.click(screen.getByText('+ Add metric row'));
+  const triggers = screen.getAllByTestId('native-metric-trigger');
+  expect(triggers).toHaveLength(2);
+  expect(screen.getAllByText('Add metric')).toHaveLength(2);
+  expect(mockMetricTriggerProps[0].isNew).toBe(true);
+  await userEvent.click(triggers[0]);
+  expect(screen.getByText('saved_headcount')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const rows = lastEmitted(onChange);
+  expect(rows[0].slots[0].column).toBe('saved_headcount');
+  expect(rows[0].slots[1].column).toBeUndefined();
+});
+
+test('a saved metric string selects the matching Saved tab entry', async () => {
+  const row: BigNumberMetricRow[] = [
+    {
+      id: 'row_saved',
+      slots: [{ label: 'Count', mode: 'metric', column: 'saved_headcount' }],
+    },
+  ];
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={row}
+      {...datasetProps}
+    />,
+  );
+  await userEvent.click(screen.getByText('Edit'));
+  expect(mockMetricTriggerProps[0].savedMetric.metric_name).toBe(
+    'saved_headcount',
+  );
+  expect(mockMetricTriggerProps[0].isNew).toBe(false);
+  expect(screen.getByTestId('metric-slot-value')).toBeInTheDocument();
 });

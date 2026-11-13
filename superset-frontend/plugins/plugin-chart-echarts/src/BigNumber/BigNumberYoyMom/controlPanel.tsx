@@ -104,32 +104,33 @@ const config: ControlPanelConfig = {
                 return true;
               },
               mapStateToProps(explore: ControlPanelState) {
+                // The slot editor reuses the NATIVE metric popover, so hand it
+                // exactly the same datasource metadata as `MetricsControl`:
+                // columns for the Simple tab, saved metrics for the Saved tab
+                // and the datasource itself for SQL validation / dataset save.
                 const datasource = explore?.datasource as
-                  | { metrics?: unknown[] }
+                  | {
+                      columns?: unknown[];
+                      metrics?: unknown[];
+                    }
                   | undefined;
-                const metrics: { label: string; value: string }[] = [];
-                const seen = new Set<string>();
-                (datasource?.metrics ?? []).forEach(entry => {
-                  if (!entry || typeof entry !== 'object') return;
-                  const record = entry as Record<string, unknown>;
-                  const name =
-                    typeof record.metric_name === 'string'
-                      ? record.metric_name
-                      : '';
-                  if (!name || seen.has(name)) return;
-                  seen.add(name);
-                  const verboseName =
-                    typeof record.verbose_name === 'string'
-                      ? record.verbose_name
-                      : '';
-                  metrics.push({ label: verboseName || name, value: name });
-                });
+                const isObject = (
+                  entry: unknown,
+                ): entry is Record<string, unknown> =>
+                  Boolean(entry && typeof entry === 'object');
+                const columns = (datasource?.columns ?? []).filter(isObject);
+                const savedMetrics = (datasource?.metrics ?? []).filter(
+                  entry =>
+                    isObject(entry) && typeof entry.metric_name === 'string',
+                );
                 const formData = (explore?.form_data ?? {}) as Record<
                   string,
                   unknown
                 >;
                 return {
-                  metrics,
+                  columns,
+                  savedMetrics,
+                  datasource: explore?.datasource,
                   offsetChoices: COMPARISON_OFFSET_CHOICES.map(([offset]) =>
                     String(offset),
                   ),

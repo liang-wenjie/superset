@@ -72,17 +72,24 @@ describe('BigNumberYoyMom metric rows controls', () => {
     const mapState = rowsControl?.mapStateToProps as (
       state: unknown,
     ) => Record<string, unknown>;
+    const datasource = {
+      columns: [{ column_name: 'headcount', type: 'BIGINT' }, null],
+      metrics: [{ metric_name: 'count', verbose_name: 'Count' }, null],
+    };
     const props = mapState({
-      datasource: {
-        metrics: [
-          { metric_name: 'count', verbose_name: 'Count' },
-          { metric_name: 'count' },
-          null,
-        ],
-      },
+      datasource,
       form_data: { viz_type: 'big_number_yoy_mom' },
     });
-    expect(props.metrics).toEqual([{ label: 'Count', value: 'count' }]);
+    // The slot editor feeds the native metric popover with the same metadata
+    // as the Metrics control; there is no separate simplified metric list.
+    expect(props.columns).toEqual([
+      { column_name: 'headcount', type: 'BIGINT' },
+    ]);
+    expect(props.savedMetrics).toEqual([
+      { metric_name: 'count', verbose_name: 'Count' },
+    ]);
+    expect(props.datasource).toBe(datasource);
+    expect(props.metrics).toBeUndefined();
     expect(props.offsetChoices as string[]).toContain('1 month ago');
     const defaultRows = props.defaultRows as { slots: unknown[] }[];
     expect(defaultRows).toHaveLength(1);

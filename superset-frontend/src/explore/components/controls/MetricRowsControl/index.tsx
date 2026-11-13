@@ -20,6 +20,8 @@ import React, { useCallback, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { css, styled, useTheme } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
+import { getMetricLabel } from '@superset-ui/core';
+import type { QueryFormMetric } from '@superset-ui/core';
 import {
   Button,
   Input,
@@ -36,11 +38,17 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import ControlHeader from 'src/explore/components/ControlHeader';
+import AdhocMetric from 'src/explore/components/controls/MetricControl/AdhocMetric';
+import AdhocMetricPopoverTrigger from 'src/explore/components/controls/MetricControl/AdhocMetricPopoverTrigger';
+import type { savedMetricType } from 'src/explore/components/controls/MetricControl/types';
+import type { Datasource } from 'src/explore/types';
+import type { ISaveableDatasource } from 'src/SqlLab/components/SaveDatasetModal';
 import {
   DEFAULT_METRIC_SLOTS_PER_ROW,
   MAX_METRIC_SLOTS_PER_ROW,
 } from 'src/explore/controlUtils/metricRowsTypes';
 import type {
+  BigNumberMetricColumn,
   BigNumberMetricRow,
   BigNumberMetricSlot,
   BigNumberMetricSlotMode,
@@ -169,6 +177,71 @@ const AddButton = styled(Button)`
   align-self: flex-start;
 `;
 
+// A native-style metric pill: the very same look as the pills in the Metrics
+// control, but without its drag/remove affordances (a slot owns exactly one
+// metric). Clicking it opens the standard metric edit popover.
+const MetricFieldWrapper = styled.div`
+  flex: 1;
+  min-width: 0;
+`;
+
+const MetricValuePill = styled.div`
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: ${({ theme }) => theme.sizeUnit * 6}px;
+  font-size: ${({ theme }) => theme.fontSizeSM}px;
+  background-color: ${({ theme }) => theme.colorBgLayout};
+  border-radius: ${({ theme }) => theme.borderRadiusSM}px;
+  cursor: pointer;
+  &:hover {
+    background-color: ${({ theme }) => theme.colorPrimaryBgHover};
+  }
+`;
+
+const MetricValueLabel = styled.span`
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding-left: ${({ theme }) => theme.sizeUnit}px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  svg {
+    margin-right: ${({ theme }) => theme.sizeUnit}px;
+    flex-shrink: 0;
+  }
+`;
+
+const MetricCaret = styled.span`
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 ${({ theme }) => theme.sizeUnit}px;
+  border-left: 1px solid ${({ theme }) => theme.colorSplit};
+  color: ${({ theme }) => theme.colorIcon};
+`;
+
+const AddMetricLabel = styled.div`
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: ${({ theme }) => theme.sizeUnit * 6}px;
+  padding-left: ${({ theme }) => theme.sizeUnit}px;
+  font-size: ${({ theme }) => theme.fontSizeSM}px;
+  color: ${({ theme }) => theme.colorTextSecondary};
+  border: dashed 1px ${({ theme }) => theme.colorSplit};
+  border-radius: ${({ theme }) => theme.borderRadius}px;
+  cursor: pointer;
+  &:hover {
+    background-color: ${({ theme }) => theme.colorFillSecondary};
+  }
+  svg {
+    margin-right: ${({ theme }) => theme.sizeUnit}px;
+  }
+`;
+
 // The editor configures two independent slots and is taller than the
 // viewport. Center the dialog and cap the body so Save/Cancel stay visible.
 const MODAL_STYLES: { body: CSSProperties } = {
@@ -189,8 +262,8 @@ type SlotDraft = {
   label: string;
   mode: BigNumberMetricSlotMode;
   offset: string;
-  metricName: string;
-  sqlExpression: string;
+  /** Full QueryFormMetric: a saved metric name or an adhoc metric object. */
+  metric?: BigNumberMetricColumn;
   numberFormat: string;
 };
 
@@ -207,7 +280,9 @@ export interface MetricRowsControlProps {
   value?: BigNumberMetricRow[];
   /** Legacy MoM/YoY pair, shown until the editor writes `metric_rows`. */
   defaultRows?: BigNumberMetricRow[];
-  metrics?: { label: string; value: string }[];
+  columns?: { column_name: string; type: string }[];
+  savedMetrics?: savedMetricType[];
+  datasource?: Datasource & ISaveableDatasource;
   offsetChoices?: string[];
   onChange?: (value: BigNumberMetricRow[]) => void;
   renderTrigger?: boolean;
@@ -222,79 +297,186 @@ const emptyDraft = (): SlotDraft => ({
   label: '',
   mode: 'metric',
   offset: '1 month ago',
-  metricName: '',
-  sqlExpression: '',
+  metric: undefined,
   numberFormat: '',
 });
 
-/** Saved metrics are strings; adhoc metrics are objects with a SQL expression. */
+/**
+ * The native metric popover returns either a saved metric object or an
+ * `AdhocMetric` instance (plus the edited label). form_data must stay plain
+ * JSON, so reduce both shapes to the `QueryFormMetric` the query layer reads:
+ * a saved metric name string, or a SIMPLE/SQL adhoc metric object.
+ */
+const toStoredMetric = (metric: unknown): BigNumberMetricColumn | undefined => {
+  if (!metric || typeof metric !== 'object') return undefined;
+  const record = metric as Record<string, unknown>;
+  if (typeof record.metric_name === 'string' && record.metric_name) {
+    return record.metric_name;
+  }
+  const { expressionType } = record;
+  if (expressionType !== 'SIMPLE' && expressionType !== 'SQL') {
+    return undefined;
+  }
+  const stored: Record<string, unknown> = { expressionType };
+  [
+    'label',
+    'sqlExpression',
+    'column',
+    'aggregate',
+    'hasCustomLabel',
+    'optionName',
+  ].forEach(key => {
+    if (record[key] !== undefined && record[key] !== null) {
+      stored[key] = record[key];
+    }
+  });
+  return stored as BigNumberMetricColumn;
+};
+
+/** Old charts may hold a bare `{ label }`/`{ sqlExpression }` object. */
+const normalizeMetric = (
+  metric: BigNumberMetricColumn | undefined,
+): BigNumberMetricColumn | undefined => {
+  if (!metric || typeof metric === 'string') return metric;
+  if (metric.expressionType) return metric;
+  const expression = metric.sqlExpression || metric.label;
+  if (!expression) return undefined;
+  return {
+    expressionType: 'SQL',
+    sqlExpression: expression,
+    label: metric.label || expression,
+    hasCustomLabel: true,
+  };
+};
+
+/** The result column is named by the metric label, exactly as the backend does. */
+const metricDisplayLabel = (metric: BigNumberMetricColumn): string => {
+  if (typeof metric === 'string') return metric;
+  const label = getMetricLabel(metric as unknown as QueryFormMetric);
+  return (
+    label ||
+    String(metric.label ?? metric.sqlExpression ?? '') ||
+    t('No metric')
+  );
+};
+
+type MetricFieldProps = {
+  metric?: BigNumberMetricColumn;
+  columns: { column_name: string; type: string }[];
+  savedMetrics: savedMetricType[];
+  datasource?: Datasource & ISaveableDatasource;
+  onChange: (metric?: BigNumberMetricColumn) => void;
+};
+
+/**
+ * Reuse the Explore "Metric" configuration verbatim: the trigger owns the
+ * Saved / Simple / Custom SQL popover, including column+aggregate selectors,
+ * SQL validation and the custom label editor. Nothing here re-implements any
+ * of that UI; only the resulting QueryFormMetric is stored on the slot.
+ */
+const MetricField: React.FC<MetricFieldProps> = ({
+  metric,
+  columns,
+  savedMetrics,
+  datasource,
+  onChange,
+}) => {
+  const savedMetric = useMemo(
+    () =>
+      typeof metric === 'string'
+        ? savedMetrics.find(item => item.metric_name === metric)
+        : undefined,
+    [metric, savedMetrics],
+  );
+
+  // A stable instance is important: the trigger resets its reducer whenever
+  // `optionName` changes, so rebuilding it on every render would fight with
+  // in-progress label edits.
+  const adhocMetric = useMemo(() => {
+    const source =
+      metric && typeof metric === 'object' && !('metric_name' in metric)
+        ? (metric as ConstructorParameters<typeof AdhocMetric>[0])
+        : {};
+    return new AdhocMetric(source);
+  }, [metric]);
+
+  const handleMetricEdit = useCallback(
+    (newMetric: unknown) => onChange(toStoredMetric(newMetric)),
+    [onChange],
+  );
+
+  const label = metric ? metricDisplayLabel(metric) : '';
+
+  return (
+    <MetricFieldWrapper>
+      <AdhocMetricPopoverTrigger
+        adhocMetric={adhocMetric}
+        onMetricEdit={handleMetricEdit}
+        columns={columns}
+        savedMetricsOptions={savedMetrics}
+        savedMetric={savedMetric ?? {}}
+        datasource={datasource as Datasource & ISaveableDatasource}
+        isNew={!metric}
+      >
+        {metric ? (
+          <MetricValuePill
+            aria-label={t('Edit metric')}
+            data-test="metric-slot-value"
+          >
+            <MetricValueLabel>
+              <Icons.FunctionOutlined iconSize="m" />
+              {label}
+            </MetricValueLabel>
+            <MetricCaret>
+              <Icons.RightOutlined iconSize="m" />
+            </MetricCaret>
+          </MetricValuePill>
+        ) : (
+          <AddMetricLabel aria-label={t('Add metric')}>
+            <Icons.PlusOutlined iconSize="m" />
+            {t('Add metric')}
+          </AddMetricLabel>
+        )}
+      </AdhocMetricPopoverTrigger>
+    </MetricFieldWrapper>
+  );
+};
+
+/** Saved metrics are strings; adhoc metrics are QueryFormMetric objects. */
 const toDraft = (slot: BigNumberMetricSlot): SlotDraft => {
   const base = emptyDraft();
-  let metricName = '';
-  let sqlExpression = '';
-  const { column } = slot;
-  if (typeof column === 'string') {
-    metricName = column;
-  } else if (column && typeof column === 'object') {
-    const record = column as Record<string, unknown>;
-    sqlExpression =
-      typeof record.sqlExpression === 'string' ? record.sqlExpression : '';
-    if (!sqlExpression && typeof record.label === 'string') {
-      metricName = record.label;
-    }
-  }
+  const metric = normalizeMetric(slot.column);
   return {
     ...base,
     id: slot.id,
     show: slot.show !== false,
     label: slot.label ?? '',
-    mode: slot.mode ?? (metricName || sqlExpression ? 'metric' : 'time_shift'),
+    mode: slot.mode ?? (metric ? 'metric' : 'time_shift'),
     offset: slot.offset ?? base.offset,
-    metricName,
-    sqlExpression,
+    metric:
+      metric && (slot.mode === 'metric' || !slot.mode) ? metric : undefined,
     numberFormat: slot.numberFormat ?? '',
   };
 };
 
-const fromDraft = (draft: SlotDraft): BigNumberMetricSlot => {
-  const expression = draft.sqlExpression.trim();
-  const name = draft.metricName.trim();
-  const column =
-    draft.mode === 'metric'
-      ? expression
-        ? {
-            expressionType: 'SQL',
-            sqlExpression: expression,
-            label: expression,
-            hasCustomLabel: true,
-          }
-        : name || undefined
-      : undefined;
-  return {
-    id: draft.id ?? nextId(),
-    show: draft.show,
-    label: draft.label,
-    mode: draft.mode,
-    offset: draft.mode === 'time_shift' ? draft.offset : undefined,
-    column,
-    numberFormat: draft.numberFormat.trim() || undefined,
-  };
-};
+const fromDraft = (draft: SlotDraft): BigNumberMetricSlot => ({
+  id: draft.id ?? nextId(),
+  show: draft.show,
+  label: draft.label,
+  mode: draft.mode,
+  offset: draft.mode === 'time_shift' ? draft.offset : undefined,
+  column: draft.mode === 'metric' ? draft.metric : undefined,
+  numberFormat: draft.numberFormat.trim() || undefined,
+});
 
 const describeSlot = (slot: BigNumberMetricSlot): string => {
   if (slot.show === false) return t('Hidden');
   const { column } = slot;
   const source =
     slot.mode === 'metric'
-      ? typeof column === 'string'
-        ? column
-        : column && typeof column === 'object'
-          ? String(
-              (column as Record<string, unknown>).label ??
-                (column as Record<string, unknown>).sqlExpression ??
-                '',
-            )
-          : t('No metric')
+      ? column
+        ? metricDisplayLabel(column)
+        : t('No metric')
       : (slot.offset ?? t('No time shift'));
   return `${slot.label || t('No label')} · ${source}`;
 };
@@ -392,7 +574,9 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
   description,
   value,
   defaultRows = [],
-  metrics = [],
+  columns = [],
+  savedMetrics = [],
+  datasource,
   offsetChoices = [],
   onChange,
   renderTrigger,
@@ -620,39 +804,19 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
                 <>
                   <Row>
                     <FieldLabel>{t('Metric')}</FieldLabel>
-                    <StyledSelect
-                      aria-label={t('Metric')}
-                      placeholder={t('Select a saved metric')}
-                      value={slot.metricName || undefined}
-                      options={metrics}
-                      onChange={(metric: string) =>
-                        patchSlot(slotIndex, { metricName: metric ?? '' })
-                      }
-                      allowClear
-                      allowNewOptions
-                      showSearch
-                      notFoundContent={t(
-                        'No saved metrics. Type a metric name or use a custom SQL expression.',
-                      )}
-                      popupMatchSelectWidth={220}
-                    />
-                  </Row>
-                  <Row>
-                    <FieldLabel>{t('Custom SQL')}</FieldLabel>
-                    <StyledInput
-                      aria-label={t('Custom SQL')}
-                      placeholder={t('e.g. SUM(headcount)')}
-                      value={slot.sqlExpression}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-                        patchSlot(slotIndex, {
-                          sqlExpression: event.target.value,
-                        })
+                    <MetricField
+                      metric={slot.metric}
+                      columns={columns}
+                      savedMetrics={savedMetrics}
+                      datasource={datasource}
+                      onChange={(metric?: BigNumberMetricColumn) =>
+                        patchSlot(slotIndex, { metric })
                       }
                     />
                   </Row>
                   <Hint>
                     {t(
-                      'A custom SQL expression takes precedence over the saved metric. This slot shows the metric value as-is, not a percentage change.',
+                      'Pick a saved metric, build a simple aggregate or write custom SQL with the standard metric editor. This slot shows the metric value as-is, not a percentage change.',
                     )}
                   </Hint>
                 </>

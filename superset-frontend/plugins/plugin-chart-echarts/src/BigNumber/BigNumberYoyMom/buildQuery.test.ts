@@ -332,6 +332,44 @@ describe('BigNumberYoyMom buildQuery', () => {
     expect(queryContext.queries[0].time_offsets).toEqual(['1 month ago']);
   });
 
+  test('sends SIMPLE and SQL adhoc metrics from the native metric editor', () => {
+    const simpleMetric = {
+      expressionType: 'SIMPLE',
+      column: { column_name: 'headcount' },
+      aggregate: 'SUM',
+      label: 'SUM(headcount)',
+      hasCustomLabel: false,
+      optionName: 'metric_simple',
+    };
+    const sqlMetric = {
+      expressionType: 'SQL',
+      sqlExpression: 'SUM(a)/SUM(b)',
+      label: 'SUM(a)/SUM(b)',
+      hasCustomLabel: true,
+      optionName: 'metric_sql',
+    };
+    const queryContext = buildQuery({
+      ...baseFormData,
+      time_range: 'Last week',
+      metric_rows: [
+        {
+          slots: [
+            { mode: 'metric', column: simpleMetric },
+            { mode: 'metric', column: sqlMetric },
+            { mode: 'metric', column: 'saved_headcount' },
+          ],
+        },
+      ],
+    });
+    expect(queryContext.queries[0].metrics).toEqual([
+      'value',
+      simpleMetric,
+      sqlMetric,
+      'saved_headcount',
+    ]);
+    expect(queryContext.queries[0].time_offsets).toEqual([]);
+  });
+
   test('deduplicates a time offset shared by several rows', () => {
     const queryContext = buildQuery({
       ...baseFormData,

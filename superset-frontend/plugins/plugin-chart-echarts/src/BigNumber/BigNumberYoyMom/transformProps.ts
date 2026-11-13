@@ -193,7 +193,9 @@ const COMPARISON_ROW_GAP_RATIO = 0.35;
 /**
  * Read a comparison value column from a result row. Saved metrics are plain
  * column names; adhoc metrics are named by their label, or by the SQL
- * expression itself when no label is set. The backend may normalize
+ * expression itself when no label is set. `getMetricLabel` covers metrics
+ * created by the native metric editor (a SIMPLE adhoc metric has no SQL
+ * expression, so its label is `SUM(column)`). The backend may normalize
  * whitespace in expression column names, so fall back to a
  * whitespace-insensitive match before giving up.
  */
@@ -210,9 +212,11 @@ const readMetricValue = (
   if (typeof column === 'string') return asScalar(row[column]);
   const sqlExpression =
     column.expressionType === 'SQL' ? column.sqlExpression : undefined;
-  const candidates = [column.label, sqlExpression].filter(
-    (key): key is string => !!key,
-  );
+  const candidates = [
+    column.label,
+    getMetricLabel(column),
+    sqlExpression,
+  ].filter((key): key is string => !!key);
   for (const key of candidates) {
     if (row[key] !== undefined) return asScalar(row[key]);
   }

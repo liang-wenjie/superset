@@ -24,7 +24,14 @@ jest.mock('@apache-superset/core/translation', () => ({
 }));
 
 jest.mock('@superset-ui/core', () => ({
-  getMetricLabel: jest.fn(metric => metric),
+  getMetricLabel: jest.fn((metric: any) =>
+    typeof metric === 'string'
+      ? metric
+      : metric.label ||
+        (metric.expressionType === 'SIMPLE'
+          ? `${metric.aggregate}(${metric.column?.column_name})`
+          : metric.sqlExpression),
+  ),
   getNumberFormatter: jest.fn((format: string) => (value: number) => {
     const precision = /^,\.(\d)%$/.exec(format);
     if (precision) return `${(value * 100).toFixed(Number(precision[1]))}%`;
@@ -799,6 +806,37 @@ describe('BigNumberYoyMom transformProps', () => {
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     // The whitespace-normalized column is matched and the value rendered.
     expect(graphic[2].style.text).toBe('MoM ↑80');
+  });
+
+  test('reads a SIMPLE metric built by the native metric editor', () => {
+    // The Simple tab emits an adhoc metric with a column + aggregate and no
+    // sqlExpression. The backend names its result column `SUM(headcount)`,
+    // which is exactly what getMetricLabel resolves.
+    const result = transformProps(
+      buildChartProps([{ 'SUM(sales)': 100, 'SUM(headcount)': 42 }], {
+        metric_rows: [
+          {
+            id: 'row_simple',
+            slots: [
+              {
+                label: '在职',
+                mode: 'metric',
+                column: {
+                  expressionType: 'SIMPLE',
+                  column: { column_name: 'headcount' },
+                  aggregate: 'SUM',
+                  hasCustomLabel: false,
+                },
+              },
+              { label: 'MoM', mode: 'time_shift', offset: '1 month ago' },
+            ],
+          },
+        ],
+      }),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic[2].style.text).toContain('42');
+    expect(graphic[2].style.text).not.toContain('—');
   });
 
   test('formats comparison values with the slot percent difference format', () => {
