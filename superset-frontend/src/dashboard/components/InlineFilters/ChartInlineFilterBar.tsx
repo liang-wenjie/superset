@@ -140,25 +140,29 @@ export interface InlineFilterReconciliation {
 }
 
 /**
- * Re-seed inline selections that no longer survive the runtime dashboard
- * filters.
+ * Values inline filters should take after the runtime dashboard filters
+ * changed and the option lists were refetched.
  *
  * The values endpoint applies every dashboard clause (including SQL
  * `valueTransform` templates such as `CONCAT(...)`) through
  * `chart_filters.filters`, so the returned options already ARE the values
  * available after the dashboard was filtered. We never parse those templates
- * on the client: if a selected value is absent from the refreshed list, the
- * chart would AND a stale predicate with the dashboard predicate and return
- * no rows. Move it to a value that actually survived so the inline filter can
- * keep filtering on top of the dashboard selection.
+ * on the client.
+ *
+ * Every committed selection is rebased onto the first surviving value, even
+ * when its old value is still present in the new list: keeping it would leave
+ * the dashboard and the chart on different values. When nothing survives, the
+ * filter is cleared (explicit `null`) so its stale WHERE clause is dropped and
+ * the chart is governed by the dashboard filters alone.
  *
  * Deliberate exceptions, all of which must leave the selection untouched:
  * - `undefined`: never touched, the configured default still applies;
  * - `null`: the user explicitly cleared it, "All" must stay reachable;
  * - `input` filters: free text has no option list and remains a valid
  *   predicate regardless of the dashboard selection;
- * - an empty option list: indistinguishable from a failed values request, so
- *   clearing on it would drop the filter on a network hiccup.
+ * - a missing option list: either the values request failed or the list was
+ *   narrowed by a server-side `q` search. Neither is a trustworthy answer.
+ *   An empty-but-successful list IS trustworthy and clears the filter.
  */
 export const reconcileInlineFilterSelections = (
   filters: InlineFilterConfig[],
@@ -169,29 +173,23 @@ export const reconcileInlineFilterSelections = (
   filters.forEach(config => {
     if (isInlineFilterInput(config)) return;
     const options = optionsById[config.id];
-    if (!options || options.length === 0) return;
+    if (!options) return;
     const current = selection[config.id];
     if (current === undefined || current === null) return;
 
-    const available = new Set(options.map(option => String(option.value)));
-    const multi = isInlineFilterMulti(config);
-    const normalized = normalizeInlineFilterValue(current, multi);
-    if (normalized === null) return;
-
-    if (multi) {
-      const values = Array.isArray(normalized) ? normalized : [normalized];
-      const surviving = values.filter(value => available.has(String(value)));
-      if (surviving.length === values.length) return;
-      changes.push({
-        filterId: config.id,
-        value: surviving.length > 0 ? surviving : [options[0].value],
-      });
-      return;
-    }
-    const scalar = Array.isArray(normalized) ? normalized[0] : normalized;
-    if (scalar !== undefined && !available.has(String(scalar))) {
-      changes.push({ filterId: config.id, value: options[0].value });
-    }
+    const [first] = options;
+    const next: InlineFilterChangeValue = first
+      ? isInlineFilterMulti(config)
+        ? [first.value]
+        : first.value
+      : null;
+    const unchanged = Array.isArray(next)
+      ? Array.isArray(current) &&
+        next.length === current.length &&
+        next.every((value, index) => value === current[index])
+      : next === current;
+    if (unchanged) return;
+    changes.push({ filterId: config.id, value: next });
   });
   return changes;
 };
@@ -331,6 +329,12 @@ interface OptionsCacheEntry {
   options: { label: string; value: string }[];
   /** True when the order came from a sort-metric query (do not re-sort). */
   byMetric: boolean;
+  /**
+   * The values request failed. Its empty list must not be read as "the
+   * dashboard filters left no values", otherwise a network hiccup would
+   * clear every inline filter.
+   */
+  failed?: boolean;
 }
 
 export interface ChartInlineFilterBarProps {
@@ -516,7 +520,10 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
             });
           return [f.id, { options, byMetric: false }] as const;
         } catch {
-          return [f.id, { options: [], byMetric: false }] as const;
+          return [
+            f.id,
+            { options: [], byMetric: false, failed: true },
+          ] as const;
         }
       }),
     ).then(entries => {
@@ -529,10 +536,10 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
         return next;
       });
 
-      // Dashboard filters narrowed the lists above. A selection still pointing
-      // at a value that did not survive would be ANDed with the dashboard
-      // clause and empty the chart, so move it onto a surviving value. This
-      // runs only for the fetch caused by the dashboard-filter change: the
+      // Dashboard filters narrowed the lists above. Rebase every committed
+      // inline value onto the first surviving value, or clear it when nothing
+      // survived, so the chart keeps filtering on the dashboard's universe.
+      // This runs only for the fetch caused by a dashboard-filter change: the
       // mount fetch, a typed search and a manual selection all leave the
       // user's choice alone.
       if (syncedDashboardFiltersKey.current === dashboardFiltersKey) return;
@@ -540,9 +547,9 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
 
       const optionsById: Record<string, InlineFilterOption[]> = {};
       entries.forEach(([id, entry]) => {
-        // A list narrowed by a server-side `q` search is not the complete
-        // set of surviving values, so it cannot judge a stale selection.
-        if (searchTerms[id]) return;
+        // A list narrowed by a server-side `q` search, or an empty list that
+        // only means the request failed, is not an authoritative answer.
+        if (searchTerms[id] || entry.failed) return;
         const config = active.find(f => f.id === id);
         if (!config) return;
         optionsById[id] = getInlineFilterOptions(

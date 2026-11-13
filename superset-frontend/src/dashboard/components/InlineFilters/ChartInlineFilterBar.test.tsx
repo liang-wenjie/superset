@@ -792,13 +792,26 @@ describe('reconcileInlineFilterSelections', () => {
     ],
   };
 
-  test('keeps a selection that still survives the dashboard filters', () => {
+  test('rebases onto the first surviving value even when the old value is still offered', () => {
     expect(
       reconcileInlineFilterSelections([config], { f: '202607' }, options),
-    ).toEqual([]);
-    // A numeric selection and a string option denote the same column value.
+    ).toEqual([{ filterId: 'f', value: '202606' }]);
+    // A numeric selection is normalized to the option's string value.
     expect(
       reconcileInlineFilterSelections([config], { f: 202606 }, options),
+    ).toEqual([{ filterId: 'f', value: '202606' }]);
+  });
+
+  test('does not emit a redundant change when the value already matches', () => {
+    expect(
+      reconcileInlineFilterSelections([config], { f: '202606' }, options),
+    ).toEqual([]);
+    expect(
+      reconcileInlineFilterSelections(
+        [{ ...config, filterType: 'multiple' as const }],
+        { f: ['202606'] },
+        options,
+      ),
     ).toEqual([]);
   });
 
@@ -807,29 +820,32 @@ describe('reconcileInlineFilterSelections', () => {
       reconcileInlineFilterSelections(
         [config],
         { f: '202605' },
-        { f: [{ label: '202606', value: '202606' }] },
+        { f: [{ label: '202506', value: '202506' }] },
       ),
-    ).toEqual([{ filterId: 'f', value: '202606' }]);
+    ).toEqual([{ filterId: 'f', value: '202506' }]);
   });
 
-  test('keeps only the surviving values of a multi selection', () => {
+  test('a multi selection also rebases onto the first surviving option', () => {
     expect(
       reconcileInlineFilterSelections(
         [{ ...config, filterType: 'multiple' as const }],
         { f: ['202605', '202607', '202608'] },
         options,
       ),
-    ).toEqual([{ filterId: 'f', value: ['202607'] }]);
+    ).toEqual([{ filterId: 'f', value: ['202606'] }]);
   });
 
-  test('falls back to the first option when no multi value survives', () => {
+  test('clears the filter when the dashboard filters leave no values', () => {
+    expect(
+      reconcileInlineFilterSelections([config], { f: '202607' }, { f: [] }),
+    ).toEqual([{ filterId: 'f', value: null }]);
     expect(
       reconcileInlineFilterSelections(
         [{ ...config, filterType: 'multiple' as const, required: true }],
-        { f: ['202605'] },
-        options,
+        { f: ['202607'] },
+        { f: [] },
       ),
-    ).toEqual([{ filterId: 'f', value: ['202606'] }]);
+    ).toEqual([{ filterId: 'f', value: null }]);
   });
 
   test('never rewrites an untouched or explicitly cleared selection', () => {
@@ -839,7 +855,7 @@ describe('reconcileInlineFilterSelections', () => {
     ).toEqual([]);
   });
 
-  test('leaves free-text filters, missing lists and empty lists alone', () => {
+  test('leaves free-text filters and missing lists alone', () => {
     expect(
       reconcileInlineFilterSelections(
         [{ ...config, filterType: 'input' as const }],
@@ -847,12 +863,9 @@ describe('reconcileInlineFilterSelections', () => {
         options,
       ),
     ).toEqual([]);
+    // A failed values request has no entry in optionsById at all.
     expect(
       reconcileInlineFilterSelections([config], { f: '202605' }, {}),
-    ).toEqual([]);
-    // An empty list can also mean a failed request; do not clear on it.
-    expect(
-      reconcileInlineFilterSelections([config], { f: '202605' }, { f: [] }),
     ).toEqual([]);
   });
 });
@@ -986,4 +999,108 @@ test('a refetch caused by the user does not re-seed the selection', async () => 
 
   await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
   expect(onSelect).not.toHaveBeenCalled();
+});
+
+test('clears a stale inline value when the dashboard filters leave no values', async () => {
+  mockGet
+    .mockResolvedValueOnce({ json: { result: ['202506'] } })
+    .mockResolvedValueOnce({ json: { result: [] } });
+  const onSelect = jest.fn();
+  const baseProps = {
+    filters,
+    selection: { 'filter-1': '202506' },
+    onSelect,
+    datasourceId: 1,
+    datasourceType: 'table',
+  };
+  // Mirrors the "去年当月" holder: +100 means a 202607 selection needs a
+  // 202507 row, which the dataset does not have, so the values call is empty.
+  const transform = [
+    {
+      col: '报告月份',
+      op: 'IN',
+      val: ['202606'],
+      valueTransform: '报告月份+100',
+    },
+  ];
+  const { rerender } = render(
+    <ChartInlineFilterBar {...baseProps} dashboardFilters={transform} />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+  rerender(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[{ ...transform[0], val: ['202607'] }]}
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(onSelect).toHaveBeenCalledWith('filter-1', null));
+});
+
+test('a failed values request does not clear the inline filter', async () => {
+  mockGet
+    .mockResolvedValueOnce({ json: { result: ['202506'] } })
+    .mockRejectedValueOnce(new Error('network unavailable'));
+  const onSelect = jest.fn();
+  const baseProps = {
+    filters,
+    selection: { 'filter-1': '202506' },
+    onSelect,
+    datasourceId: 1,
+    datasourceType: 'table',
+  };
+  const { rerender } = render(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[{ col: '年份', op: 'IN', val: [2026] }]}
+    />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+  rerender(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[{ col: '年份', op: 'IN', val: [2025] }]}
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  expect(onSelect).not.toHaveBeenCalled();
+});
+
+test('rebases even when the old value is still present after the filter change', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['202506', '202607'] } });
+  const onSelect = jest.fn();
+  const baseProps = {
+    filters,
+    selection: { 'filter-1': '202607' },
+    onSelect,
+    datasourceId: 1,
+    datasourceType: 'table',
+  };
+  const { rerender } = render(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[{ col: '年份', op: 'IN', val: [2026] }]}
+    />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+  rerender(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[
+        { col: '年份', op: 'IN', val: [2026] },
+        { col: '报告月份', op: 'IN', val: ['202606'] },
+      ]}
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  // Sorted ascending, so 202506 is the first surviving option.
+  await waitFor(() =>
+    expect(onSelect).toHaveBeenCalledWith('filter-1', '202506'),
+  );
 });
