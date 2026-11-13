@@ -28,6 +28,10 @@ import {
   Switch,
 } from '@superset-ui/core/components';
 import ControlHeader from 'src/explore/components/ControlHeader';
+import {
+  DEFAULT_METRIC_SLOTS_PER_ROW,
+  MAX_METRIC_SLOTS_PER_ROW,
+} from 'src/explore/controlUtils/metricRowsTypes';
 import type {
   BigNumberMetricRow,
   BigNumberMetricSlot,
@@ -39,8 +43,6 @@ const nextId = () => {
   idCounter += 1;
   return `metric_row_${Date.now()}_${idCounter}`;
 };
-
-const SLOTS_PER_ROW = 2;
 
 const Container = styled.div`
   display: flex;
@@ -96,6 +98,10 @@ const Row = styled.div`
 `;
 
 const SectionTitle = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: ${({ theme }) => theme.sizeUnit * 2}px;
   font-size: ${({ theme }) => theme.fontSize}px;
   font-weight: ${({ theme }) => theme.fontWeightStrong};
   color: ${({ theme }) => theme.colorText};
@@ -103,6 +109,13 @@ const SectionTitle = styled.div`
   padding-bottom: ${({ theme }) => theme.sizeUnit}px;
   margin: ${({ theme }) => theme.sizeUnit * 3}px 0
     ${({ theme }) => theme.sizeUnit * 2}px;
+`;
+
+const SlotActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.sizeUnit * 2}px;
+  margin-top: ${({ theme }) => theme.sizeUnit * 2}px;
 `;
 
 const StyledSelect = styled(Select)`
@@ -180,6 +193,8 @@ export interface MetricRowsControlProps {
 }
 
 const emptyDraft = (): SlotDraft => ({
+  // A stable React key even before the row is saved.
+  id: nextId(),
   show: true,
   label: '',
   mode: 'metric',
@@ -304,25 +319,42 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
   const openNew = () =>
     setEditor({
       index: null,
-      slots: Array.from({ length: SLOTS_PER_ROW }, emptyDraft),
+      slots: Array.from({ length: DEFAULT_METRIC_SLOTS_PER_ROW }, emptyDraft),
     });
 
   const openEdit = (index: number) => {
     const slots = Array.isArray(rows[index]?.slots) ? rows[index].slots : [];
+    // Keep the row's own slot count; never pad or trim it to two.
+    const drafts = slots.slice(0, MAX_METRIC_SLOTS_PER_ROW).map(toDraft);
     setEditor({
       index,
-      slots: Array.from({ length: SLOTS_PER_ROW }, (_, slotIndex) =>
-        slots[slotIndex] ? toDraft(slots[slotIndex]) : emptyDraft(),
-      ),
+      slots: drafts.length > 0 ? drafts : [emptyDraft()],
     });
   };
+
+  const addSlot = () =>
+    setEditor(prev =>
+      prev && prev.slots.length < MAX_METRIC_SLOTS_PER_ROW
+        ? { ...prev, slots: [...prev.slots, emptyDraft()] }
+        : prev,
+    );
+
+  const removeSlot = (slotIndex: number) =>
+    setEditor(prev =>
+      prev && prev.slots.length > 1
+        ? {
+            ...prev,
+            slots: prev.slots.filter((_, index) => index !== slotIndex),
+          }
+        : prev,
+    );
 
   const saveDraft = () => {
     if (!editor) return;
     const row: BigNumberMetricRow = {
       id:
         editor.index === null ? nextId() : (rows[editor.index]?.id ?? nextId()),
-      slots: editor.slots.map(fromDraft),
+      slots: editor.slots.slice(0, MAX_METRIC_SLOTS_PER_ROW).map(fromDraft),
     };
     const next =
       editor.index === null
@@ -377,12 +409,9 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
             <ListRow key={row.id ?? index} data-test="metric-row">
               <RowTitle>
                 <RowTitleText>{t('Row %s', index + 1)}</RowTitleText>
-                <RowSubtitle>
-                  {describeSlot(slots[0] ?? {})} ·{' '}
-                  {describeSlot(slots[1] ?? {})}
-                </RowSubtitle>
+                <RowSubtitle>{slots.map(describeSlot).join(' · ')}</RowSubtitle>
               </RowTitle>
-              <Chip>{t('2 slots')}</Chip>
+              <Chip>{t('%s slots', slots.length)}</Chip>
               <Button size="small" onClick={() => openEdit(index)}>
                 {t('Edit')}
               </Button>
@@ -427,7 +456,17 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
         <div data-test="metric-rows-editor">
           {draft.map((slot, slotIndex) => (
             <React.Fragment key={slot.id ?? slotIndex}>
-              <SectionTitle>{t('Slot %s', slotIndex + 1)}</SectionTitle>
+              <SectionTitle>
+                <span>{t('Slot %s', slotIndex + 1)}</span>
+                <Button
+                  size="small"
+                  danger
+                  disabled={draft.length <= 1}
+                  onClick={() => removeSlot(slotIndex)}
+                >
+                  {t('Remove slot')}
+                </Button>
+              </SectionTitle>
               <Row>
                 <FieldLabel>{t('Show')}</FieldLabel>
                 <Switch
@@ -529,6 +568,15 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
               </Row>
             </React.Fragment>
           ))}
+          <SlotActions>
+            <AddButton
+              size="small"
+              disabled={draft.length >= MAX_METRIC_SLOTS_PER_ROW}
+              onClick={addSlot}
+            >
+              {t('+ Add slot')}
+            </AddButton>
+          </SlotActions>
         </div>
       </Modal>
     </div>

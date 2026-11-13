@@ -75,7 +75,7 @@ const config: ControlPanelConfig = {
               label: t('Metric rows'),
               renderTrigger: true,
               description: t(
-                'Rows of metrics shown below the big number. Each row holds two independently configured slots: the first row is the MoM/YoY pair, and you can add as many rows as you need. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the comparison style settings below.',
+                'Rows of metrics shown below the big number. Add as many rows as you need, then add or remove indicators inside any row (up to six): a row can hold one, two, three or more independently configured slots. The first row starts as the MoM/YoY pair. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the style settings below, and each row flows its own indicators from the left edge.',
               ),
               // The old `comparison1_*` / `comparison2_*` controls no longer
               // exist, so form data rebuilt from `getFormDataFromControls()`
@@ -280,11 +280,11 @@ const config: ControlPanelConfig = {
             name: 'comparison_use_center_gap',
             config: {
               type: 'CheckboxControl',
-              label: t('Second column gap from center'),
+              label: t('Anchor second slot to center'),
               default: false,
               renderTrigger: true,
               description: t(
-                'Off (default): "Comparison spacing" is measured from the MoM text. On: the SAME slider is measured from the tile center line instead, so YoY no longer drifts when the MoM text changes length. Only the anchor changes - the slider, its drag behaviour and its saved value are shared by both modes.',
+                'Off (default): "Comparison spacing" is measured from the previous slot. On: the SAME slider is measured from the tile center line instead, so the second indicator no longer drifts when the first one changes length. With more than two indicators only the second one is anchored; the rest keep flowing from it. Only the anchor changes - the slider, its drag behaviour and its saved value are shared by both modes.',
               ),
             },
           },
@@ -301,7 +301,7 @@ const config: ControlPanelConfig = {
               default: DEFAULT_COMPARISON_GAP,
               renderTrigger: true,
               description: t(
-                'Horizontal distance to YoY, applied from the MoM text by default or from the tile center line when "YoY gap from center" is checked. Both modes use this one slider. It only moves the second slot and never changes the font size.',
+                'Gap between consecutive indicators in a row, measured from the previous slot by default or from the tile center line for the second slot when "Anchor second slot to center" is checked. Both modes use this one slider. It only moves the slots and never changes the font size.',
               ),
             },
           },
@@ -311,9 +311,12 @@ const config: ControlPanelConfig = {
             name: 'swap_comparison_order',
             config: {
               type: 'CheckboxControl',
-              label: t('Swap the two columns'),
+              label: t('Reverse slot order'),
               default: false,
               renderTrigger: true,
+              description: t(
+                'Reverse the indicators of every row. With two indicators this simply swaps the two columns; with three or more the whole row is laid out right to left.',
+              ),
             },
           },
         ],

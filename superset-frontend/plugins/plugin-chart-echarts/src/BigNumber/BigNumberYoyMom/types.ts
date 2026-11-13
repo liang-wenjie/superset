@@ -49,7 +49,8 @@ export type BigNumberYoyMomFormData = QueryFormData & {
   /** Formatted big numbers of every KPI tile on the dashboard. */
   uniformBigNumberReferenceTexts?: string[];
   /**
-   * Unified metric rows: every row holds two independently configured slots.
+   * Unified metric rows. Each row holds its OWN number of independently
+   * configured slots (one to six; a new row starts with the classic two).
    * Charts saved before this field existed fall back to the legacy
    * `comparison1_*` / `comparison2_*` pair through `resolveMetricRows`.
    */

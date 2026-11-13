@@ -1652,13 +1652,128 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[4].style.text).toContain('在职');
     expect(graphic[4].style.text).toContain('1234');
     expect(graphic[5].style.text).toContain('5678');
-    // Every row shares the two column boundaries and one font size.
+    // Every row flows its own slots from the left edge. Both rows start at
+    // the same offset, but each second slot follows THAT row's first label,
+    // so the two rows are no longer forced onto a shared column boundary.
     expect(graphic[4].left).toBe(graphic[2].left);
-    expect(graphic[5].left).toBe(graphic[3].left);
+    expect(graphic[5].left).not.toBe(graphic[3].left);
+    expect(graphic[3].left).toBeGreaterThanOrEqual(
+      graphic[2].left + comparisonTextWidth(graphic[2]),
+    );
+    expect(graphic[5].left).toBeGreaterThanOrEqual(
+      graphic[4].left + comparisonTextWidth(graphic[4]),
+    );
+    // All rows still share one font size.
     expect(graphic[4].style.fontSize).toBe(graphic[2].style.fontSize);
     // The added row sits strictly below row 1, with both slots on one line.
     expect(graphic[4].top).toBeGreaterThan(graphic[2].top);
     expect(graphic[5].top).toBe(graphic[4].top);
+  });
+
+  test('flows three indicators in one row without overlapping or clipping', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 100,
+            headcount: 1234,
+            cost: 5678,
+            margin: 42,
+          },
+        ],
+        {
+          metric_rows: [
+            {
+              slots: [
+                { label: '在职', mode: 'metric', column: 'headcount' },
+                { label: '成本', mode: 'metric', column: 'cost' },
+                { label: '利润率', mode: 'metric', column: 'margin' },
+              ],
+            },
+          ],
+        },
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    // Title, big number and three indicators.
+    expect(graphic).toHaveLength(5);
+    expect(graphic[2].style.text).toContain('1234');
+    expect(graphic[3].style.text).toContain('5678');
+    expect(graphic[4].style.text).toContain('42');
+    // One line, strictly increasing positions, no overlap.
+    expect(graphic[3].top).toBe(graphic[2].top);
+    expect(graphic[4].top).toBe(graphic[2].top);
+    expect(graphic[3].left).toBeGreaterThanOrEqual(
+      graphic[2].left + comparisonTextWidth(graphic[2]),
+    );
+    expect(graphic[4].left).toBeGreaterThanOrEqual(
+      graphic[3].left + comparisonTextWidth(graphic[3]),
+    );
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+    // All three indicators share the one comparison font size.
+    expect(graphic[3].style.fontSize).toBe(graphic[2].style.fontSize);
+    expect(graphic[4].style.fontSize).toBe(graphic[2].style.fontSize);
+  });
+
+  test('rows with different slot counts flow independently', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 100,
+            headcount: 1234,
+            cost: 5678,
+            margin: 42,
+          },
+        ],
+        {
+          metric_rows: [
+            {
+              slots: [
+                { label: '在职', mode: 'metric', column: 'headcount' },
+                { label: '成本', mode: 'metric', column: 'cost' },
+                { label: '利润率', mode: 'metric', column: 'margin' },
+              ],
+            },
+            {
+              slots: [{ label: '单独', mode: 'metric', column: 'margin' }],
+            },
+          ],
+        },
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic).toHaveLength(6);
+    // The single-indicator row starts at the left edge instead of being
+    // pushed to the third column of the row above it.
+    expect(graphic[5].left).toBe(graphic[2].left);
+    expect(graphic[5].top).toBeGreaterThan(graphic[2].top);
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+  });
+
+  test('a hidden slot in a three-indicator row does not reserve a column', () => {
+    const result = transformProps(
+      buildChartProps([{ 'SUM(sales)': 100, cost: 5678, margin: 42 }], {
+        metric_rows: [
+          {
+            slots: [
+              { show: false, mode: 'metric', column: 'headcount' },
+              { label: '成本', mode: 'metric', column: 'cost' },
+              { label: '利润率', mode: 'metric', column: 'margin' },
+            ],
+          },
+        ],
+      }),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic).toHaveLength(4);
+    // The first visible indicator sits at the left edge, not in column 2.
+    expect(graphic[2].left).toBe(20);
+    expect(graphic[2].style.text).toContain('5678');
+    expect(graphic[3].left).toBeGreaterThanOrEqual(
+      graphic[2].left + comparisonTextWidth(graphic[2]),
+    );
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
   });
 
   test('an explicitly empty metric_rows list hides all comparison rows', () => {

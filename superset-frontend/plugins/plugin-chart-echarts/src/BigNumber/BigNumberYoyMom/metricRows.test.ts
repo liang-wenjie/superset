@@ -17,10 +17,11 @@
  * under the License.
  */
 import {
+  DEFAULT_SLOTS_PER_ROW,
   flattenMetricSlots,
   isMetricMode,
+  MAX_SLOTS_PER_ROW,
   resolveMetricRows,
-  SLOTS_PER_ROW,
 } from './metricRows';
 
 jest.mock('@apache-superset/core/translation', () => ({
@@ -30,7 +31,7 @@ jest.mock('@apache-superset/core/translation', () => ({
 test('synthesizes the legacy MoM/YoY pair as row 1', () => {
   const rows = resolveMetricRows({});
   expect(rows).toHaveLength(1);
-  expect(rows[0].slots).toHaveLength(SLOTS_PER_ROW);
+  expect(rows[0].slots).toHaveLength(DEFAULT_SLOTS_PER_ROW);
   expect(rows[0].slots[0]).toMatchObject({
     show: true,
     label: 'MoM',
@@ -102,7 +103,7 @@ test('an unset legacy mode with a column falls back to metric mode', () => {
   );
 });
 
-test('an explicit metric_rows list wins over the legacy controls and pads to two slots', () => {
+test('an explicit metric_rows list wins over legacy controls and keeps each row own slot count', () => {
   const rows = resolveMetricRows({
     show_comparison1: false,
     metric_rows: [
@@ -111,22 +112,38 @@ test('an explicit metric_rows list wins over the legacy controls and pads to two
         slots: [
           { label: 'Headcount', mode: 'metric', column: 'headcount' },
           { label: 'Cost', mode: 'metric', column: 'cost' },
+          { label: 'Margin', mode: 'metric', column: 'margin' },
         ],
       },
       { id: 'row_b', slots: [{ label: 'Only one' }] },
+      { id: 'row_c', slots: [] },
     ],
   });
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(3);
   expect(rows[0].id).toBe('row_a');
-  expect(rows[0].slots[0].label).toBe('Headcount');
-  expect(rows[1].slots).toHaveLength(SLOTS_PER_ROW);
-  expect(rows[1].slots[1]).toEqual({ mode: undefined });
+  expect(rows[0].slots).toHaveLength(3);
+  expect(rows[0].slots[2].label).toBe('Margin');
+  // No phantom second slot: a one-indicator row stays a one-indicator row.
+  expect(rows[1].slots).toHaveLength(1);
+  expect(rows[1].slots[0].label).toBe('Only one');
+  expect(rows[2].slots).toHaveLength(0);
   expect(flattenMetricSlots(rows).map(slot => slot.label)).toEqual([
     'Headcount',
     'Cost',
+    'Margin',
     'Only one',
-    undefined,
   ]);
+});
+
+test('caps malformed rows at the editor limit', () => {
+  const slots = Array.from({ length: MAX_SLOTS_PER_ROW + 3 }, (_, index) => ({
+    label: `slot_${index}`,
+    mode: 'metric' as const,
+    column: `col_${index}`,
+  }));
+  const rows = resolveMetricRows({ metric_rows: [{ slots }] });
+  expect(rows[0].slots).toHaveLength(MAX_SLOTS_PER_ROW);
+  expect(rows[0].slots[MAX_SLOTS_PER_ROW - 1].label).toBe('slot_5');
 });
 
 test('an explicitly saved empty list stays empty', () => {

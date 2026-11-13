@@ -310,6 +310,28 @@ describe('BigNumberYoyMom buildQuery', () => {
     );
   });
 
+  test('collects all three indicators of a three-slot row', () => {
+    const queryContext = buildQuery({
+      ...baseFormData,
+      time_range: 'Last week',
+      metric_rows: [
+        {
+          slots: [
+            { mode: 'metric', column: 'headcount' },
+            { mode: 'metric', column: 'cost' },
+            { mode: 'time_shift', offset: '1 month ago' },
+          ],
+        },
+      ],
+    });
+    expect(queryContext.queries[0].metrics).toEqual([
+      'value',
+      'headcount',
+      'cost',
+    ]);
+    expect(queryContext.queries[0].time_offsets).toEqual(['1 month ago']);
+  });
+
   test('deduplicates a time offset shared by several rows', () => {
     const queryContext = buildQuery({
       ...baseFormData,

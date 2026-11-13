@@ -25,8 +25,14 @@ import {
   DEFAULT_COMPARISON2_OFFSET,
 } from './constants';
 
-/** Number of metric slots rendered side by side in every row. */
-export const SLOTS_PER_ROW = 2;
+/**
+ * A new row (and a chart saved before `metric_rows` existed) starts with the
+ * classic MoM/YoY pair. Rows are NOT padded to this length: the editor lets
+ * each row hold any number of slots, e.g. three indicators side by side.
+ */
+export const DEFAULT_SLOTS_PER_ROW = 2;
+/** Guard against malformed saved data; the Explore editor caps at the same. */
+export const MAX_SLOTS_PER_ROW = 6;
 
 export type BigNumberMetricSlotMode = 'time_shift' | 'metric';
 
@@ -144,12 +150,12 @@ export function resolveMetricRows(
     )
     .map((row, index) => {
       const slots = Array.isArray(row.slots) ? row.slots : [];
-      const normalized = Array.from({ length: SLOTS_PER_ROW }, (_, slotIndex) =>
-        normalizeSlot(slots[slotIndex]),
-      );
       return {
         id: typeof row.id === 'string' ? row.id : `row_${index}`,
-        slots: normalized,
+        // Keep the exact number of slots the user configured. Padding every
+        // row to two used to create empty, invisible columns; rows now flow
+        // their own visible slots from the left edge independently.
+        slots: slots.slice(0, MAX_SLOTS_PER_ROW).map(normalizeSlot),
       };
     });
 }

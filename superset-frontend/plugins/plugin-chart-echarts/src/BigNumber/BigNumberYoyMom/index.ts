@@ -28,7 +28,7 @@ import { EchartsChartPlugin } from '../../types';
 const metadata = {
   category: t('KPI'),
   description: t(
-    'Showcases a single number with configurable rows of metrics below it. The first row holds the MoM/YoY comparisons; add more rows of two independently configured metrics as needed.',
+    'Showcases a single number with configurable rows of metrics below it. The first row starts as the MoM/YoY comparisons; add as many rows as you need, each holding one to six independently configured indicators.',
   ),
   name: t('Big Number with YoY & MoM'),
   tags: [

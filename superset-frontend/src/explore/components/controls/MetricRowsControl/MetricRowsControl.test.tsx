@@ -135,6 +135,81 @@ test('adds a row with two independently configurable slots', async () => {
   expect(rows[1].slots[0].mode).toBe('metric');
 });
 
+test('adds a third indicator to an existing row', async () => {
+  const onChange = jest.fn();
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={legacyRows}
+      onChange={onChange}
+    />,
+  );
+  expect(screen.getByText('2 slots')).toBeInTheDocument();
+  await userEvent.click(screen.getByText('Edit'));
+  expect(screen.getByText('Slot 1')).toBeInTheDocument();
+  expect(screen.getByText('Slot 2')).toBeInTheDocument();
+  expect(screen.queryByText('Slot 3')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByText('+ Add slot'));
+  expect(screen.getByText('Slot 3')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const rows = lastEmitted(onChange);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].slots).toHaveLength(3);
+  expect(rows[0].slots[0]).toMatchObject({
+    label: 'MoM',
+    offset: '1 month ago',
+  });
+});
+
+test('removes one indicator from a three-slot row', async () => {
+  const onChange = jest.fn();
+  const threeSlotRow: BigNumberMetricRow[] = [
+    {
+      id: 'row_3',
+      slots: [
+        { label: 'A', mode: 'metric', column: 'a' },
+        { label: 'B', mode: 'metric', column: 'b' },
+        { label: 'C', mode: 'metric', column: 'c' },
+      ],
+    },
+  ];
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={threeSlotRow}
+      onChange={onChange}
+    />,
+  );
+  expect(screen.getByText('3 slots')).toBeInTheDocument();
+  await userEvent.click(screen.getByText('Edit'));
+  const removeButtons = screen.getAllByText('Remove slot');
+  expect(removeButtons).toHaveLength(3);
+  await userEvent.click(removeButtons[2]);
+  expect(screen.queryByText('Slot 3')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(lastEmitted(onChange)[0].slots).toHaveLength(2);
+});
+
+test('caps a row at six indicators', async () => {
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={legacyRows}
+    />,
+  );
+  await userEvent.click(screen.getByText('+ Add metric row'));
+  const addSlot = () => screen.getByText('+ Add slot');
+  for (let index = 2; index < 6; index += 1) {
+    await userEvent.click(addSlot());
+  }
+  expect(screen.getByText('Slot 6')).toBeInTheDocument();
+  expect(screen.queryByText('Slot 7')).not.toBeInTheDocument();
+  expect(addSlot().closest('button')).toBeDisabled();
+});
+
 test('an explicit empty list is not replaced by the legacy pair', () => {
   const onChange = jest.fn();
   render(

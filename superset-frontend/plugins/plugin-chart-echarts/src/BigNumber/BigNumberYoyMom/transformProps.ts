@@ -65,7 +65,6 @@ import {
   camelToSnake,
   isMetricMode,
   resolveMetricRows,
-  SLOTS_PER_ROW,
 } from './metricRows';
 
 const toNumber = (value: unknown): number | null => {
@@ -792,8 +791,9 @@ export default function transformProps(
     };
   };
 
-  // Every row contributes two independently configured slots. A row with no
-  // visible slot is dropped so it never reserves vertical space.
+  // Every row keeps its OWN number of slots and its original slot order. A
+  // row with no visible slot is dropped so it never reserves vertical space;
+  // hidden slots inside a row are skipped and never reserve a column.
   const comparisonContents: ComparisonContent[][] = metricRows.map(row =>
     row.slots.map(slot =>
       buildComparisonContent({
@@ -820,36 +820,42 @@ export default function transformProps(
   // All rows measure with estimateComparisonTextWidth (0.5em ASCII / 1em
   // full-width): the generic estimator overstated a "同比 ↑104.79%" slot by
   // ~60% and flattened every configured font size to the same tiny value.
-  // Uniform sizing measures a data-independent design text so equal-width
-  // tiles share ONE size even when they have a different number of rows.
+  // Uniform sizing measures a data-independent design text for EVERY slot so
+  // equal-width tiles share ONE size even with different row/slot counts.
   const comparisonFitTexts = visibleRows.map(contents =>
-    Array.from({ length: SLOTS_PER_ROW }, (_, slotIndex) =>
+    contents.map(content =>
       uniformBigNumberFontSize
         ? UNIFORM_COMPARISON_DESIGN_TEXT
-        : (contents[slotIndex]?.text ?? ''),
+        : (content?.text ?? ''),
     ),
   );
-  const comparisonSlotWidthsAt = (size: number): [number, number][] =>
-    visibleRows.map(
-      (contents, rowIndex) =>
-        Array.from({ length: SLOTS_PER_ROW }, (_, slotIndex) =>
-          contents[slotIndex]
-            ? estimateComparisonTextWidth(
-                comparisonFitTexts[rowIndex][slotIndex],
-                size,
-              )
-            : 0,
-        ) as [number, number],
+  // Widths stay aligned with the row's original slot indexes; a hidden slot
+  // has width 0 and is filtered out while flowing the row.
+  const comparisonSlotWidthsAt = (size: number): number[][] =>
+    visibleRows.map((contents, rowIndex) =>
+      contents.map((content, slotIndex) =>
+        content
+          ? estimateComparisonTextWidth(
+              comparisonFitTexts[rowIndex][slotIndex],
+              size,
+            )
+          : 0,
+      ),
     );
-  // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Fit the two slots of
-  // EVERY row back-to-back plus one FIXED design gap, then place them using
-  // the configured spacing. One shared font size is used by all rows, so
-  // adding rows can never make a single row drift in size.
+  const activeWidthsOf = (widths: number[], rowIndex: number): number[] =>
+    widths.filter((_, slotIndex) => visibleRows[rowIndex][slotIndex] !== null);
+  // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Fit the visible slots of
+  // EVERY row back-to-back plus a FIXED design gap between consecutive slots,
+  // then place them using the configured spacing. One shared font size is used
+  // by all rows, so adding rows or indicators cannot make one row drift.
   const comparisonRowFits = (size: number, bound: number): boolean =>
-    comparisonSlotWidthsAt(size).every(
-      ([first, second]) =>
-        comparisonLeft + first + second + COMPARISON_FIT_RESERVED_GAP <= bound,
-    );
+    comparisonSlotWidthsAt(size).every((widths, rowIndex) => {
+      const active = activeWidthsOf(widths, rowIndex);
+      const total =
+        active.reduce((sum, slotWidth) => sum + slotWidth, 0) +
+        Math.max(0, active.length - 1) * COMPARISON_FIT_RESERVED_GAP;
+      return comparisonLeft + total <= bound;
+    });
   const minComparisonFontSizePx = uniformBigNumberFontSize
     ? MIN_UNIFORM_COMPARISON_FONT_SIZE
     : MIN_COMPARISON_FONT_SIZE_PX;
@@ -876,49 +882,66 @@ export default function transformProps(
     comparisonFontSizePx -= 1;
   }
 
-  // LAYOUT ONLY. One slider drives both anchor modes: unchecked measures the
-  // spacing from the MoM text's right edge, checked measures the SAME value
-  // from the tile's horizontal center line. Nothing above reads either value,
-  // so spacing can never influence the font size.
-  const rowWidths = comparisonSlotWidthsAt(comparisonFontSizePx);
-  // All rows share ONE column boundary: the widest first slot across rows
-  // decides where the second column starts, so a long label in a lower row
-  // can never overlap that row's own second slot.
-  const widestFirstSlot = Math.max(0, ...rowWidths.map(([first]) => first));
-  const widestSecondSlot = Math.max(
-    0,
-    ...rowWidths.map(([, second]) => second),
-  );
-  const leftWidth = swapComparisonOrder ? widestSecondSlot : widestFirstSlot;
-  const rightWidth = swapComparisonOrder ? widestFirstSlot : widestSecondSlot;
-  const minRightLeft = comparisonLeft + leftWidth;
-  const idealRightLeft = useCenterGap
-    ? Math.round(width / 2) + comparisonGapPx
-    : minRightLeft + comparisonGapPx;
-  // comparisonRowFits guarantees minRightLeft <= width - rightWidth, so these
-  // bounds always leave room: bias towards the configured position, but never
-  // let a large gap push the second slot off the canvas or back into the first.
+  // LAYOUT ONLY. Every row flows its visible slots from the left edge in its
+  // own order: rows are NOT forced onto shared column boundaries, so a row
+  // with three indicators simply gets three positions. One slider drives the
+  // gap between consecutive slots; the center anchor still pins the SECOND
+  // position to the tile center line. Nothing above reads either value, so
+  // spacing can never influence the font size.
+  const slotWidths = comparisonSlotWidthsAt(comparisonFontSizePx);
+  // Never let a large gap push a slot off the canvas or back into the previous
+  // one: each position is clamped, and the next one continues from the actual
+  // clamped position.
   const clampLeft = (left: number, textWidth: number): number =>
     Math.min(Math.max(0, left), Math.max(0, width - textWidth));
-  const rightLeft = clampLeft(
-    Math.max(idealRightLeft, minRightLeft),
-    rightWidth,
-  );
-  // Absolute positions saved by very old charts only apply to row 1; every
-  // added row uses the shared column boundary above.
+  // Absolute positions saved by very old charts only apply to row 1's first
+  // two slots; every other row uses the flow layout above.
   const legacyLefts = metricRows[0]?.slots.map(slot => slot.left) ?? [];
   const hasLegacyComparisonLefts = legacyLefts.some(left => left !== undefined);
-  const comparisonLeftsForRow = (rowIndex: number): [number, number] => {
-    const [first, second] = rowWidths[rowIndex] ?? [0, 0];
+  const comparisonLeftsForRow = (rowIndex: number): (number | null)[] => {
+    const contents = visibleRows[rowIndex];
+    const widths = slotWidths[rowIndex] ?? [];
+    const activeIndexes = contents
+      .map((content, slotIndex) => (content ? slotIndex : -1))
+      .filter(slotIndex => slotIndex >= 0);
+    // Reversing BEFORE placing preserves the legacy "swap the two columns"
+    // behaviour (the left column then measures the second slot) and extends
+    // naturally to three or more indicators: the whole row is reversed.
+    const reverse =
+      swapComparisonOrder && !(rowIndex === 0 && hasLegacyComparisonLefts);
+    const displayIndexes = reverse
+      ? [...activeIndexes].reverse()
+      : activeIndexes;
+    const positions: number[] = [];
+    let cursor = comparisonLeft;
+    displayIndexes.forEach((slotIndex, positionIndex) => {
+      const textWidth = widths[slotIndex] ?? 0;
+      let desired = cursor;
+      if (positionIndex === 1 && useCenterGap) {
+        desired = Math.max(
+          comparisonLeft + (widths[displayIndexes[0]] ?? 0),
+          Math.round(width / 2) + comparisonGapPx,
+        );
+      }
+      const left = clampLeft(desired, textWidth);
+      positions.push(left);
+      cursor = left + textWidth + comparisonGapPx;
+    });
+    const lefts: (number | null)[] = contents.map(() => null);
+    displayIndexes.forEach((slotIndex, positionIndex) => {
+      lefts[slotIndex] = positions[positionIndex];
+    });
     if (rowIndex === 0 && hasLegacyComparisonLefts) {
-      return [
-        clampLeft(legacyLefts[0] ?? comparisonLeft, first),
-        clampLeft(legacyLefts[1] ?? rightLeft, second),
-      ];
+      [0, 1].forEach(slotIndex => {
+        if (slotIndex >= lefts.length) return;
+        const saved = legacyLefts[slotIndex];
+        lefts[slotIndex] = clampLeft(
+          saved ?? lefts[slotIndex] ?? comparisonLeft,
+          widths[slotIndex] ?? 0,
+        );
+      });
     }
-    return swapComparisonOrder
-      ? [rightLeft, comparisonLeft]
-      : [comparisonLeft, rightLeft];
+    return lefts;
   };
 
   // Match the Big Number family: the complete text stack is centered in the
@@ -1034,12 +1057,16 @@ export default function transformProps(
     });
   };
   visibleRows.forEach((contents, rowIndex) => {
-    const [left0, left1] = comparisonLeftsForRow(rowIndex);
+    const lefts = comparisonLeftsForRow(rowIndex);
     const rowTop =
       effectiveComparisonTop +
       rowIndex * (comparisonRowHeight + effectiveComparisonRowGapPx);
-    pushComparison(contents[0], left0, rowTop);
-    pushComparison(contents[1], left1, rowTop);
+    contents.forEach((content, slotIndex) => {
+      const left = lefts[slotIndex];
+      if (content && left !== null) {
+        pushComparison(content, left, rowTop);
+      }
+    });
   });
 
   const echartOptions: EChartsCoreOption = {

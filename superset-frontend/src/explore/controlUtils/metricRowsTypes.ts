@@ -50,3 +50,11 @@ export type BigNumberMetricRow = {
   id?: string;
   slots: BigNumberMetricSlot[];
 };
+
+/**
+ * Mirrors `DEFAULT_SLOTS_PER_ROW` / `MAX_SLOTS_PER_ROW` in the plugin's
+ * `metricRows.ts`. Keep the two values in sync: the plugin source cannot be
+ * imported from `src/explore`.
+ */
+export const DEFAULT_METRIC_SLOTS_PER_ROW = 2;
+export const MAX_METRIC_SLOTS_PER_ROW = 6;
