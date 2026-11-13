@@ -77,6 +77,27 @@ const config: ControlPanelConfig = {
               description: t(
                 'Rows of metrics shown below the big number. Each row holds two independently configured slots: the first row is the MoM/YoY pair, and you can add as many rows as you need. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the comparison style settings below.',
               ),
+              // The old `comparison1_*` / `comparison2_*` controls no longer
+              // exist, so form data rebuilt from `getFormDataFromControls()`
+              // (initial `latestQueryFormData`, viz-type switches, ...) would
+              // lose every comparison setting and the chart would fall back
+              // to empty "MoM —" / "YoY —" placeholders. Resolve the legacy
+              // pair into a REAL control value so every derived form data
+              // carries `metric_rows` and the renderer sees the same rows as
+              // the editor. Return nothing when there is no form data (the
+              // dashboard hydration path passes null) so saved legacy keys
+              // are left untouched there.
+              default: (
+                _controlState: unknown,
+                controlPanelState?: Partial<ControlPanelState> | null,
+              ) => {
+                const formData = controlPanelState?.form_data;
+                return formData
+                  ? resolveMetricRows(
+                      formData as unknown as Record<string, unknown>,
+                    )
+                  : undefined;
+              },
               // Dataset metadata arrives asynchronously; rebuild the metric
               // options whenever Explore state changes.
               shouldMapStateToProps() {
@@ -398,6 +419,12 @@ const config: ControlPanelConfig = {
   formDataOverrides: formData => ({
     ...formData,
     metric: getStandardizedControls().shiftMetric(),
+    // Switching to this viz type rebuilds form data from public controls
+    // only. Persist the resolved rows so the saved form data keeps the
+    // comparison configuration instead of reverting to empty placeholders.
+    metric_rows: resolveMetricRows(
+      formData as unknown as Record<string, unknown>,
+    ),
   }),
 };
 
