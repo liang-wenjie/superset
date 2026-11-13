@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { css, styled, useTheme } from '@apache-superset/core/theme';
 import { t } from '@apache-superset/core/translation';
@@ -27,6 +27,14 @@ import {
   Select,
   Switch,
 } from '@superset-ui/core/components';
+import { Icons } from '@superset-ui/core/components/Icons';
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import ControlHeader from 'src/explore/components/ControlHeader';
 import {
   DEFAULT_METRIC_SLOTS_PER_ROW,
@@ -58,6 +66,21 @@ const ListRow = styled.div`
   border: 1px solid ${({ theme }) => theme.colorBorderSecondary};
   border-radius: ${({ theme }) => theme.borderRadius}px;
   padding: ${({ theme }) => theme.sizeUnit * 2}px;
+  background: ${({ theme }) => theme.colorBgContainer};
+  cursor: grab;
+  &:active {
+    cursor: grabbing;
+  }
+`;
+
+// Same grip as the column/metric selection controls. The whole row is the
+// drag activator; this is only the visible affordance.
+const DragHandle = styled.span`
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: ${({ theme }) => theme.colorTextTertiary};
+  cursor: inherit;
 `;
 
 const RowTitle = styled.div`
@@ -276,6 +299,93 @@ const describeSlot = (slot: BigNumberMetricSlot): string => {
   return `${slot.label || t('No label')} · ${source}`;
 };
 
+type SortableRowProps = {
+  id: string;
+  index: number;
+  row: BigNumberMetricRow;
+  reorderType: string;
+  onShiftOptions: (from: number, to: number) => void;
+  onEdit: () => void;
+  onRemove: () => void;
+};
+
+// Reuse the SAME drag pipeline as the column/metric selection pills: the
+// whole row is the sortable activator, and ExploreDndContext resolves the
+// drop by calling the `onShiftOptions` callback registered on its data.
+const SortableMetricRow: React.FC<SortableRowProps> = ({
+  id,
+  index,
+  row,
+  reorderType,
+  onShiftOptions,
+  onEdit,
+  onRemove,
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id,
+    // Avoid the springy settle animation on drop; full-width rows sliding
+    // into place already make the reorder obvious.
+    animateLayoutChanges: () => false,
+    data: {
+      type: reorderType,
+      dragIndex: index,
+      onShiftOptions,
+    },
+  });
+  const style = {
+    // These rows are full width, so ignore the horizontal part of the drag
+    // translation: only up/down movement should be visible.
+    transform: CSS.Translate.toString(
+      transform ? { ...transform, x: 0 } : null,
+    ),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  const slots = Array.isArray(row.slots) ? row.slots : [];
+
+  return (
+    <ListRow
+      // Register the row as its own activator: the keyboard sensor then
+      // ignores Space/Enter pressed on the nested Edit/Remove buttons.
+      ref={node => {
+        setNodeRef(node);
+        setActivatorNodeRef(node);
+      }}
+      style={style}
+      data-test="metric-row"
+      {...attributes}
+      {...listeners}
+    >
+      <DragHandle
+        aria-hidden
+        data-test="metric-row-drag-handle"
+        title={t('Drag to reorder')}
+      >
+        <Icons.MenuOutlined />
+      </DragHandle>
+      <RowTitle>
+        <RowTitleText>{t('Row %s', index + 1)}</RowTitleText>
+        <RowSubtitle>{slots.map(describeSlot).join(' · ')}</RowSubtitle>
+      </RowTitle>
+      <Chip>{t('%s slots', slots.length)}</Chip>
+      <Button size="small" onClick={onEdit}>
+        {t('Edit')}
+      </Button>
+      <Button size="small" danger onClick={onRemove}>
+        {t('Remove')}
+      </Button>
+    </ListRow>
+  );
+};
+
 const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
   name,
   label,
@@ -367,13 +477,35 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
   const removeRow = (index: number) =>
     emit(rows.filter((_, rowIndex) => rowIndex !== index));
 
-  const moveRow = (index: number, delta: number) => {
-    const target = index + delta;
-    if (target < 0 || target >= rows.length) return;
-    const next = [...rows];
-    [next[index], next[target]] = [next[target], next[index]];
-    emit(next);
-  };
+  // Scope the sortable type to this control so a reorder can never be
+  // confused with the column/metric pills of another control on the page.
+  const reorderType = `MetricRowsRow_${name}`;
+  const sortableItemIds = useMemo(
+    () =>
+      Array.from(
+        { length: rows.length },
+        (_, index) => `sortable-${reorderType}-${index}`,
+      ),
+    [rows.length, reorderType],
+  );
+  // ExploreDndContext calls this with the dragged row's index and the index
+  // it was dropped over. `arrayMove` keeps the row objects (and their ids)
+  // intact, so only the order reaches `onChange`.
+  const reorderRows = useCallback(
+    (from: number, to: number) => {
+      if (
+        from === to ||
+        from < 0 ||
+        to < 0 ||
+        from >= rows.length ||
+        to >= rows.length
+      ) {
+        return;
+      }
+      onChange?.(arrayMove(rows, from, to));
+    },
+    [rows, onChange],
+  );
 
   const draft = editor?.slots ?? [];
   const offsetOptions = offsetChoices.map(offset => ({
@@ -403,38 +535,23 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
             {t('No metric rows configured.')}
           </div>
         )}
-        {rows.map((row, index) => {
-          const slots = Array.isArray(row.slots) ? row.slots : [];
-          return (
-            <ListRow key={row.id ?? index} data-test="metric-row">
-              <RowTitle>
-                <RowTitleText>{t('Row %s', index + 1)}</RowTitleText>
-                <RowSubtitle>{slots.map(describeSlot).join(' · ')}</RowSubtitle>
-              </RowTitle>
-              <Chip>{t('%s slots', slots.length)}</Chip>
-              <Button size="small" onClick={() => openEdit(index)}>
-                {t('Edit')}
-              </Button>
-              <Button
-                size="small"
-                disabled={index === 0}
-                onClick={() => moveRow(index, -1)}
-              >
-                {t('Up')}
-              </Button>
-              <Button
-                size="small"
-                disabled={index === rows.length - 1}
-                onClick={() => moveRow(index, 1)}
-              >
-                {t('Down')}
-              </Button>
-              <Button size="small" danger onClick={() => removeRow(index)}>
-                {t('Remove')}
-              </Button>
-            </ListRow>
-          );
-        })}
+        <SortableContext
+          items={sortableItemIds}
+          strategy={verticalListSortingStrategy}
+        >
+          {rows.map((row, index) => (
+            <SortableMetricRow
+              key={row.id ?? index}
+              id={sortableItemIds[index]}
+              index={index}
+              row={row}
+              reorderType={reorderType}
+              onShiftOptions={reorderRows}
+              onEdit={() => openEdit(index)}
+              onRemove={() => removeRow(index)}
+            />
+          ))}
+        </SortableContext>
         <AddButton size="small" onClick={openNew}>
           {t('+ Add metric row')}
         </AddButton>

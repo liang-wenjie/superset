@@ -18,8 +18,26 @@
  */
 import type { ReactNode } from 'react';
 import { render, screen, userEvent } from '@superset-ui/core/spec';
+import { useSortable } from '@dnd-kit/sortable';
+import {
+  type CapturedSortables,
+  captureSortableData,
+  simulateReorder,
+} from 'src/explore/components/controls/DndColumnSelectControl/dndTestUtils';
 import type { BigNumberMetricRow } from 'src/explore/controlUtils/metricRowsTypes';
 import MetricRowsControl from '.';
+
+jest.mock('@dnd-kit/sortable', () => ({
+  ...jest.requireActual('@dnd-kit/sortable'),
+  useSortable: jest.fn(),
+}));
+
+const sortables: CapturedSortables = { items: [] };
+
+beforeEach(() => {
+  sortables.items = [];
+  (useSortable as jest.Mock).mockImplementation(captureSortableData(sortables));
+});
 
 jest.mock('@apache-superset/core/translation', () => ({
   t: (text: string, ...args: unknown[]) => {
@@ -237,4 +255,73 @@ test('removing a row emits the remaining rows', async () => {
   );
   await userEvent.click(screen.getByText('Remove'));
   expect(lastEmitted(onChange)).toEqual([]);
+});
+
+test('rows are dragged to reorder instead of using Up/Down buttons', () => {
+  const onChange = jest.fn();
+  const rows: BigNumberMetricRow[] = [
+    { id: 'row_a', slots: [{ label: 'A', mode: 'metric', column: 'a' }] },
+    { id: 'row_b', slots: [{ label: 'B', mode: 'metric', column: 'b' }] },
+    { id: 'row_c', slots: [{ label: 'C', mode: 'metric', column: 'c' }] },
+  ];
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={rows}
+      onChange={onChange}
+    />,
+  );
+  expect(screen.getAllByTestId('metric-row')).toHaveLength(3);
+  // Every row exposes the same grip as the column selection pills.
+  expect(screen.getAllByTestId('metric-row-drag-handle')).toHaveLength(3);
+  expect(screen.queryByText('Up')).not.toBeInTheDocument();
+  expect(screen.queryByText('Down')).not.toBeInTheDocument();
+  expect(sortables.items.map(item => item.dragIndex)).toEqual([0, 1, 2]);
+  expect(sortables.items[0].type).toBe('MetricRowsRow_metric_rows');
+
+  // Drag the first row onto the third one. The Explore-wide dispatcher
+  // resolves this through the onShiftOptions callback registered above.
+  simulateReorder(sortables, 0, 2);
+  expect(
+    lastEmitted(onChange).map((row: BigNumberMetricRow) => row.id),
+  ).toEqual(['row_b', 'row_c', 'row_a']);
+});
+
+test('renders with the real sortable hook even without a DndContext', () => {
+  // The Explore page supplies ExploreDndContextProvider. This guards the
+  // control itself (storybooks, isolated renders) against a missing one.
+  (useSortable as jest.Mock).mockImplementation(
+    jest.requireActual('@dnd-kit/sortable').useSortable,
+  );
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={legacyRows}
+    />,
+  );
+  expect(screen.getAllByTestId('metric-row')).toHaveLength(1);
+  expect(screen.getAllByTestId('metric-row-drag-handle')).toHaveLength(1);
+});
+
+test('dragging a row back up keeps the other rows in order', () => {
+  const onChange = jest.fn();
+  const rows: BigNumberMetricRow[] = [
+    { id: 'row_a', slots: [] },
+    { id: 'row_b', slots: [] },
+    { id: 'row_c', slots: [] },
+  ];
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={rows}
+      onChange={onChange}
+    />,
+  );
+  simulateReorder(sortables, 2, 0);
+  expect(
+    lastEmitted(onChange).map((row: BigNumberMetricRow) => row.id),
+  ).toEqual(['row_c', 'row_a', 'row_b']);
 });

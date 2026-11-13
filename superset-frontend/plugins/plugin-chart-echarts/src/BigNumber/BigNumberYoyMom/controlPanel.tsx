@@ -75,7 +75,7 @@ const config: ControlPanelConfig = {
               label: t('Metric rows'),
               renderTrigger: true,
               description: t(
-                'Rows of metrics shown below the big number. Add as many rows as you need, then add or remove indicators inside any row (up to six): a row can hold one, two, three or more independently configured slots. The first row starts as the MoM/YoY pair. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the style settings below, and each row flows its own indicators from the left edge.',
+                'Rows of metrics shown below the big number. Add as many rows as you need, then add or remove indicators inside any row (up to six): a row can hold one, two, three or more independently configured slots. Drag a row by its grip to reorder it. The first row starts as the MoM/YoY pair. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the style settings below, and each row flows its own indicators from the left edge.',
               ),
               // The old `comparison1_*` / `comparison2_*` controls no longer
               // exist, so form data rebuilt from `getFormDataFromControls()`
