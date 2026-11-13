@@ -75,7 +75,7 @@ const config: ControlPanelConfig = {
               label: t('Metric rows'),
               renderTrigger: true,
               description: t(
-                'Rows of metrics shown below the big number. Add as many rows as you need, then add or remove indicators inside any row (up to six): a row can hold one, two, three or more independently configured slots. Drag a row by its grip to reorder it. The first row starts as the MoM/YoY pair. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the style settings below and ONE column grid sized by the row with the most indicators, so rows with different indicator counts still line up.',
+                'Rows of metrics shown below the big number. Add as many rows as you need, then add or remove indicators inside any row (up to six): a row can hold one, two, three or more independently configured slots. Drag a row by its grip to reorder it. The first row starts as the MoM/YoY pair. A slot either shows a time comparison percentage or a metric value with its own label and number format. Each slot also has its own Style mode: inherit the chart-level defaults, show no color change, or customize the increase/decrease/no-change colors, trend arrow and no-change threshold for that indicator only. All rows share ONE column grid sized by the row with the most indicators, so rows with different indicator counts still line up.',
               ),
               // The old `comparison1_*` / `comparison2_*` controls no longer
               // exist, so form data rebuilt from `getFormDataFromControls()`
@@ -127,6 +127,15 @@ const config: ControlPanelConfig = {
                   string,
                   unknown
                 >;
+                // The five chart-level comparison styles are the DEFAULTS for
+                // every indicator. Raw form_data uses snake_case while chart
+                // props are camelCase, so accept both. Controls that were
+                // never touched fall back to the shipped constants.
+                const styleValue = (
+                  snakeKey: string,
+                  camelKey: string,
+                  fallback: unknown,
+                ) => formData[snakeKey] ?? formData[camelKey] ?? fallback;
                 return {
                   columns,
                   savedMetrics,
@@ -137,6 +146,34 @@ const config: ControlPanelConfig = {
                   // Charts saved before this control existed still show their
                   // MoM/YoY pair as row 1 instead of an empty list.
                   defaultRows: resolveMetricRows(formData),
+                  // Prefill a slot's Custom style with the current defaults.
+                  styleDefaults: {
+                    positiveColor: styleValue(
+                      'comparison_positive_color',
+                      'comparisonPositiveColor',
+                      DEFAULT_COMPARISON_POSITIVE_COLOR,
+                    ),
+                    negativeColor: styleValue(
+                      'comparison_negative_color',
+                      'comparisonNegativeColor',
+                      DEFAULT_COMPARISON_NEGATIVE_COLOR,
+                    ),
+                    zeroColor: styleValue(
+                      'comparison_zero_color',
+                      'comparisonZeroColor',
+                      DEFAULT_COMPARISON_ZERO_COLOR,
+                    ),
+                    showArrow: styleValue(
+                      'comparison_show_arrow',
+                      'comparisonShowArrow',
+                      DEFAULT_COMPARISON_SHOW_ARROW,
+                    ),
+                    threshold: styleValue(
+                      'comparison_threshold',
+                      'comparisonThreshold',
+                      DEFAULT_COMPARISON_THRESHOLD,
+                    ),
+                  },
                 };
               },
             },
@@ -362,6 +399,9 @@ const config: ControlPanelConfig = {
               label: t('Increase color'),
               renderTrigger: true,
               default: DEFAULT_COMPARISON_POSITIVE_COLOR,
+              description: t(
+                'Default increase color for every indicator. Set a slot to Custom in Metric rows to override it per indicator, or to No color change to skip coloring entirely.',
+              ),
             },
           },
         ],
@@ -373,6 +413,9 @@ const config: ControlPanelConfig = {
               label: t('Decrease color'),
               renderTrigger: true,
               default: DEFAULT_COMPARISON_NEGATIVE_COLOR,
+              description: t(
+                'Default decrease color for every indicator. Set a slot to Custom in Metric rows to override it per indicator.',
+              ),
             },
           },
         ],
@@ -384,6 +427,9 @@ const config: ControlPanelConfig = {
               label: t('No change color'),
               renderTrigger: true,
               default: DEFAULT_COMPARISON_ZERO_COLOR,
+              description: t(
+                'Default no-change color for every indicator. Set a slot to Custom in Metric rows to override it per indicator.',
+              ),
             },
           },
         ],
@@ -396,7 +442,7 @@ const config: ControlPanelConfig = {
               renderTrigger: true,
               default: DEFAULT_COMPARISON_SHOW_ARROW,
               description: t(
-                'Display the up/down arrow (↑/↓) before the comparison value.',
+                'Display the up/down arrow (↑/↓) before the comparison value. This is the default for every indicator and can be overridden per indicator with its Custom style in Metric rows.',
               ),
             },
           },
@@ -412,7 +458,7 @@ const config: ControlPanelConfig = {
               renderTrigger: true,
               default: DEFAULT_COMPARISON_THRESHOLD,
               description: t(
-                'When the absolute change is below this value, the comparison is shown in the no-change color with no arrow. In time-comparison mode this is a fraction (0.01 = 1%); in comparison-metric mode it is an absolute value.',
+                'When the absolute change is below this value, the comparison is shown in the no-change color with no arrow. In time-comparison mode this is a fraction (0.01 = 1%); in comparison-metric mode it is an absolute value. This is the default for every indicator and can be overridden per indicator with its Custom style in Metric rows.',
               ),
             },
           },

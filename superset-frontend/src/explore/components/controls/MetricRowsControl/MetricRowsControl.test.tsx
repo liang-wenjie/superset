@@ -32,6 +32,26 @@ jest.mock('@dnd-kit/sortable', () => ({
   useSortable: jest.fn(),
 }));
 
+// The real antd ColorPicker is irrelevant here. This probe keeps the tests
+// focused on how the slot editor stores the RGB value it emits (including
+// the alpha channel, which must be dropped from form_data).
+jest.mock('src/explore/components/controls/ColorPickerControl', () => {
+  const ReactModule = jest.requireActual('react');
+  return {
+    __esModule: true,
+    default: (props: {
+      ariaLabel?: string;
+      onChange?: (color: unknown) => void;
+    }) =>
+      ReactModule.createElement('button', {
+        type: 'button',
+        'aria-label': props.ariaLabel,
+        'data-test': 'slot-color-picker',
+        onClick: () => props.onChange?.({ r: 1, g: 2, b: 3, a: 1 }),
+      }),
+  };
+});
+
 const sortables: CapturedSortables = { items: [] };
 const mockMetricTriggerProps: Record<string, any>[] = [];
 
@@ -531,4 +551,150 @@ test('a saved metric string selects the matching Saved tab entry', async () => {
   );
   expect(mockMetricTriggerProps[0].isNew).toBe(false);
   expect(screen.getByTestId('metric-slot-value')).toBeInTheDocument();
+});
+
+const chartStyleDefaults = {
+  positiveColor: { r: 7, g: 8, b: 9 },
+  negativeColor: { r: 10, g: 11, b: 12 },
+  zeroColor: { r: 13, g: 14, b: 15 },
+  showArrow: false,
+  threshold: 0.25,
+};
+
+test('each slot has a three-way Style mode and the default writes no style', async () => {
+  const onChange = jest.fn();
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={legacyRows}
+      onChange={onChange}
+      styleDefaults={chartStyleDefaults}
+    />,
+  );
+  await userEvent.click(screen.getByText('Edit'));
+  const styleSelects = screen.getAllByLabelText('Style');
+  expect(styleSelects).toHaveLength(2);
+  expect(styleSelects[0]).toHaveValue('default');
+  expect(
+    screen.getAllByRole('option', { name: 'Use chart defaults' }),
+  ).toHaveLength(2);
+  expect(
+    screen.getAllByRole('option', { name: 'No color change' }),
+  ).toHaveLength(2);
+  expect(screen.getAllByRole('option', { name: 'Custom' })).toHaveLength(2);
+  // Custom fields stay collapsed so the dialog does not grow for every slot.
+  expect(screen.queryByLabelText('Increase color')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const rows = lastEmitted(onChange);
+  // Zero migration: a slot that inherits everything adds NO `style` key.
+  expect(rows[0].slots[0].style).toBeUndefined();
+  expect(rows[0].slots[1].style).toBeUndefined();
+});
+
+test('No color change is stored on the selected indicator only', async () => {
+  const onChange = jest.fn();
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={legacyRows}
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByText('Edit'));
+  await userEvent.selectOptions(
+    screen.getAllByLabelText('Style')[0],
+    'no_color_change',
+  );
+  expect(
+    screen.getByText(/always uses the plain text color/),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const rows = lastEmitted(onChange);
+  expect(rows[0].slots[0].style).toEqual({ mode: 'no_color_change' });
+  expect(rows[0].slots[1].style).toBeUndefined();
+});
+
+test('Custom exposes the five chart-level fields prefilled from the defaults', async () => {
+  const onChange = jest.fn();
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={legacyRows}
+      onChange={onChange}
+      styleDefaults={chartStyleDefaults}
+    />,
+  );
+  await userEvent.click(screen.getByText('Edit'));
+  await userEvent.selectOptions(screen.getAllByLabelText('Style')[0], 'custom');
+  expect(screen.getAllByTestId('slot-color-picker')).toHaveLength(3);
+  expect(screen.getByLabelText('Increase color')).toBeInTheDocument();
+  expect(screen.getByLabelText('Decrease color')).toBeInTheDocument();
+  expect(screen.getByLabelText('No change color')).toBeInTheDocument();
+  expect(screen.getByLabelText('No-change threshold')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const rows = lastEmitted(onChange);
+  expect(rows[0].slots[0].style).toEqual({
+    mode: 'custom',
+    positiveColor: chartStyleDefaults.positiveColor,
+    negativeColor: chartStyleDefaults.negativeColor,
+    zeroColor: chartStyleDefaults.zeroColor,
+    showArrow: false,
+    threshold: 0.25,
+  });
+  expect(rows[0].slots[1].style).toBeUndefined();
+});
+
+test('a picked color is stored as plain RGB and a saved style reopens', async () => {
+  const onChange = jest.fn();
+  const { unmount } = render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={legacyRows}
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(screen.getByText('Edit'));
+  await userEvent.selectOptions(screen.getAllByLabelText('Style')[0], 'custom');
+  await userEvent.click(screen.getByLabelText('Increase color'));
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const savedStyle = lastEmitted(onChange)[0].slots[0].style;
+  // The alpha channel from antd is dropped: form_data stays plain RGB.
+  expect(savedStyle.positiveColor).toEqual({ r: 1, g: 2, b: 3 });
+  unmount();
+
+  const styledRows: BigNumberMetricRow[] = [
+    {
+      id: 'row_styled',
+      slots: [
+        {
+          label: 'MoM',
+          mode: 'time_shift',
+          offset: '1 month ago',
+          style: savedStyle,
+        },
+        {
+          label: 'YoY',
+          mode: 'time_shift',
+          offset: '1 year ago',
+          style: { mode: 'no_color_change' },
+        },
+      ],
+    },
+  ];
+  render(
+    <MetricRowsControl
+      name="metric_rows"
+      label="Metric rows"
+      value={styledRows}
+    />,
+  );
+  await userEvent.click(screen.getByText('Edit'));
+  const styleSelects = screen.getAllByLabelText('Style');
+  expect(styleSelects[0]).toHaveValue('custom');
+  expect(styleSelects[1]).toHaveValue('no_color_change');
+  expect(screen.getByLabelText('Increase color')).toBeInTheDocument();
 });

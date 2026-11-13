@@ -36,10 +36,31 @@ export const MAX_SLOTS_PER_ROW = 6;
 
 export type BigNumberMetricSlotMode = 'time_shift' | 'metric';
 
+/** RGB object, matching the chart-level ColorPickerControl output. */
+export type SlotColor = { r: number; g: number; b: number };
+
+/**
+ * `default` inherits every chart-level comparison style; `no_color_change`
+ * always paints the slot with plain text color (arrows still follow the
+ * configured setting); `custom` overrides each style field individually,
+ * with any omitted field falling back to the chart-level default.
+ */
+export type BigNumberSlotStyleMode = 'default' | 'no_color_change' | 'custom';
+
+export type BigNumberMetricSlotStyle = {
+  mode?: BigNumberSlotStyleMode;
+  positiveColor?: SlotColor;
+  negativeColor?: SlotColor;
+  zeroColor?: SlotColor;
+  showArrow?: boolean;
+  threshold?: number;
+};
+
 /**
  * One cell of a metric row. Every cell is configured independently: it can
  * read a backend time-offset column (percentage difference) or a metric /
- * custom SQL expression (the value itself), with its own label and format.
+ * custom SQL expression (the value itself), with its own label, format and
+ * color/trend styling.
  */
 export type BigNumberMetricSlot = {
   id?: string;
@@ -49,6 +70,7 @@ export type BigNumberMetricSlot = {
   offset?: string;
   column?: QueryFormMetric;
   numberFormat?: string;
+  style?: BigNumberMetricSlotStyle;
   /**
    * Legacy charts without an explicit offset still render a "—" placeholder;
    * the query builder must NOT send that implied offset to the backend.

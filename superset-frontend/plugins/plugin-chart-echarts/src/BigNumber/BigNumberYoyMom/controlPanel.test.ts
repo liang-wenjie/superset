@@ -200,6 +200,60 @@ describe('BigNumberYoyMom metric rows controls', () => {
     expect(rows[0].slots[0].label).toBe('同比');
   });
 
+  test('passes the chart-level styles to the slot editor as defaults', () => {
+    const rowsControl = findConfig('metric_rows');
+    const mapState = rowsControl?.mapStateToProps as (
+      state: unknown,
+    ) => Record<string, any>;
+    // Untouched controls fall back to the shipped constants, so opening
+    // Custom on a legacy chart never starts from empty colors.
+    const fallback = mapState({ form_data: { viz_type: 'x' } }).styleDefaults;
+    expect(fallback).toEqual({
+      positiveColor: { r: 0, g: 180, b: 42 },
+      negativeColor: { r: 245, g: 63, b: 63 },
+      zeroColor: { r: 102, g: 102, b: 102 },
+      showArrow: true,
+      threshold: 0,
+    });
+    // Raw Explore form_data is snake_case; `false` and `0` are real values
+    // that must not be replaced by the fallback.
+    const saved = mapState({
+      form_data: {
+        comparison_positive_color: { r: 1, g: 2, b: 3 },
+        comparison_negative_color: { r: 4, g: 5, b: 6 },
+        comparison_zero_color: { r: 7, g: 8, b: 9 },
+        comparison_show_arrow: false,
+        comparison_threshold: 0.25,
+      },
+    }).styleDefaults;
+    expect(saved).toEqual({
+      positiveColor: { r: 1, g: 2, b: 3 },
+      negativeColor: { r: 4, g: 5, b: 6 },
+      zeroColor: { r: 7, g: 8, b: 9 },
+      showArrow: false,
+      threshold: 0.25,
+    });
+    // Chart props are camelCase (e.g. after a viz-type switch).
+    expect(
+      mapState({ form_data: { comparisonShowArrow: false } }).styleDefaults
+        .showArrow,
+    ).toBe(false);
+  });
+
+  test('the five chart-level style controls are documented as defaults', () => {
+    [
+      'comparison_positive_color',
+      'comparison_negative_color',
+      'comparison_zero_color',
+      'comparison_show_arrow',
+      'comparison_threshold',
+    ].forEach(name => {
+      const description = findConfig(name)?.description as string;
+      expect(description).toMatch(/for every indicator/i);
+      expect(description).toMatch(/Metric rows/);
+    });
+  });
+
   test('style controls stay shared by every row', () => {
     const checkbox = findConfig('comparison_use_center_gap');
     const spacing = findConfig('comparison_gap');

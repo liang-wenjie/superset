@@ -39,6 +39,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import ControlHeader from 'src/explore/components/ControlHeader';
+import ColorPickerControl from 'src/explore/components/controls/ColorPickerControl';
 import AdhocMetric from 'src/explore/components/controls/MetricControl/AdhocMetric';
 import AdhocMetricPopoverTrigger from 'src/explore/components/controls/MetricControl/AdhocMetricPopoverTrigger';
 import type { savedMetricType } from 'src/explore/components/controls/MetricControl/types';
@@ -53,6 +54,9 @@ import type {
   BigNumberMetricRow,
   BigNumberMetricSlot,
   BigNumberMetricSlotMode,
+  BigNumberMetricSlotStyle,
+  BigNumberSlotStyleMode,
+  SlotColor,
 } from 'src/explore/controlUtils/metricRowsTypes';
 
 let idCounter = 0;
@@ -160,6 +164,11 @@ const StyledInput = styled(Input)`
   min-width: 0;
 `;
 
+const ColorField = styled.div`
+  flex: 1;
+  min-width: 0;
+`;
+
 const FieldLabel = styled.span`
   font-size: ${({ theme }) => theme.fontSizeSM}px;
   color: ${({ theme }) => theme.colorTextSecondary};
@@ -257,6 +266,12 @@ const MODE_OPTIONS: { label: string; value: BigNumberMetricSlotMode }[] = [
   { label: t('Metric value'), value: 'metric' },
 ];
 
+const STYLE_MODE_OPTIONS: { label: string; value: BigNumberSlotStyleMode }[] = [
+  { label: t('Use chart defaults'), value: 'default' },
+  { label: t('No color change'), value: 'no_color_change' },
+  { label: t('Custom'), value: 'custom' },
+];
+
 // Reuse the EXACT presets of the chart-level Number format (y_axis_format)
 // control instead of asking the user to type a D3 format string.
 const NUMBER_FORMAT_OPTIONS = D3_FORMAT_OPTIONS.map(([value, label]) => ({
@@ -274,6 +289,25 @@ const numberFormatOptions = (current: string) =>
     ? NUMBER_FORMAT_OPTIONS
     : [{ value: current, label: current }, ...NUMBER_FORMAT_OPTIONS];
 
+/** Current chart-level comparison styles, used to prefill custom mode. */
+export type SlotStyleDefaults = {
+  positiveColor?: SlotColor;
+  negativeColor?: SlotColor;
+  zeroColor?: SlotColor;
+  showArrow?: boolean;
+  threshold?: number;
+};
+
+type SlotStyleDraft = {
+  mode: BigNumberSlotStyleMode;
+  positiveColor?: SlotColor;
+  negativeColor?: SlotColor;
+  zeroColor?: SlotColor;
+  showArrow: boolean;
+  /** Kept as text so the number input can be temporarily empty while typing. */
+  threshold: string;
+};
+
 type SlotDraft = {
   id?: string;
   show: boolean;
@@ -283,12 +317,95 @@ type SlotDraft = {
   /** Full QueryFormMetric: a saved metric name or an adhoc metric object. */
   metric?: BigNumberMetricColumn;
   numberFormat: string;
+  style: SlotStyleDraft;
 };
 
 type EditorState = {
   /** `null` while creating a new row. */
   index: number | null;
   slots: SlotDraft[];
+};
+
+const EMPTY_STYLE_DEFAULTS: SlotStyleDefaults = {};
+
+const STYLE_MODES: BigNumberSlotStyleMode[] = [
+  'default',
+  'no_color_change',
+  'custom',
+];
+
+/** ColorPickerControl emits an RGB object (possibly with an alpha channel). */
+const toSlotColor = (value: unknown): SlotColor | undefined => {
+  if (!value || typeof value !== 'object') return undefined;
+  const { r, g, b } = value as Record<string, unknown>;
+  if (typeof r === 'number' && typeof g === 'number' && typeof b === 'number') {
+    return { r, g, b };
+  }
+  return undefined;
+};
+
+/** A fresh slot inherits everything: no stored style at all. */
+const styleFromDefaults = (defaults: SlotStyleDefaults): SlotStyleDraft => ({
+  mode: 'default',
+  // Chart-level values come from raw form_data. Ignore anything that is not
+  // a real RGB object (e.g. a legacy theme-token string) instead of writing
+  // it back into the slot as a broken color.
+  positiveColor: toSlotColor(defaults.positiveColor),
+  negativeColor: toSlotColor(defaults.negativeColor),
+  zeroColor: toSlotColor(defaults.zeroColor),
+  showArrow:
+    typeof defaults.showArrow === 'boolean' ? defaults.showArrow : true,
+  threshold:
+    typeof defaults.threshold === 'number' &&
+    Number.isFinite(defaults.threshold) &&
+    defaults.threshold >= 0
+      ? String(defaults.threshold)
+      : '0',
+});
+
+const styleToDraft = (
+  style: BigNumberMetricSlotStyle | undefined,
+  defaults: SlotStyleDefaults,
+): SlotStyleDraft => {
+  const base = styleFromDefaults(defaults);
+  const mode = style?.mode;
+  return {
+    ...base,
+    mode: mode && STYLE_MODES.includes(mode) ? mode : 'default',
+    positiveColor: toSlotColor(style?.positiveColor) ?? base.positiveColor,
+    negativeColor: toSlotColor(style?.negativeColor) ?? base.negativeColor,
+    zeroColor: toSlotColor(style?.zeroColor) ?? base.zeroColor,
+    showArrow:
+      typeof style?.showArrow === 'boolean' ? style.showArrow : base.showArrow,
+    threshold:
+      typeof style?.threshold === 'number' && Number.isFinite(style.threshold)
+        ? String(style.threshold)
+        : base.threshold,
+  };
+};
+
+/**
+ * `default` deliberately writes NOTHING: chart-level controls stay the single
+ * source of truth and older charts keep byte-identical form data. Only the two
+ * explicit overrides are persisted on the slot.
+ */
+const styleFromDraft = (
+  style: SlotStyleDraft,
+): BigNumberMetricSlotStyle | undefined => {
+  if (style.mode === 'no_color_change') return { mode: 'no_color_change' };
+  if (style.mode !== 'custom') return undefined;
+  const threshold = Number(style.threshold);
+  return {
+    mode: 'custom',
+    positiveColor: style.positiveColor,
+    negativeColor: style.negativeColor,
+    zeroColor: style.zeroColor,
+    showArrow: style.showArrow,
+    threshold:
+      style.threshold.trim() && Number.isFinite(threshold) && threshold >= 0
+        ? threshold
+        : 0,
+  };
 };
 
 export interface MetricRowsControlProps {
@@ -302,13 +419,17 @@ export interface MetricRowsControlProps {
   savedMetrics?: savedMetricType[];
   datasource?: Datasource & ISaveableDatasource;
   offsetChoices?: string[];
+  /** Chart-level comparison styles, used to prefill a slot's Custom mode. */
+  styleDefaults?: SlotStyleDefaults;
   onChange?: (value: BigNumberMetricRow[]) => void;
   renderTrigger?: boolean;
   hovered?: boolean;
   validationErrors?: string[];
 }
 
-const emptyDraft = (): SlotDraft => ({
+const emptyDraft = (
+  defaults: SlotStyleDefaults = EMPTY_STYLE_DEFAULTS,
+): SlotDraft => ({
   // A stable React key even before the row is saved.
   id: nextId(),
   show: true,
@@ -317,6 +438,7 @@ const emptyDraft = (): SlotDraft => ({
   offset: '1 month ago',
   metric: undefined,
   numberFormat: '',
+  style: styleFromDefaults(defaults),
 });
 
 /**
@@ -461,8 +583,11 @@ const MetricField: React.FC<MetricFieldProps> = ({
 };
 
 /** Saved metrics are strings; adhoc metrics are QueryFormMetric objects. */
-const toDraft = (slot: BigNumberMetricSlot): SlotDraft => {
-  const base = emptyDraft();
+const toDraft = (
+  slot: BigNumberMetricSlot,
+  defaults: SlotStyleDefaults = EMPTY_STYLE_DEFAULTS,
+): SlotDraft => {
+  const base = emptyDraft(defaults);
   const metric = normalizeMetric(slot.column);
   return {
     ...base,
@@ -474,6 +599,7 @@ const toDraft = (slot: BigNumberMetricSlot): SlotDraft => {
     metric:
       metric && (slot.mode === 'metric' || !slot.mode) ? metric : undefined,
     numberFormat: slot.numberFormat ?? '',
+    style: styleToDraft(slot.style, defaults),
   };
 };
 
@@ -485,6 +611,7 @@ const fromDraft = (draft: SlotDraft): BigNumberMetricSlot => ({
   offset: draft.mode === 'time_shift' ? draft.offset : undefined,
   column: draft.mode === 'metric' ? draft.metric : undefined,
   numberFormat: draft.numberFormat.trim() || undefined,
+  style: styleFromDraft(draft.style),
 });
 
 const describeSlot = (slot: BigNumberMetricSlot): string => {
@@ -586,6 +713,31 @@ const SortableMetricRow: React.FC<SortableRowProps> = ({
   );
 };
 
+type StyleColorFieldProps = {
+  /** Already translated by the caller. */
+  label: string;
+  value?: SlotColor;
+  onChange: (color?: SlotColor) => void;
+};
+
+/** The very same ColorPickerControl used by the chart-level style section. */
+const StyleColorField: React.FC<StyleColorFieldProps> = ({
+  label,
+  value,
+  onChange,
+}) => (
+  <Row>
+    <FieldLabel>{label}</FieldLabel>
+    <ColorField>
+      <ColorPickerControl
+        ariaLabel={label}
+        value={value}
+        onChange={(color: unknown) => onChange(toSlotColor(color))}
+      />
+    </ColorField>
+  </Row>
+);
+
 const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
   name,
   label,
@@ -596,6 +748,7 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
   savedMetrics = [],
   datasource,
   offsetChoices = [],
+  styleDefaults = EMPTY_STYLE_DEFAULTS,
   onChange,
   renderTrigger,
   hovered,
@@ -628,26 +781,48 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
     );
   };
 
+  const patchStyle = (slotIndex: number, patch: Partial<SlotStyleDraft>) => {
+    setEditor(prev =>
+      prev
+        ? {
+            ...prev,
+            slots: prev.slots.map((slot, index) =>
+              index === slotIndex
+                ? { ...slot, style: { ...slot.style, ...patch } }
+                : slot,
+            ),
+          }
+        : prev,
+    );
+  };
+
   const openNew = () =>
     setEditor({
       index: null,
-      slots: Array.from({ length: DEFAULT_METRIC_SLOTS_PER_ROW }, emptyDraft),
+      slots: Array.from({ length: DEFAULT_METRIC_SLOTS_PER_ROW }, () =>
+        emptyDraft(styleDefaults),
+      ),
     });
 
   const openEdit = (index: number) => {
     const slots = Array.isArray(rows[index]?.slots) ? rows[index].slots : [];
     // Keep the row's own slot count; never pad or trim it to two.
-    const drafts = slots.slice(0, MAX_METRIC_SLOTS_PER_ROW).map(toDraft);
+    const drafts = slots
+      .slice(0, MAX_METRIC_SLOTS_PER_ROW)
+      .map(slot => toDraft(slot, styleDefaults));
     setEditor({
       index,
-      slots: drafts.length > 0 ? drafts : [emptyDraft()],
+      slots: drafts.length > 0 ? drafts : [emptyDraft(styleDefaults)],
     });
   };
 
   const addSlot = () =>
     setEditor(prev =>
       prev && prev.slots.length < MAX_METRIC_SLOTS_PER_ROW
-        ? { ...prev, slots: [...prev.slots, emptyDraft()] }
+        ? {
+            ...prev,
+            slots: [...prev.slots, emptyDraft(styleDefaults)],
+          }
         : prev,
     );
 
@@ -868,6 +1043,79 @@ const MetricRowsControl: React.FC<MetricRowsControlProps> = ({
                   showSearch
                 />
               </Row>
+              <Row>
+                <FieldLabel>{t('Style')}</FieldLabel>
+                <StyledSelect
+                  aria-label={t('Style')}
+                  value={slot.style.mode}
+                  options={STYLE_MODE_OPTIONS}
+                  onChange={(mode: BigNumberSlotStyleMode) =>
+                    patchStyle(slotIndex, { mode })
+                  }
+                  showSearch={false}
+                />
+              </Row>
+              {slot.style.mode === 'no_color_change' && (
+                <Hint>
+                  {t(
+                    'This indicator always uses the plain text color. The trend arrow and number format still follow the chart settings.',
+                  )}
+                </Hint>
+              )}
+              {slot.style.mode === 'custom' && (
+                <>
+                  <StyleColorField
+                    label={t('Increase color')}
+                    value={slot.style.positiveColor}
+                    onChange={(color?: SlotColor) =>
+                      patchStyle(slotIndex, { positiveColor: color })
+                    }
+                  />
+                  <StyleColorField
+                    label={t('Decrease color')}
+                    value={slot.style.negativeColor}
+                    onChange={(color?: SlotColor) =>
+                      patchStyle(slotIndex, { negativeColor: color })
+                    }
+                  />
+                  <StyleColorField
+                    label={t('No change color')}
+                    value={slot.style.zeroColor}
+                    onChange={(color?: SlotColor) =>
+                      patchStyle(slotIndex, { zeroColor: color })
+                    }
+                  />
+                  <Row>
+                    <FieldLabel>{t('Show trend arrow')}</FieldLabel>
+                    <Switch
+                      checked={slot.style.showArrow}
+                      onChange={(checked: boolean) =>
+                        patchStyle(slotIndex, { showArrow: checked })
+                      }
+                    />
+                  </Row>
+                  <Row>
+                    <FieldLabel>{t('No-change threshold')}</FieldLabel>
+                    <StyledInput
+                      aria-label={t('No-change threshold')}
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={slot.style.threshold}
+                      onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                        patchStyle(slotIndex, {
+                          threshold: event.target.value,
+                        })
+                      }
+                    />
+                  </Row>
+                  <Hint>
+                    {t(
+                      'These settings apply to this indicator only; every other indicator keeps using the chart-level defaults.',
+                    )}
+                  </Hint>
+                </>
+              )}
             </React.Fragment>
           ))}
           <SlotActions>

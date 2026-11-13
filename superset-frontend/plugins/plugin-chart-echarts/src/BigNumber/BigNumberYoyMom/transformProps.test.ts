@@ -1926,4 +1926,120 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic).toHaveLength(3);
     expect(graphic[2].style.text).toContain('42');
   });
+
+  describe('per-indicator style overrides', () => {
+    const twoDirectionData = [
+      {
+        'SUM(sales)': 100,
+        'SUM(sales)__1 month ago': 90, // +11.11%, increase
+        'SUM(sales)__1 year ago': 110, // -9.09%, decrease
+      },
+    ];
+    const rowsWithStyle = (firstStyle: unknown, secondStyle?: unknown) => [
+      {
+        slots: [
+          {
+            label: 'MoM',
+            mode: 'time_shift',
+            offset: '1 month ago',
+            ...(firstStyle ? { style: firstStyle } : {}),
+          },
+          {
+            label: 'YoY',
+            mode: 'time_shift',
+            offset: '1 year ago',
+            ...(secondStyle ? { style: secondStyle } : {}),
+          },
+        ],
+      },
+    ];
+
+    test('a slot with no style keeps inheriting the chart-level colors', () => {
+      const result = transformProps(
+        buildChartProps(twoDirectionData, {
+          metric_rows: rowsWithStyle(undefined),
+        }),
+      );
+      const graphic = result.echartOptions.graphic as Record<string, any>[];
+      expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
+      expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
+    });
+
+    test('No color change uses plain text color but keeps the trend arrow', () => {
+      const result = transformProps(
+        buildChartProps(twoDirectionData, {
+          metric_rows: rowsWithStyle({ mode: 'no_color_change' }),
+        }),
+      );
+      const graphic = result.echartOptions.graphic as Record<string, any>[];
+      // Same color as the big number: no red/green at all.
+      expect(graphic[2].style.fill).toBe('rgb(51, 51, 51)');
+      expect(graphic[2].style.text).toBe('MoM ↑11.11%');
+      // The other slot is untouched and still follows the chart defaults.
+      expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
+      expect(graphic[3].style.text).toBe('YoY ↓9.09%');
+    });
+
+    test('No color change follows the theme on dark dashboards', () => {
+      const result = transformProps(
+        withTheme(
+          buildChartProps(twoDirectionData, {
+            metric_rows: rowsWithStyle({ mode: 'no_color_change' }),
+          }),
+          DARK_THEME,
+        ),
+      );
+      const graphic = result.echartOptions.graphic as Record<string, any>[];
+      expect(graphic[2].style.fill).toBe(DARK_THEME.colorText);
+    });
+
+    test('Custom overrides colors and the arrow for that indicator only', () => {
+      const result = transformProps(
+        buildChartProps(twoDirectionData, {
+          comparisonShowArrow: true,
+          metric_rows: rowsWithStyle(
+            {
+              mode: 'custom',
+              positiveColor: { r: 0, g: 0, b: 255 },
+              showArrow: false,
+            },
+            { mode: 'custom', negativeColor: { r: 1, g: 2, b: 3 } },
+          ),
+        }),
+      );
+      const graphic = result.echartOptions.graphic as Record<string, any>[];
+      expect(graphic[2].style.fill).toBe('rgb(0, 0, 255)');
+      expect(graphic[2].style.text).toBe('MoM 11.11%');
+      expect(graphic[3].style.fill).toBe('rgb(1, 2, 3)');
+      // This slot did not override showArrow, so it still inherits `true`.
+      expect(graphic[3].style.text).toBe('YoY ↓9.09%');
+    });
+
+    test('a Custom threshold of zero beats the chart-level default', () => {
+      const result = transformProps(
+        buildChartProps(
+          [
+            {
+              'SUM(sales)': 100,
+              'SUM(sales)__1 month ago': 99.9, // +0.1%
+              'SUM(sales)__1 year ago': 99.9, // -0.1%
+            },
+          ],
+          {
+            comparisonThreshold: 0.05, // 5%: both changes are "no change"
+            metric_rows: rowsWithStyle({
+              mode: 'custom',
+              threshold: 0,
+            }),
+          },
+        ),
+      );
+      const graphic = result.echartOptions.graphic as Record<string, any>[];
+      expect(graphic[2].style.text).toBe('MoM ↑0.10%');
+      expect(graphic[2].style.fill).toBe('rgb(0, 180, 42)');
+      // The second slot keeps the 5% chart default -> gray, no arrow.
+      expect(graphic[3].style.text).toBe('YoY 0.10%');
+      expect(graphic[3].style.fill).toBe('rgb(102, 102, 102)');
+    });
+  });
 });

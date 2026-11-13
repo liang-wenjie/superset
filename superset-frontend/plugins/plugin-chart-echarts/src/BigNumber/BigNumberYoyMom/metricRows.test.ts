@@ -158,3 +158,31 @@ test('camelCase metricRows is accepted and invalid modes are dropped', () => {
   expect(rows[0].slots[0].mode).toBeUndefined();
   expect(rows[0].slots[1].mode).toBe('time_shift');
 });
+
+test('per-slot style overrides survive the snake_case/camelCase round trip', () => {
+  const customStyle = {
+    mode: 'custom' as const,
+    positiveColor: { r: 1, g: 2, b: 3 },
+    showArrow: false,
+    threshold: 0.25,
+  };
+  const snake = resolveMetricRows({
+    metric_rows: [
+      {
+        slots: [
+          { mode: 'time_shift', style: { mode: 'no_color_change' } },
+          { mode: 'time_shift', style: customStyle },
+        ],
+      },
+    ],
+  });
+  expect(snake[0].slots[0].style).toEqual({ mode: 'no_color_change' });
+  expect(snake[0].slots[1].style).toEqual(customStyle);
+  const camel = resolveMetricRows({
+    metricRows: [{ slots: [{ mode: 'time_shift', style: customStyle }] }],
+  });
+  expect(camel[0].slots[0].style).toEqual(customStyle);
+  // A chart saved before per-slot styles existed has no `style` at all, so
+  // every indicator keeps inheriting the chart-level defaults.
+  expect(resolveMetricRows({})[0].slots[0].style).toBeUndefined();
+});

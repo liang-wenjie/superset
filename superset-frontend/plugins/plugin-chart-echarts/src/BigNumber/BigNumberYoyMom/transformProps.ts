@@ -62,6 +62,8 @@ import {
 import {
   BigNumberMetricSlot,
   BigNumberMetricSlotMode,
+  BigNumberMetricSlotStyle,
+  SlotColor,
   camelToSnake,
   isMetricMode,
   resolveMetricRows,
@@ -256,6 +258,18 @@ type ComparisonSlot = {
   comparisonValue: number | string | null | undefined;
   formatter: (value: number) => string;
   valueFormatter: (value: number) => string;
+  visual: SlotVisual;
+};
+
+/** The comparison styling that actually applies to one indicator slot. */
+type SlotVisual = {
+  positiveColor: string;
+  negativeColor: string;
+  zeroColor: string;
+  showArrow: boolean;
+  threshold: number;
+  /** Plain text color for every state; no red/green change at all. */
+  noColorChange: boolean;
 };
 
 type ComparisonContent = { text: string; fill: string } | null;
@@ -696,6 +710,59 @@ export default function transformProps(
     defaultComparisonZeroColor,
     MIN_TEXT_CONTRAST,
   );
+
+  // The chart-level controls are the DEFAULTS for every indicator. A slot can
+  // inherit them, opt out of all color changes, or override each field. An
+  // omitted custom field still inherits, so "use default" works field by field.
+  const slotVisual = (
+    style: BigNumberMetricSlotStyle | undefined,
+  ): SlotVisual => {
+    const mode = style?.mode;
+    const custom = mode === 'custom';
+    const slotColor = (
+      override: SlotColor | undefined,
+      themeFallback: string,
+      inherited: string,
+    ): string =>
+      custom && override
+        ? resolveColor(override, themeFallback, MIN_TEXT_CONTRAST)
+        : inherited;
+    const customThreshold = custom ? style?.threshold : undefined;
+    return {
+      positiveColor: slotColor(
+        style?.positiveColor,
+        defaultComparisonPositiveColor,
+        positiveColor,
+      ),
+      negativeColor: slotColor(
+        style?.negativeColor,
+        defaultComparisonNegativeColor,
+        negativeColor,
+      ),
+      zeroColor: slotColor(
+        style?.zeroColor,
+        defaultComparisonZeroColor,
+        zeroColor,
+      ),
+      showArrow:
+        custom && typeof style?.showArrow === 'boolean'
+          ? style.showArrow
+          : comparisonShowArrow,
+      // Zero is a valid override: it means "treat only exact zero as no
+      // change", even when the chart-level default is a larger threshold.
+      threshold:
+        typeof customThreshold === 'number' &&
+        Number.isFinite(customThreshold) &&
+        customThreshold >= 0
+          ? customThreshold
+          : comparisonThreshold,
+      noColorChange: mode === 'no_color_change',
+    };
+  };
+  // Plain text color for slots that opted out of red/green coloring. It
+  // follows the theme (light/dark) just like the big number itself.
+  const neutralTextColor = defaultBigNumberColor;
+
   // The comparison row aligns with the big number: it starts at the same
   // configured left offset (instead of a hard-coded 20) so changing
   // big_number_left keeps both rows in sync, and the available-width rule
@@ -744,55 +811,62 @@ export default function transformProps(
     comparisonValue,
     formatter,
     valueFormatter,
+    visual,
   }: ComparisonSlot): ComparisonContent => {
     if (!show) return null;
     if (!offset && !column) return null;
+    const {
+      positiveColor: slotPositiveColor,
+      negativeColor: slotNegativeColor,
+      zeroColor: slotZeroColor,
+      showArrow,
+      threshold,
+      noColorChange,
+    } = visual;
     const comparison = toNumber(comparisonValue);
     const missing = comparison === null;
     const labelPrefix = label ? `${label} ` : '';
+    // `no_color_change` keeps the arrow and numeric formatting untouched;
+    // only the fill stops following the increase/decrease direction.
+    const fillFor = (value: number, withinThreshold: boolean): string =>
+      noColorChange
+        ? neutralTextColor
+        : withinThreshold
+          ? slotZeroColor
+          : value > 0
+            ? slotPositiveColor
+            : slotNegativeColor;
+    const missingFill = noColorChange ? neutralTextColor : slotZeroColor;
 
     // A comparison value metric (dataset column or custom SQL) supplies the
     // value itself, so render it like the big number instead of computing a
     // percentage change. Time shifts keep the percentage-difference display.
     if (isMetricMode(mode, column)) {
       if (missing) {
-        return { text: `${labelPrefix}—`, fill: zeroColor };
+        return { text: `${labelPrefix}—`, fill: missingFill };
       }
       // At or below the no-change threshold (or exactly zero) the value is
       // rendered in the no-change color with no trend arrow.
-      const withinThreshold = Math.abs(comparison) <= comparisonThreshold;
+      const withinThreshold = Math.abs(comparison) <= threshold;
       const arrow =
-        !comparisonShowArrow || withinThreshold
-          ? ''
-          : comparison > 0
-            ? '↑'
-            : '↓';
+        !showArrow || withinThreshold ? '' : comparison > 0 ? '↑' : '↓';
       return {
         text: `${labelPrefix}${arrow}${valueFormatter(comparison)}`,
-        fill: withinThreshold
-          ? zeroColor
-          : comparison > 0
-            ? positiveColor
-            : negativeColor,
+        fill: fillFor(comparison, withinThreshold),
       };
     }
 
     const percent = computePercent(slotCurrent, comparison);
     if (missing || percent === null) {
-      return { text: `${labelPrefix}—`, fill: zeroColor };
+      return { text: `${labelPrefix}—`, fill: missingFill };
     }
     // At or below the no-change threshold (or exactly zero) the percent is
     // rendered in the no-change color with no trend arrow.
-    const withinThreshold = Math.abs(percent) <= comparisonThreshold;
-    const arrow =
-      !comparisonShowArrow || withinThreshold ? '' : percent > 0 ? '↑' : '↓';
+    const withinThreshold = Math.abs(percent) <= threshold;
+    const arrow = !showArrow || withinThreshold ? '' : percent > 0 ? '↑' : '↓';
     return {
       text: `${labelPrefix}${arrow}${formatter(Math.abs(percent))}`,
-      fill: withinThreshold
-        ? zeroColor
-        : percent > 0
-          ? positiveColor
-          : negativeColor,
+      fill: fillFor(percent, withinThreshold),
     };
   };
 
@@ -815,6 +889,7 @@ export default function transformProps(
         ),
         formatter: createPercentFormatter(slot),
         valueFormatter: createValueFormatter(slot),
+        visual: slotVisual(slot.style),
       }),
     ),
   );

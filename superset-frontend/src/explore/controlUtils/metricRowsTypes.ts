@@ -34,6 +34,20 @@ export type BigNumberMetricColumn =
       [key: string]: unknown;
     };
 
+/** Mirror of the plugin's BigNumberSlotStyleMode. Keep both in sync. */
+export type BigNumberSlotStyleMode = 'default' | 'no_color_change' | 'custom';
+
+export type SlotColor = { r: number; g: number; b: number };
+
+export type BigNumberMetricSlotStyle = {
+  mode?: BigNumberSlotStyleMode;
+  positiveColor?: SlotColor;
+  negativeColor?: SlotColor;
+  zeroColor?: SlotColor;
+  showArrow?: boolean;
+  threshold?: number;
+};
+
 export type BigNumberMetricSlot = {
   id?: string;
   show?: boolean;
@@ -42,6 +56,7 @@ export type BigNumberMetricSlot = {
   offset?: string;
   column?: BigNumberMetricColumn;
   numberFormat?: string;
+  style?: BigNumberMetricSlotStyle;
   implicitOffset?: boolean;
   left?: number;
 };
