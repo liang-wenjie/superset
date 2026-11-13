@@ -31,11 +31,7 @@ import {
   DEFAULT_BIG_NUMBER_COLOR,
   DEFAULT_BIG_NUMBER_FONT_SIZE,
   DEFAULT_BIG_NUMBER_LEFT,
-  DEFAULT_COMPARISON1_LABEL,
-  DEFAULT_COMPARISON1_OFFSET,
-  DEFAULT_COMPARISON2_LABEL,
   DEFAULT_COMPARISON_GAP,
-  DEFAULT_COMPARISON2_OFFSET,
   DEFAULT_COMPARISON_FONT_SIZE,
   DEFAULT_COMPARISON_NEGATIVE_COLOR,
   DEFAULT_COMPARISON_POSITIVE_COLOR,
@@ -63,6 +59,14 @@ import {
   parseTimePointValue,
   shiftPointToOffset,
 } from './timeRange';
+import {
+  BigNumberMetricSlot,
+  BigNumberMetricSlotMode,
+  camelToSnake,
+  isMetricMode,
+  resolveMetricRows,
+  SLOTS_PER_ROW,
+} from './metricRows';
 
 const toNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) return null;
@@ -70,13 +74,6 @@ const toNumber = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? null : parsed;
 };
-
-/**
- * 'comparison1Left' -> 'comparison1_left'. Form data keys follow the
- * snake_case control names Explore saves; callers sometimes pass camelCase.
- */
-const camelToSnake = (key: string): string =>
-  key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 
 /**
  * Normalize a position/gap control value. Any non-numeric input (blank
@@ -190,6 +187,10 @@ const COMPARISON_FIT_RESERVED_GAP = DEFAULT_COMPARISON_GAP;
 // as the title. 120px maps the default Small (0.15) to 18px, the same size
 // the dashboard-wide uniform setting uses, and keeps dragging height-stable.
 const DEFAULT_COMPARISON_FONT_REFERENCE_HEIGHT_PX = 120;
+// Extra rows are stacked below the first one with a gap proportional to the
+// shared comparison font size. No new control is introduced: all rows reuse
+// the existing font size, colors and spacing settings.
+const COMPARISON_ROW_GAP_RATIO = 0.35;
 
 /**
  * Read a comparison value column from a result row. Saved metrics are plain
@@ -248,21 +249,14 @@ type ComparisonSlot = {
   label: string;
   offset?: string;
   column?: QueryFormMetric;
-  mode?: 'time_shift' | 'metric';
+  mode?: BigNumberMetricSlotMode;
   current: number | null;
   comparisonValue: number | string | null | undefined;
   formatter: (value: number) => string;
   valueFormatter: (value: number) => string;
 };
 
-// A comparison slot reads its value either from a configured comparison
-// metric (dataset metric or custom SQL expression) or from the backend's
-// time-offset column `<metric label>__<offset>`. The mode mirrors buildQuery:
-// an unset mode falls back to the metric when a comparison column exists.
-const isMetricMode = (
-  mode: 'time_shift' | 'metric' | undefined,
-  column: QueryFormMetric | undefined,
-): boolean => mode === 'metric' || (!mode && !!column);
+type ComparisonContent = { text: string; fill: string } | null;
 
 export default function transformProps(
   chartProps: BigNumberYoyMomChartProps,
@@ -313,28 +307,9 @@ export default function transformProps(
   const uniformBigNumberReferenceTexts = pick<string[]>(
     'uniformBigNumberReferenceTexts',
   );
-  const showComparison1 = pick<boolean>('showComparison1') ?? true;
-  const comparison1Label =
-    pick<string>('comparison1Label') ?? t(DEFAULT_COMPARISON1_LABEL);
-  const comparison1Offset =
-    pick<string>('comparison1Offset') ?? DEFAULT_COMPARISON1_OFFSET;
-  const comparison1Column = pick<QueryFormMetric>('comparison1Column');
-  const comparison1PercentDifferenceFormat = pick<string>(
-    'comparison1PercentDifferenceFormat',
-  );
-  const legacyComparison1Left = pick<number>('comparison1Left');
-  const comparison1Mode = pick<'time_shift' | 'metric'>('comparison1Mode');
-  const showComparison2 = pick<boolean>('showComparison2') ?? true;
-  const comparison2Label =
-    pick<string>('comparison2Label') ?? t(DEFAULT_COMPARISON2_LABEL);
-  const comparison2Offset =
-    pick<string>('comparison2Offset') ?? DEFAULT_COMPARISON2_OFFSET;
-  const comparison2Column = pick<QueryFormMetric>('comparison2Column');
-  const comparison2PercentDifferenceFormat = pick<string>(
-    'comparison2PercentDifferenceFormat',
-  );
-  const legacyComparison2Left = pick<number>('comparison2Left');
-  const comparison2Mode = pick<'time_shift' | 'metric'>('comparison2Mode');
+  // Unified metric rows: MoM/YoY are simply the two slots of row 1. Charts
+  // saved before `metric_rows` existed resolve to that same legacy pair.
+  const metricRows = resolveMetricRows(formDataRecord);
   const comparisonGap = pick<number>('comparisonGap') ?? DEFAULT_COMPARISON_GAP;
   // A checkbox switches the ANCHOR of comparison_gap, not its value. Both
   // modes reuse the very same slider (and its drag behaviour): off (default,
@@ -449,8 +424,8 @@ export default function transformProps(
     currencyCodeColumn,
     detectedCurrency,
   );
-  // MoM and YoY each carry their own percent difference format, falling back
-  // to the legacy global control for charts saved before the split.
+  // Each slot carries its own percent difference format, falling back to the
+  // legacy global control for charts saved before the split.
   // d3 percentage formats (e.g. ",.2%") scale the value by 100 and append the
   // "%" sign themselves; plain number formats (",.2f", Smart Number) expect
   // the already-scaled percentage value, so multiply by 100 before formatting.
@@ -462,17 +437,14 @@ export default function transformProps(
     const formatter = getNumberFormatter(d3Format);
     return formatter(d3Format.includes('%') ? percent : percent * 100);
   };
-  const percentFormatter1 = (value: number) =>
-    formatPercentValue(comparison1PercentDifferenceFormat, value);
-  const percentFormatter2 = (value: number) =>
-    formatPercentValue(comparison2PercentDifferenceFormat, value);
+  const createPercentFormatter =
+    (slot: BigNumberMetricSlot) => (value: number) =>
+      formatPercentValue(slot.numberFormat, value);
   // Comparison value metrics render with the slot's configured number format
   // (the same control used for percent differences), falling back to the
   // default Smart Number format when unset.
-  const valueFormatter1 = (value: number) =>
-    getNumberFormatter(comparison1PercentDifferenceFormat)(value);
-  const valueFormatter2 = (value: number) =>
-    getNumberFormatter(comparison2PercentDifferenceFormat)(value);
+  const createValueFormatter = (slot: BigNumberMetricSlot) => (value: number) =>
+    getNumberFormatter(slot.numberFormat)(value);
 
   const row = data[0] || {};
   const rawBigNumber = hasData ? row[metricName] : null;
@@ -709,9 +681,6 @@ export default function transformProps(
   const titleTopValue = scaleGap(normalizePosition(titleTop));
   const bigNumberTopValue = scaleGap(normalizePosition(bigNumberTop));
   const comparisonTopValue = scaleGap(normalizePosition(comparisonTop));
-  const hasComparison =
-    (showComparison1 && !!(comparison1Offset || comparison1Column)) ||
-    (showComparison2 && !!(comparison2Offset || comparison2Column));
 
   const positiveColor = resolveColor(
     comparisonPositiveColor,
@@ -736,7 +705,7 @@ export default function transformProps(
   const comparisonGapPx = scaleGap(Math.max(0, Number(comparisonGap) || 0));
 
   const slotComparisonValue = (
-    mode: 'time_shift' | 'metric' | undefined,
+    mode: BigNumberMetricSlotMode | undefined,
     column: QueryFormMetric | undefined,
     offset: string | undefined,
   ): number | string | null | undefined => {
@@ -752,7 +721,7 @@ export default function transformProps(
   // point against the shifted point (e.g. latest month vs previous month),
   // not the overall main value. Other slots compare against the main value.
   const slotCurrent = (
-    mode: 'time_shift' | 'metric' | undefined,
+    mode: BigNumberMetricSlotMode | undefined,
     column: QueryFormMetric | undefined,
   ): number | null => {
     if (pointSeries && !isMetricMode(mode, column)) {
@@ -771,7 +740,7 @@ export default function transformProps(
     comparisonValue,
     formatter,
     valueFormatter,
-  }: ComparisonSlot): { text: string; fill: string } | null => {
+  }: ComparisonSlot): ComparisonContent => {
     if (!show) return null;
     if (!offset && !column) return null;
     const comparison = toNumber(comparisonValue);
@@ -823,60 +792,64 @@ export default function transformProps(
     };
   };
 
-  const comparison1Content = buildComparisonContent({
-    show: showComparison1,
-    label: comparison1Label,
-    offset: comparison1Offset,
-    column: comparison1Column,
-    mode: comparison1Mode,
-    current: slotCurrent(comparison1Mode, comparison1Column),
-    comparisonValue: slotComparisonValue(
-      comparison1Mode,
-      comparison1Column,
-      comparison1Offset,
+  // Every row contributes two independently configured slots. A row with no
+  // visible slot is dropped so it never reserves vertical space.
+  const comparisonContents: ComparisonContent[][] = metricRows.map(row =>
+    row.slots.map(slot =>
+      buildComparisonContent({
+        show: slot.show !== false,
+        label: slot.label ?? '',
+        offset: slot.offset,
+        column: slot.column,
+        mode: slot.mode,
+        current: slotCurrent(slot.mode, slot.column),
+        comparisonValue: slotComparisonValue(
+          slot.mode,
+          slot.column,
+          slot.offset,
+        ),
+        formatter: createPercentFormatter(slot),
+        valueFormatter: createValueFormatter(slot),
+      }),
     ),
-    formatter: percentFormatter1,
-    valueFormatter: valueFormatter1,
-  });
-  const comparison2Content = buildComparisonContent({
-    show: showComparison2,
-    label: comparison2Label,
-    offset: comparison2Offset,
-    column: comparison2Column,
-    mode: comparison2Mode,
-    current: slotCurrent(comparison2Mode, comparison2Column),
-    comparisonValue: slotComparisonValue(
-      comparison2Mode,
-      comparison2Column,
-      comparison2Offset,
+  );
+  const visibleRows = comparisonContents.filter(contents =>
+    contents.some(Boolean),
+  );
+  const hasComparison = visibleRows.length > 0;
+  // All rows measure with estimateComparisonTextWidth (0.5em ASCII / 1em
+  // full-width): the generic estimator overstated a "同比 ↑104.79%" slot by
+  // ~60% and flattened every configured font size to the same tiny value.
+  // Uniform sizing measures a data-independent design text so equal-width
+  // tiles share ONE size even when they have a different number of rows.
+  const comparisonFitTexts = visibleRows.map(contents =>
+    Array.from({ length: SLOTS_PER_ROW }, (_, slotIndex) =>
+      uniformBigNumberFontSize
+        ? UNIFORM_COMPARISON_DESIGN_TEXT
+        : (contents[slotIndex]?.text ?? ''),
     ),
-    formatter: percentFormatter2,
-    valueFormatter: valueFormatter2,
-  });
-  // Comparison slots render side by side (MoM / YoY). Both modes measure with
-  // estimateComparisonTextWidth (0.5em ASCII / 1em full-width): the generic
-  // estimator overstated a "同比 ↑104.79%" slot by ~60% and flattened every
-  // configured "Comparison font size" to the same tiny value. Uniform sizing
-  // measures a data-independent design text so equal-width tiles share ONE size.
-  const comparisonFitTexts = uniformBigNumberFontSize
-    ? [UNIFORM_COMPARISON_DESIGN_TEXT, UNIFORM_COMPARISON_DESIGN_TEXT]
-    : [comparison1Content?.text ?? '', comparison2Content?.text ?? ''];
-  const measureLayoutText = (size: number, index: number): number =>
-    estimateComparisonTextWidth(comparisonFitTexts[index], size);
-  const comparisonSlotWidthsAt = (size: number): [number, number] => [
-    comparison1Content ? measureLayoutText(size, 0) : 0,
-    comparison2Content ? measureLayoutText(size, 1) : 0,
-  ];
-  // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Fit the two slots
-  // back-to-back plus one FIXED design gap, then place them using the
-  // configured spacing. Changing "Comparison spacing" only moves the second
-  // slot; it never re-sizes the text, and neither does the anchor checkbox.
-  const comparisonRowFits = (size: number, bound: number): boolean => {
-    const [first, second] = comparisonSlotWidthsAt(size);
-    return (
-      comparisonLeft + first + second + COMPARISON_FIT_RESERVED_GAP <= bound
+  );
+  const comparisonSlotWidthsAt = (size: number): [number, number][] =>
+    visibleRows.map(
+      (contents, rowIndex) =>
+        Array.from({ length: SLOTS_PER_ROW }, (_, slotIndex) =>
+          contents[slotIndex]
+            ? estimateComparisonTextWidth(
+                comparisonFitTexts[rowIndex][slotIndex],
+                size,
+              )
+            : 0,
+        ) as [number, number],
     );
-  };
+  // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Fit the two slots of
+  // EVERY row back-to-back plus one FIXED design gap, then place them using
+  // the configured spacing. One shared font size is used by all rows, so
+  // adding rows can never make a single row drift in size.
+  const comparisonRowFits = (size: number, bound: number): boolean =>
+    comparisonSlotWidthsAt(size).every(
+      ([first, second]) =>
+        comparisonLeft + first + second + COMPARISON_FIT_RESERVED_GAP <= bound,
+    );
   const minComparisonFontSizePx = uniformBigNumberFontSize
     ? MIN_UNIFORM_COMPARISON_FONT_SIZE
     : MIN_COMPARISON_FONT_SIZE_PX;
@@ -907,11 +880,17 @@ export default function transformProps(
   // spacing from the MoM text's right edge, checked measures the SAME value
   // from the tile's horizontal center line. Nothing above reads either value,
   // so spacing can never influence the font size.
-  const hasLegacyComparisonLefts =
-    legacyComparison1Left !== undefined || legacyComparison2Left !== undefined;
-  const [slot0Width, slot1Width] = comparisonSlotWidthsAt(comparisonFontSizePx);
-  const leftWidth = swapComparisonOrder ? slot1Width : slot0Width;
-  const rightWidth = swapComparisonOrder ? slot0Width : slot1Width;
+  const rowWidths = comparisonSlotWidthsAt(comparisonFontSizePx);
+  // All rows share ONE column boundary: the widest first slot across rows
+  // decides where the second column starts, so a long label in a lower row
+  // can never overlap that row's own second slot.
+  const widestFirstSlot = Math.max(0, ...rowWidths.map(([first]) => first));
+  const widestSecondSlot = Math.max(
+    0,
+    ...rowWidths.map(([, second]) => second),
+  );
+  const leftWidth = swapComparisonOrder ? widestSecondSlot : widestFirstSlot;
+  const rightWidth = swapComparisonOrder ? widestFirstSlot : widestSecondSlot;
   const minRightLeft = comparisonLeft + leftWidth;
   const idealRightLeft = useCenterGap
     ? Math.round(width / 2) + comparisonGapPx
@@ -925,14 +904,22 @@ export default function transformProps(
     Math.max(idealRightLeft, minRightLeft),
     rightWidth,
   );
-  const comparisonLefts = hasLegacyComparisonLefts
-    ? [
-        clampLeft(legacyComparison1Left ?? comparisonLeft, slot0Width),
-        clampLeft(legacyComparison2Left ?? rightLeft, slot1Width),
-      ]
-    : swapComparisonOrder
+  // Absolute positions saved by very old charts only apply to row 1; every
+  // added row uses the shared column boundary above.
+  const legacyLefts = metricRows[0]?.slots.map(slot => slot.left) ?? [];
+  const hasLegacyComparisonLefts = legacyLefts.some(left => left !== undefined);
+  const comparisonLeftsForRow = (rowIndex: number): [number, number] => {
+    const [first, second] = rowWidths[rowIndex] ?? [0, 0];
+    if (rowIndex === 0 && hasLegacyComparisonLefts) {
+      return [
+        clampLeft(legacyLefts[0] ?? comparisonLeft, first),
+        clampLeft(legacyLefts[1] ?? rightLeft, second),
+      ];
+    }
+    return swapComparisonOrder
       ? [rightLeft, comparisonLeft]
       : [comparisonLeft, rightLeft];
+  };
 
   // Match the Big Number family: the complete text stack is centered in the
   // tile. Heights use the post auto-size font sizes so the stack stays
@@ -942,15 +929,41 @@ export default function transformProps(
   // comparison), compress the internal gaps first so the comparison row is not
   // pushed out of the bottom before the stack just overflows the top.
   const comparisonRowHeight = comparisonFontSizePx * 1.2;
+  const requestedComparisonRowGapPx = Math.max(
+    0,
+    Math.round(comparisonFontSizePx * COMPARISON_ROW_GAP_RATIO),
+  );
+  const rowCount = visibleRows.length;
+  const rowsHeightAt = (gapPx: number): number =>
+    hasComparison ? rowCount * comparisonRowHeight + (rowCount - 1) * gapPx : 0;
+  let effectiveComparisonRowGapPx = requestedComparisonRowGapPx;
   const requestedContentHeight =
     (hasTitle ? titleRowHeight + bigNumberTopValue : 0) +
     bigNumberRowHeight +
-    (hasComparison ? comparisonTopValue + comparisonRowHeight : 0);
+    (hasComparison
+      ? comparisonTopValue + rowsHeightAt(requestedComparisonRowGapPx)
+      : 0);
   const maxContentHeight = Math.max(0, height - titleTopValue);
   let effectiveBigNumberTopValue = bigNumberTopValue;
   let effectiveComparisonTopValue = comparisonTopValue;
   if (requestedContentHeight > maxContentHeight) {
     let overflow = requestedContentHeight - maxContentHeight;
+    // Extra rows are the first thing to give: squeeze the gaps BETWEEN rows
+    // down to zero before touching the configured title / comparison gaps.
+    if (hasComparison && rowCount > 1) {
+      const gapCount = rowCount - 1;
+      const totalGap = gapCount * effectiveComparisonRowGapPx;
+      const shrink = Math.min(totalGap, overflow);
+      effectiveComparisonRowGapPx = Math.max(
+        0,
+        Math.floor((totalGap - shrink) / gapCount),
+      );
+      overflow -= Math.max(
+        0,
+        gapCount * (requestedComparisonRowGapPx - effectiveComparisonRowGapPx),
+      );
+      overflow = Math.max(0, overflow);
+    }
     if (hasComparison) {
       const comparisonShrink = Math.min(effectiveComparisonTopValue, overflow);
       effectiveComparisonTopValue -= comparisonShrink;
@@ -961,10 +974,11 @@ export default function transformProps(
       effectiveBigNumberTopValue -= bigNumberShrink;
     }
   }
+  const comparisonRowsHeight = rowsHeightAt(effectiveComparisonRowGapPx);
   const contentHeight =
     (hasTitle ? titleRowHeight + effectiveBigNumberTopValue : 0) +
     bigNumberRowHeight +
-    (hasComparison ? effectiveComparisonTopValue + comparisonRowHeight : 0);
+    (hasComparison ? effectiveComparisonTopValue + comparisonRowsHeight : 0);
   const contentTop = Math.max(titleTopValue, (height - contentHeight) / 2);
   const effectiveTitleTop = hasTitle ? contentTop : titleTopValue;
   const effectiveBigNumberTop = hasTitle
@@ -1003,14 +1017,15 @@ export default function transformProps(
   });
 
   const pushComparison = (
-    content: { text: string; fill: string } | null,
+    content: ComparisonContent,
     left: number,
+    top: number,
   ) => {
     if (!content) return;
     graphic.push({
       type: 'text',
       left,
-      top: effectiveComparisonTop,
+      top,
       style: {
         text: content.text,
         fontSize: comparisonFontSizePx,
@@ -1018,8 +1033,14 @@ export default function transformProps(
       },
     });
   };
-  pushComparison(comparison1Content, comparisonLefts[0]);
-  pushComparison(comparison2Content, comparisonLefts[1]);
+  visibleRows.forEach((contents, rowIndex) => {
+    const [left0, left1] = comparisonLeftsForRow(rowIndex);
+    const rowTop =
+      effectiveComparisonTop +
+      rowIndex * (comparisonRowHeight + effectiveComparisonRowGapPx);
+    pushComparison(contents[0], left0, rowTop);
+    pushComparison(contents[1], left1, rowTop);
+  });
 
   const echartOptions: EChartsCoreOption = {
     tooltip: { show: false },

@@ -64,6 +64,7 @@ import SwitchControl from './SwitchControl';
 import VerticalRadioControl from './VerticalRadioControl';
 import HeaderGroupsControl from './HeaderGroupsControl';
 import InlineFiltersControl from './InlineFiltersControl';
+import MetricRowsControl from './MetricRowsControl';
 
 const extensionsRegistry = getExtensionsRegistry();
 const DateFilterControlExtension = extensionsRegistry.get(
@@ -117,6 +118,7 @@ const controlMap = {
   VerticalRadioControl,
   HeaderGroupsControl,
   InlineFiltersControl,
+  MetricRowsControl,
   ...sharedControlComponents,
 };
 export default controlMap;

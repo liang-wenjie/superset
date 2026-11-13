@@ -22,10 +22,6 @@ jest.mock('@apache-superset/core/translation', () => ({
   t: (text: string) => text,
 }));
 
-type VisibilityFn = (args: {
-  controls: Record<string, { value: unknown }>;
-}) => boolean;
-
 const findConfig = (name: string): Record<string, any> | undefined => {
   for (const section of config.controlPanelSections) {
     for (const row of (section?.controlSetRows ?? []) as unknown as any[][]) {
@@ -44,62 +40,66 @@ const findConfig = (name: string): Record<string, any> | undefined => {
   return undefined;
 };
 
-describe('BigNumberYoyMom comparison gap controls', () => {
-  const bothShown = {
-    show_comparison1: { value: true },
-    show_comparison2: { value: true },
-  };
-  const checkbox = findConfig('comparison_use_center_gap');
-  const checkboxVisible = checkbox?.visibility as VisibilityFn;
-  const spacing = findConfig('comparison_gap');
-  const spacingVisible = spacing?.visibility as VisibilityFn;
+describe('BigNumberYoyMom metric rows controls', () => {
+  test('replaces the per-slot MoM/YoY controls with ONE row editor', () => {
+    const rowsControl = findConfig('metric_rows');
+    expect(rowsControl?.type).toBe('MetricRowsControl');
+    expect(rowsControl?.renderTrigger).toBe(true);
+    [
+      'show_comparison1',
+      'show_comparison2',
+      'comparison1_label',
+      'comparison2_label',
+      'comparison1_mode',
+      'comparison2_mode',
+      'comparison1_column',
+      'comparison2_column',
+      'comparison1_offset',
+      'comparison2_offset',
+      'comparison1_percent_difference_format',
+      'comparison2_percent_difference_format',
+    ].forEach(name => expect(findConfig(name)).toBeUndefined());
+  });
 
-  test('exposes one checkbox and ONE shared spacing slider', () => {
+  test('rebuilds its props and offers the legacy pair as row 1', () => {
+    const rowsControl = findConfig('metric_rows');
+    const shouldMapStateToProps = rowsControl?.shouldMapStateToProps as
+      | (() => boolean)
+      | undefined;
+    expect(shouldMapStateToProps?.()).toBe(true);
+    const mapState = rowsControl?.mapStateToProps as (
+      state: unknown,
+    ) => Record<string, unknown>;
+    const props = mapState({
+      datasource: {
+        metrics: [
+          { metric_name: 'count', verbose_name: 'Count' },
+          { metric_name: 'count' },
+          null,
+        ],
+      },
+      form_data: { viz_type: 'big_number_yoy_mom' },
+    });
+    expect(props.metrics).toEqual([{ label: 'Count', value: 'count' }]);
+    expect(props.offsetChoices as string[]).toContain('1 month ago');
+    const defaultRows = props.defaultRows as { slots: unknown[] }[];
+    expect(defaultRows).toHaveLength(1);
+    expect(defaultRows[0].slots).toHaveLength(2);
+  });
+
+  test('style controls stay shared by every row', () => {
+    const checkbox = findConfig('comparison_use_center_gap');
+    const spacing = findConfig('comparison_gap');
+    const swap = findConfig('swap_comparison_order');
     expect(checkbox?.type).toBe('CheckboxControl');
     expect(spacing?.type).toBe('SliderControl');
-    expect(checkboxVisible).toBeInstanceOf(Function);
-    expect(spacingVisible).toBeInstanceOf(Function);
-    // There is no second numeric gap control: both modes reuse this slider.
-    expect(findConfig('comparison_yoy_axis_gap')).toBeUndefined();
-  });
-
-  test('defaults to MoM-relative spacing', () => {
     expect(checkbox?.default).toBe(false);
-    expect(checkboxVisible({ controls: bothShown })).toBe(true);
-    expect(spacingVisible({ controls: bothShown })).toBe(true);
-  });
-
-  test('checking the box only switches the anchor, not the slider', () => {
-    const controls = {
-      ...bothShown,
-      comparison_use_center_gap: { value: true },
-    };
-    expect(checkboxVisible({ controls })).toBe(true);
-    // The very same slider stays visible and keeps its value/default.
-    expect(spacingVisible({ controls })).toBe(true);
-    expect(spacing?.renderTrigger).toBe(true);
     expect(spacing?.default).toBe(24);
-  });
-
-  test('clearing the box restores MoM-relative spacing', () => {
-    const controls = {
-      ...bothShown,
-      comparison_use_center_gap: { value: false },
-    };
-    expect(spacingVisible({ controls })).toBe(true);
-  });
-
-  test('the spacing slider does not depend on the checkbox being present', () => {
-    // Charts saved before the checkbox existed have no flag at all.
-    expect(spacingVisible({ controls: bothShown })).toBe(true);
-  });
-
-  test('hides both controls when either comparison is hidden', () => {
-    const oneHidden = {
-      ...bothShown,
-      show_comparison2: { value: false },
-    };
-    expect(checkboxVisible({ controls: oneHidden })).toBe(false);
-    expect(spacingVisible({ controls: oneHidden })).toBe(false);
+    expect(spacing?.renderTrigger).toBe(true);
+    // No visibility tied to the removed show_comparison* controls.
+    expect(checkbox?.visibility).toBeUndefined();
+    expect(spacing?.visibility).toBeUndefined();
+    expect(swap?.visibility).toBeUndefined();
+    expect(findConfig('comparison_yoy_axis_gap')).toBeUndefined();
   });
 });

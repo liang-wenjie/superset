@@ -17,9 +17,9 @@
  * under the License.
  */
 import { t } from '@apache-superset/core/translation';
-import { NumberFormats } from '@superset-ui/core';
 import {
   ControlPanelConfig,
+  ControlPanelState,
   ControlSubSectionHeader,
   getStandardizedControls,
   sharedControls,
@@ -34,11 +34,7 @@ import {
   DEFAULT_BIG_NUMBER_COLOR,
   DEFAULT_BIG_NUMBER_LEFT,
   DEFAULT_BIG_NUMBER_TOP,
-  DEFAULT_COMPARISON1_LABEL,
-  DEFAULT_COMPARISON1_OFFSET,
-  DEFAULT_COMPARISON2_LABEL,
   DEFAULT_COMPARISON_GAP,
-  DEFAULT_COMPARISON2_OFFSET,
   DEFAULT_COMPARISON_NEGATIVE_COLOR,
   DEFAULT_COMPARISON_POSITIVE_COLOR,
   DEFAULT_COMPARISON_SHOW_ARROW,
@@ -50,6 +46,7 @@ import {
   DEFAULT_TITLE_LEFT,
   DEFAULT_TITLE_TOP,
 } from './constants';
+import { resolveMetricRows } from './metricRows';
 
 const config: ControlPanelConfig = {
   controlPanelSections: [
@@ -72,110 +69,54 @@ const config: ControlPanelConfig = {
         ['metric'],
         [
           {
-            name: 'comparison1_mode',
+            name: 'metric_rows',
             config: {
-              type: 'SelectControl',
-              label: t('MoM comparison source'),
-              default: 'time_shift',
-              choices: [
-                ['time_shift', t('Time comparison (shift)')],
-                ['metric', t('Comparison value metric')],
-              ],
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison1_column',
-            config: {
-              ...sharedControls.metric,
-              label: t('MoM comparison value'),
-              clearable: true,
-              // The comparison value is optional: do not inherit the
-              // required validator from the metric control. Hidden
-              // controls are still validated by Explore, so a required
-              // validator here blocks chart creation in time-shift mode.
-              validators: [],
-              description: t(
-                'Metric (or custom SQL expression) holding the MoM comparison value. This mode does not require a time range.',
-              ),
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true &&
-                controls?.comparison1_mode?.value === 'metric',
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison1_offset',
-            config: {
-              type: 'SelectControl',
-              freeForm: true,
-              label: t('MoM time shift'),
+              type: 'MetricRowsControl',
+              label: t('Metric rows'),
               renderTrigger: true,
-              default: DEFAULT_COMPARISON1_OFFSET,
-              choices: COMPARISON_OFFSET_CHOICES,
               description: t(
-                'Relative time period to compare against, e.g. "1 month ago".',
+                'Rows of metrics shown below the big number. Each row holds two independently configured slots: the first row is the MoM/YoY pair, and you can add as many rows as you need. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the comparison style settings below.',
               ),
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true &&
-                controls?.comparison1_mode?.value !== 'metric',
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison2_mode',
-            config: {
-              type: 'SelectControl',
-              label: t('YoY comparison source'),
-              default: 'time_shift',
-              choices: [
-                ['time_shift', t('Time comparison (shift)')],
-                ['metric', t('Comparison value metric')],
-              ],
-              visibility: ({ controls }) =>
-                controls?.show_comparison2?.value === true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison2_column',
-            config: {
-              ...sharedControls.metric,
-              label: t('YoY comparison value'),
-              clearable: true,
-              // See the MoM comparison value: the metric is optional.
-              validators: [],
-              description: t(
-                'Metric (or custom SQL expression) holding the YoY comparison value. This mode does not require a time range.',
-              ),
-              visibility: ({ controls }) =>
-                controls?.show_comparison2?.value === true &&
-                controls?.comparison2_mode?.value === 'metric',
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison2_offset',
-            config: {
-              type: 'SelectControl',
-              freeForm: true,
-              label: t('YoY time shift'),
-              renderTrigger: true,
-              default: DEFAULT_COMPARISON2_OFFSET,
-              choices: COMPARISON_OFFSET_CHOICES,
-              description: t(
-                'Relative time period to compare against, e.g. "1 year ago".',
-              ),
-              visibility: ({ controls }) =>
-                controls?.show_comparison2?.value === true &&
-                controls?.comparison2_mode?.value !== 'metric',
+              // Dataset metadata arrives asynchronously; rebuild the metric
+              // options whenever Explore state changes.
+              shouldMapStateToProps() {
+                return true;
+              },
+              mapStateToProps(explore: ControlPanelState) {
+                const datasource = explore?.datasource as
+                  | { metrics?: unknown[] }
+                  | undefined;
+                const metrics: { label: string; value: string }[] = [];
+                const seen = new Set<string>();
+                (datasource?.metrics ?? []).forEach(entry => {
+                  if (!entry || typeof entry !== 'object') return;
+                  const record = entry as Record<string, unknown>;
+                  const name =
+                    typeof record.metric_name === 'string'
+                      ? record.metric_name
+                      : '';
+                  if (!name || seen.has(name)) return;
+                  seen.add(name);
+                  const verboseName =
+                    typeof record.verbose_name === 'string'
+                      ? record.verbose_name
+                      : '';
+                  metrics.push({ label: verboseName || name, value: name });
+                });
+                const formData = (explore?.form_data ?? {}) as Record<
+                  string,
+                  unknown
+                >;
+                return {
+                  metrics,
+                  offsetChoices: COMPARISON_OFFSET_CHOICES.map(([offset]) =>
+                    String(offset),
+                  ),
+                  // Charts saved before this control existed still show their
+                  // MoM/YoY pair as row 1 instead of an empty list.
+                  defaultRows: resolveMetricRows(formData),
+                };
+              },
             },
           },
         ],
@@ -310,89 +251,7 @@ const config: ControlPanelConfig = {
         ],
         [
           <ControlSubSectionHeader>
-            {t('MoM Comparison')}
-          </ControlSubSectionHeader>,
-        ],
-        [
-          {
-            name: 'show_comparison1',
-            config: {
-              type: 'CheckboxControl',
-              label: t('Show MoM comparison'),
-              renderTrigger: true,
-              default: true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison1_label',
-            config: {
-              type: 'TextControl',
-              label: t('MoM label'),
-              renderTrigger: true,
-              default: t(DEFAULT_COMPARISON1_LABEL),
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison1_percent_difference_format',
-            config: {
-              ...sharedControls.y_axis_format,
-              label: t('MoM percent difference format'),
-              default: NumberFormats.PERCENT_2_POINT,
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true,
-            },
-          },
-        ],
-        [
-          <ControlSubSectionHeader>
-            {t('YoY Comparison')}
-          </ControlSubSectionHeader>,
-        ],
-        [
-          {
-            name: 'show_comparison2',
-            config: {
-              type: 'CheckboxControl',
-              label: t('Show YoY comparison'),
-              renderTrigger: true,
-              default: true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison2_label',
-            config: {
-              type: 'TextControl',
-              label: t('YoY label'),
-              renderTrigger: true,
-              default: t(DEFAULT_COMPARISON2_LABEL),
-              visibility: ({ controls }) =>
-                controls?.show_comparison2?.value === true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'comparison2_percent_difference_format',
-            config: {
-              ...sharedControls.y_axis_format,
-              label: t('YoY percent difference format'),
-              default: NumberFormats.PERCENT_2_POINT,
-              visibility: ({ controls }) =>
-                controls?.show_comparison2?.value === true,
-            },
-          },
-        ],
-        [
-          <ControlSubSectionHeader>
-            {t('Comparison Style')}
+            {t('Metric Rows Style')}
           </ControlSubSectionHeader>,
         ],
         [
@@ -400,15 +259,12 @@ const config: ControlPanelConfig = {
             name: 'comparison_use_center_gap',
             config: {
               type: 'CheckboxControl',
-              label: t('YoY gap from center'),
+              label: t('Second column gap from center'),
               default: false,
               renderTrigger: true,
               description: t(
                 'Off (default): "Comparison spacing" is measured from the MoM text. On: the SAME slider is measured from the tile center line instead, so YoY no longer drifts when the MoM text changes length. Only the anchor changes - the slider, its drag behaviour and its saved value are shared by both modes.',
               ),
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true &&
-                controls?.show_comparison2?.value === true,
             },
           },
         ],
@@ -426,9 +282,6 @@ const config: ControlPanelConfig = {
               description: t(
                 'Horizontal distance to YoY, applied from the MoM text by default or from the tile center line when "YoY gap from center" is checked. Both modes use this one slider. It only moves the second slot and never changes the font size.',
               ),
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true &&
-                controls?.show_comparison2?.value === true,
             },
           },
         ],
@@ -437,12 +290,9 @@ const config: ControlPanelConfig = {
             name: 'swap_comparison_order',
             config: {
               type: 'CheckboxControl',
-              label: t('Swap MoM and YoY positions'),
+              label: t('Swap the two columns'),
               default: false,
               renderTrigger: true,
-              visibility: ({ controls }) =>
-                controls?.show_comparison1?.value === true &&
-                controls?.show_comparison2?.value === true,
             },
           },
         ],

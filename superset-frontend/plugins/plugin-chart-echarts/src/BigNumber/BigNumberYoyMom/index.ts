@@ -28,7 +28,7 @@ import { EchartsChartPlugin } from '../../types';
 const metadata = {
   category: t('KPI'),
   description: t(
-    'Showcases a single number along with period-over-period (MoM) and year-over-year (YoY) percentage changes.',
+    'Showcases a single number with configurable rows of metrics below it. The first row holds the MoM/YoY comparisons; add more rows of two independently configured metrics as needed.',
   ),
   name: t('Big Number with YoY & MoM'),
   tags: [

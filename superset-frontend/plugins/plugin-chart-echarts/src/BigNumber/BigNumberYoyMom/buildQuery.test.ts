@@ -280,4 +280,65 @@ describe('BigNumberYoyMom buildQuery', () => {
     });
     expect(queryContext.queries[0].granularity).toBe('created_at');
   });
+
+  test('collects time offsets and metrics from every row', () => {
+    const queryContext = buildQuery({
+      ...baseFormData,
+      time_range: 'Last week',
+      metric_rows: [
+        {
+          slots: [
+            { mode: 'time_shift', offset: '1 month ago' },
+            { mode: 'time_shift', offset: '1 year ago' },
+          ],
+        },
+        {
+          slots: [
+            { mode: 'metric', column: 'headcount' },
+            { mode: 'time_shift', offset: '2 years ago' },
+          ],
+        },
+      ],
+    });
+    expect(queryContext.queries[0].time_offsets).toEqual([
+      '1 month ago',
+      '1 year ago',
+      '2 years ago',
+    ]);
+    expect(queryContext.queries[0].metrics).toEqual(
+      expect.arrayContaining(['value', 'headcount']),
+    );
+  });
+
+  test('deduplicates a time offset shared by several rows', () => {
+    const queryContext = buildQuery({
+      ...baseFormData,
+      time_range: 'Last week',
+      metric_rows: [
+        { slots: [{ mode: 'time_shift', offset: '1 month ago' }] },
+        { slots: [{ mode: 'time_shift', offset: '1 month ago' }] },
+      ],
+    });
+    expect(queryContext.queries[0].time_offsets).toEqual(['1 month ago']);
+  });
+
+  test('accepts camelCase metricRows', () => {
+    const queryContext = buildQuery({
+      ...baseFormData,
+      time_range: 'Last week',
+      metricRows: [{ slots: [{ mode: 'time_shift', offset: '1 week ago' }] }],
+    });
+    expect(queryContext.queries[0].time_offsets).toEqual(['1 week ago']);
+  });
+
+  test('an explicit empty metric_rows list removes every comparison query', () => {
+    const queryContext = buildQuery({
+      ...baseFormData,
+      time_range: 'Last week',
+      metric_rows: [],
+    });
+    expect(queryContext.queries[0].time_offsets).toEqual([]);
+    expect(queryContext.queries[0].metrics).toHaveLength(1);
+    expect(queryContext.queries[0].time_range).toBe('Last week');
+  });
 });

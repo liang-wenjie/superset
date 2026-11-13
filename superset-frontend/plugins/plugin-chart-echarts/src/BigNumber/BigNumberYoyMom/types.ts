@@ -25,6 +25,7 @@ import {
   QueryFormMetric,
 } from '@superset-ui/core';
 import { BaseChartProps, Refs } from '../../types';
+import type { BigNumberMetricRow } from './metricRows';
 
 export type RGBColor = { r: number; g: number; b: number };
 
@@ -47,6 +48,12 @@ export type BigNumberYoyMomFormData = QueryFormData & {
   uniformBigNumberFontSizePx?: number;
   /** Formatted big numbers of every KPI tile on the dashboard. */
   uniformBigNumberReferenceTexts?: string[];
+  /**
+   * Unified metric rows: every row holds two independently configured slots.
+   * Charts saved before this field existed fall back to the legacy
+   * `comparison1_*` / `comparison2_*` pair through `resolveMetricRows`.
+   */
+  metricRows?: BigNumberMetricRow[];
   showComparison1?: boolean;
   comparison1Label?: string;
   comparison1Mode?: 'time_shift' | 'metric';

@@ -25,32 +25,43 @@ import {
   QueryFormMetric,
 } from '@superset-ui/core';
 import { BigNumberYoyMomFormData } from './types';
+import {
+  flattenMetricSlots,
+  isMetricMode,
+  resolveMetricRows,
+} from './metricRows';
 import { offsetMaxRows, toEnclosedTimeRange } from './timeRange';
 
 export default function buildQuery(formData: QueryFormData) {
   return buildQueryContext(formData, baseQueryObject => {
-    // Server-side time shifts for the MoM/YoY comparison slots. The backend
-    // computes each shifted range and returns the values as extra columns
-    // named `<metric label>__<offset>`. A slot that configures a comparison
-    // value column reads its value directly from the query result instead.
-    // Slots are only sent as time offsets when a time range is actually
-    // present ("No filter" would fail the backend's enclosed-range check).
+    // Every metric row holds two independently configured slots. A slot uses
+    // either a server-side time shift (extra `<metric label>__<offset>`
+    // columns) or an explicit comparison metric read from the result. Old
+    // `comparison1_*` / `comparison2_*` charts resolve to row 1 of the same
+    // list, so both shapes produce exactly the same query.
     const formDataYoyMom = formData as BigNumberYoyMomFormData;
     const timeRange = baseQueryObject.time_range;
     const hasTimeRange = !!timeRange && timeRange !== 'No filter';
-    // A slot either uses a time shift (backend time-offset columns) or an
-    // explicit comparison metric. An unset mode falls back to the metric when
-    // a comparison value column was configured (legacy form data).
-    const metricMode1 =
-      formDataYoyMom.comparison1_mode === 'metric' ||
-      (!formDataYoyMom.comparison1_mode && !!formDataYoyMom.comparison1_column);
-    const metricMode2 =
-      formDataYoyMom.comparison2_mode === 'metric' ||
-      (!formDataYoyMom.comparison2_mode && !!formDataYoyMom.comparison2_column);
-    const timeOffsets = ensureIsArray([
-      !metricMode1 ? formDataYoyMom.comparison1_offset : null,
-      !metricMode2 ? formDataYoyMom.comparison2_offset : null,
-    ]).filter(Boolean) as string[];
+    // Hidden slots keep their query shape so charts saved with
+    // `show_comparison*` disabled behave exactly as before; the render layer
+    // is the only place that decides whether a slot is visible.
+    const slots = flattenMetricSlots(
+      resolveMetricRows(formData as unknown as Record<string, unknown>),
+    );
+    const timeOffsets = Array.from(
+      new Set(
+        ensureIsArray(
+          slots
+            .filter(
+              slot =>
+                !isMetricMode(slot.mode, slot.column) &&
+                // Legacy implied offsets only render a "—" placeholder.
+                !slot.implicitOffset,
+            )
+            .map(slot => slot.offset),
+        ).filter(Boolean) as string[],
+      ),
+    );
 
     // Comparison value metrics are requested alongside the main metric so the
     // query result carries their columns (useful for custom SQL datasets that
@@ -61,10 +72,11 @@ export default function buildQuery(formData: QueryFormData) {
     const metricLabel = (metric: QueryFormMetric): string =>
       getMetricLabel(metric);
     const mainLabels = new Set(mainMetrics.map(metricLabel));
-    const comparisonMetrics = ensureIsArray([
-      metricMode1 ? formDataYoyMom.comparison1_column : null,
-      metricMode2 ? formDataYoyMom.comparison2_column : null,
-    ]).filter(Boolean) as QueryFormMetric[];
+    const comparisonMetrics = ensureIsArray(
+      slots
+        .filter(slot => isMetricMode(slot.mode, slot.column))
+        .map(slot => slot.column),
+    ).filter(Boolean) as QueryFormMetric[];
     const uniqueComparisonMetrics: QueryFormMetric[] = [];
     comparisonMetrics.forEach(metric => {
       const label = metricLabel(metric);

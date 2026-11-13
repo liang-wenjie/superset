@@ -1613,4 +1613,87 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(withStaleField[3].left).toBe(withoutStaleField[3].left);
     expect(withStaleField[3].left).toBe(240); // 400 / 2 + 40
   });
+
+  test('renders additional metric rows below the MoM/YoY pair', () => {
+    const result = transformProps(
+      buildChartProps(
+        [
+          {
+            'SUM(sales)': 100,
+            'SUM(sales)__1 month ago': 90,
+            'SUM(sales)__1 year ago': 80,
+            headcount: 1234,
+            cost: 5678,
+          },
+        ],
+        {
+          metric_rows: [
+            {
+              slots: [
+                { label: 'MoM', mode: 'time_shift', offset: '1 month ago' },
+                { label: 'YoY', mode: 'time_shift', offset: '1 year ago' },
+              ],
+            },
+            {
+              slots: [
+                { label: '在职', mode: 'metric', column: 'headcount' },
+                { label: '成本', mode: 'metric', column: 'cost' },
+              ],
+            },
+          ],
+        },
+      ),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    // Title, big number and four slots (two rows x two slots).
+    expect(graphic).toHaveLength(6);
+    expect(graphic[2].style.text).toContain('MoM');
+    expect(graphic[3].style.text).toContain('YoY');
+    expect(graphic[4].style.text).toContain('在职');
+    expect(graphic[4].style.text).toContain('1234');
+    expect(graphic[5].style.text).toContain('5678');
+    // Every row shares the two column boundaries and one font size.
+    expect(graphic[4].left).toBe(graphic[2].left);
+    expect(graphic[5].left).toBe(graphic[3].left);
+    expect(graphic[4].style.fontSize).toBe(graphic[2].style.fontSize);
+    // The added row sits strictly below row 1, with both slots on one line.
+    expect(graphic[4].top).toBeGreaterThan(graphic[2].top);
+    expect(graphic[5].top).toBe(graphic[4].top);
+  });
+
+  test('an explicitly empty metric_rows list hides all comparison rows', () => {
+    const result = transformProps(
+      buildChartProps([{ 'SUM(sales)': 100 }], { metric_rows: [] }),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic).toHaveLength(2);
+    expect(graphic[1].style.text).toBe('$100');
+  });
+
+  test('legacy charts with no comparison data keep both placeholders', () => {
+    const result = transformProps(buildChartProps([{ 'SUM(sales)': 100 }]));
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic).toHaveLength(4);
+    expect(graphic[2].style.text).toBe('MoM —');
+    expect(graphic[3].style.text).toBe('YoY —');
+    expect(graphic[3].top).toBe(graphic[2].top);
+  });
+
+  test('a disabled slot does not reserve its own text', () => {
+    const result = transformProps(
+      buildChartProps([{ 'SUM(sales)': 100, headcount: 42 }], {
+        metric_rows: [
+          {
+            slots: [
+              { show: false, mode: 'metric', column: 'headcount' },
+              { label: '在职', mode: 'metric', column: 'headcount' },
+            ],
+          },
+        ],
+      }),
+    );
+    const graphic = result.echartOptions.graphic as Record<string, any>[];
+    expect(graphic).toHaveLength(3);
+    expect(graphic[2].style.text).toContain('42');
+  });
 });
