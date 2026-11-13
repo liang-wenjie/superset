@@ -17,8 +17,6 @@
  * under the License.
  */
 import { ensureIsArray, JsonObject, QueryFormData } from '@superset-ui/core';
-import type { DashboardFilterOverrides } from './dashboardFilterOverrides';
-import { hasDashboardFilterOverride } from './dashboardFilterOverrides';
 import type { InlineFilterConfig, InlineFilterSelection } from './types';
 import {
   buildInlineAdhocFilter,
@@ -53,18 +51,11 @@ const isAdhocFiltersKey = (key: string): boolean =>
  * A filter with no entry in `selection` uses its configured `defaultValue`;
  * an explicitly cleared filter (`null`) does not, so "All" stays reachable.
  * Required filters keep their default even when a stray clear arrives.
- *
- * Dashboard-level filters win over inline filters on the same column: a
- * stale inline selection (e.g. 202607) combined with a dashboard filter
- * (202606) produces an empty result. Columns listed in
- * `dashboardOverrides` therefore get no inline clause at all, and any clause
- * injected by an earlier render is stripped by `stripInjected` below.
  */
 export function injectInlineFilters(
   formData: QueryFormData,
   config: InlineFilterConfig[],
   selection: InlineFilterSelection,
-  dashboardOverrides: DashboardFilterOverrides = {},
 ): QueryFormData {
   if (!Array.isArray(config) || config.length === 0) return formData;
 
@@ -87,7 +78,6 @@ export function injectInlineFilters(
   const keys = [...adhocKeys];
   const injectedByKey = new Map<string, JsonObject[]>();
   config.forEach(cfg => {
-    if (hasDashboardFilterOverride(dashboardOverrides, cfg.column)) return;
     let selected = resolveInlineFilterValue(cfg, selection);
     if (cfg.required && selected === null) {
       // A required filter must never query on "nothing". The filter bar

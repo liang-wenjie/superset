@@ -25,6 +25,7 @@ import {
   getInlineFilterFallbackValue,
   getInlineFilterOptions,
   getInlineFilterPopupWidth,
+  reconcileInlineFilterSelections,
   toInlineQueryFilters,
 } from './ChartInlineFilterBar';
 import { resolveInlineFilterValue, sortInlineFilterOptions } from './types';
@@ -782,69 +783,207 @@ test('a Query B filter inherits Query B saved filters for its value list', async
   ).toEqual(['from_b']);
 });
 
-test('a dashboard filter overrides the stale inline value and locks the control', async () => {
-  mockGet.mockResolvedValue({ json: { result: ['202606'] } });
-  const onSelect = jest.fn();
-  const dashboardFilters = [{ col: 'account', op: 'IN', val: [202606] }];
+describe('reconcileInlineFilterSelections', () => {
+  const config = { id: 'f', column: 'month' };
+  const options = {
+    f: [
+      { label: '202606', value: '202606' },
+      { label: '202607', value: '202607' },
+    ],
+  };
 
-  const { rerender } = render(
-    <ChartInlineFilterBar
-      filters={[{ ...filters[0], required: true, defaultToFirstItem: true }]}
-      selection={{ 'filter-1': '202607' }}
-      onSelect={onSelect}
-      datasourceId={1}
-      datasourceType="table"
-      dashboardFilters={dashboardFilters}
-      dashboardFilterOverrides={{ account: { value: '202606' } }}
-    />,
-  );
+  test('keeps a selection that still survives the dashboard filters', () => {
+    expect(
+      reconcileInlineFilterSelections([config], { f: '202607' }, options),
+    ).toEqual([]);
+    // A numeric selection and a string option denote the same column value.
+    expect(
+      reconcileInlineFilterSelections([config], { f: 202606 }, options),
+    ).toEqual([]);
+  });
 
-  expect(await screen.findByText('202606')).toBeInTheDocument();
-  expect(screen.queryByText('202607')).not.toBeInTheDocument();
-  expect(document.querySelector('.ant-select-disabled')).toBeInTheDocument();
-  expect(
-    document.querySelector('[data-test="inline-filter-dashboard-controlled"]'),
-  ).toBeInTheDocument();
-  // No clause is injected for an overridden column, so no default is seeded.
-  expect(onSelect).not.toHaveBeenCalled();
+  test('moves a stale single value onto the first surviving option', () => {
+    expect(
+      reconcileInlineFilterSelections(
+        [config],
+        { f: '202605' },
+        { f: [{ label: '202606', value: '202606' }] },
+      ),
+    ).toEqual([{ filterId: 'f', value: '202606' }]);
+  });
 
-  // Once the dashboard filter is cleared the inline filter is usable again.
-  rerender(
-    <ChartInlineFilterBar
-      filters={filters}
-      selection={{ 'filter-1': '202607' }}
-      onSelect={onSelect}
-      datasourceId={1}
-      datasourceType="table"
-    />,
-  );
-  expect(
-    document.querySelector('.ant-select-disabled'),
-  ).not.toBeInTheDocument();
-  expect(await screen.findByText('202607')).toBeInTheDocument();
+  test('keeps only the surviving values of a multi selection', () => {
+    expect(
+      reconcileInlineFilterSelections(
+        [{ ...config, filterType: 'multiple' as const }],
+        { f: ['202605', '202607', '202608'] },
+        options,
+      ),
+    ).toEqual([{ filterId: 'f', value: ['202607'] }]);
+  });
+
+  test('falls back to the first option when no multi value survives', () => {
+    expect(
+      reconcileInlineFilterSelections(
+        [{ ...config, filterType: 'multiple' as const, required: true }],
+        { f: ['202605'] },
+        options,
+      ),
+    ).toEqual([{ filterId: 'f', value: ['202606'] }]);
+  });
+
+  test('never rewrites an untouched or explicitly cleared selection', () => {
+    expect(reconcileInlineFilterSelections([config], {}, options)).toEqual([]);
+    expect(
+      reconcileInlineFilterSelections([config], { f: null }, options),
+    ).toEqual([]);
+  });
+
+  test('leaves free-text filters, missing lists and empty lists alone', () => {
+    expect(
+      reconcileInlineFilterSelections(
+        [{ ...config, filterType: 'input' as const }],
+        { f: '202605' },
+        options,
+      ),
+    ).toEqual([]);
+    expect(
+      reconcileInlineFilterSelections([config], { f: '202605' }, {}),
+    ).toEqual([]);
+    // An empty list can also mean a failed request; do not clear on it.
+    expect(
+      reconcileInlineFilterSelections([config], { f: '202605' }, { f: [] }),
+    ).toEqual([]);
+  });
 });
 
-test('a transformed dashboard clause falls back to the first surviving value', async () => {
-  mockGet.mockResolvedValue({ json: { result: ['202506'] } });
-  render(
+test('a dashboard filter change re-seeds a stale inline value from the narrowed list', async () => {
+  mockGet
+    .mockResolvedValueOnce({ json: { result: ['202606', '202607'] } })
+    .mockResolvedValueOnce({ json: { result: ['202606'] } });
+  const onSelect = jest.fn();
+  const baseProps = {
+    filters,
+    selection: { 'filter-1': '202607' },
+    onSelect,
+    datasourceId: 1,
+    datasourceType: 'table',
+  };
+  const { rerender } = render(
     <ChartInlineFilterBar
-      filters={filters}
-      selection={{ 'filter-1': '202607' }}
-      onSelect={jest.fn()}
-      datasourceId={1}
-      datasourceType="table"
-      dashboardFilters={[
-        {
-          col: 'account',
-          op: 'IN',
-          val: [202606],
-          valueTransform: 'account+100',
-        },
-      ]}
-      dashboardFilterOverrides={{ account: {} }}
+      {...baseProps}
+      dashboardFilters={[{ col: '年份', op: 'IN', val: [2026] }]}
     />,
   );
 
-  expect(await screen.findByText('202506')).toBeInTheDocument();
-  expect(screen.queryByText('202607')).not.toBeInTheDocument();
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+  // The mount fetch is not a filter change: it must not rewrite the value.
+  expect(onSelect).not.toHaveBeenCalled();
+
+  rerender(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[
+        { col: '年份', op: 'IN', val: [2026] },
+        { col: '报告月份', op: 'IN', val: ['202606'] },
+      ]}
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(onSelect).toHaveBeenCalledWith('filter-1', '202606'),
+  );
+});
+
+test('a permalink filter with a CONCAT valueTransform re-seeds without parsing SQL', async () => {
+  const dashboardFilters = [
+    {
+      col: '报告月份',
+      op: 'IN',
+      val: ['202606'],
+      valueTransform:
+        "CONCAT(SUBSTRING(月份,1,4),LPAD(CAST(SUBSTRING(月份,6,1) AS UNSIGNED),2,'0'))",
+    },
+  ];
+  mockGet
+    .mockResolvedValueOnce({ json: { result: ['202606', '202607'] } })
+    .mockResolvedValueOnce({ json: { result: ['202606'] } });
+  const onSelect = jest.fn();
+  const baseProps = {
+    filters,
+    selection: { 'filter-1': '202607' },
+    onSelect,
+    datasourceId: 1,
+    datasourceType: 'table',
+  };
+  const { rerender } = render(<ChartInlineFilterBar {...baseProps} />);
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+  rerender(
+    <ChartInlineFilterBar {...baseProps} dashboardFilters={dashboardFilters} />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  // The template is forwarded verbatim; the backend decides which values
+  // survive, so the client never needs to know which columns CONCAT reads.
+  const secondEndpoint = mockGet.mock.calls[1][0] as { endpoint: string };
+  expect(chartFiltersFrom(secondEndpoint.endpoint).filters).toEqual(
+    dashboardFilters,
+  );
+  await waitFor(() =>
+    expect(onSelect).toHaveBeenCalledWith('filter-1', '202606'),
+  );
+});
+
+test('an explicitly cleared inline filter stays cleared after a dashboard filter change', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['202606'] } });
+  const onSelect = jest.fn();
+  const baseProps = {
+    filters,
+    selection: { 'filter-1': null },
+    onSelect,
+    datasourceId: 1,
+    datasourceType: 'table',
+  };
+  const { rerender } = render(
+    <ChartInlineFilterBar {...baseProps} dashboardFilters={[]} />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+  rerender(
+    <ChartInlineFilterBar
+      {...baseProps}
+      dashboardFilters={[{ col: '报告月份', op: 'IN', val: ['202606'] }]}
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  expect(onSelect).not.toHaveBeenCalled();
+});
+
+test('a refetch caused by the user does not re-seed the selection', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['202606', '202607'] } });
+  const onSelect = jest.fn();
+  const baseProps = {
+    filters,
+    onSelect,
+    datasourceId: 1,
+    datasourceType: 'table',
+    dashboardFilters: [{ col: '年份', op: 'IN', val: [2026] }],
+  };
+  const { rerender } = render(
+    <ChartInlineFilterBar {...baseProps} selection={{}} />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+  rerender(
+    <ChartInlineFilterBar
+      {...baseProps}
+      selection={{ 'filter-1': '202608' }}
+    />,
+  );
+
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  expect(onSelect).not.toHaveBeenCalled();
 });

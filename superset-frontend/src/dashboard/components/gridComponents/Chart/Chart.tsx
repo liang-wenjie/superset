@@ -67,7 +67,6 @@ import MissingChart from '../../MissingChart';
 import {
   DashboardInlineFilterBar,
   INLINE_FILTER_BAR_HEIGHT,
-  getDashboardFilterOverrides,
   injectInlineFilters,
 } from '../../InlineFilters';
 import type { InlineFilterConfig } from '../../InlineFilters';
@@ -649,6 +648,16 @@ const Chart = (props: ChartProps) => {
 
   (formData as JsonObject).dashboardId = dashboardInfo.id;
 
+  const formDataWithInlineFilters = useMemo(
+    () =>
+      injectInlineFilters(
+        formData as unknown as import('@superset-ui/core').QueryFormData,
+        inlineFilterConfig,
+        inlineFilterSelection,
+      ),
+    [formData, inlineFilterConfig, inlineFilterSelection],
+  );
+
   // The inline-filter dropdown must draw its options from the same filtered
   // universe as the chart query, otherwise it offers values that cannot
   // survive the chart's own WHERE clauses. Read from `formData` (before inline
@@ -656,31 +665,6 @@ const Chart = (props: ChartProps) => {
   const inlineDashboardFilters = useMemo(
     () => getInlineDashboardFilters(formData as JsonObject | undefined),
     [formData],
-  );
-
-  // Dashboard-level filters (native/cross filters) win over chart inline
-  // filters bound to the same column. Without this, changing e.g. the
-  // dashboard "报告月份" to 202606 leaves a chart inline filter on 202607
-  // in place and the two WHERE clauses cancel each other out.
-  const inlineDashboardOverrides = useMemo(
-    () => getDashboardFilterOverrides(inlineDashboardFilters),
-    [inlineDashboardFilters],
-  );
-
-  const formDataWithInlineFilters = useMemo(
-    () =>
-      injectInlineFilters(
-        formData as unknown as import('@superset-ui/core').QueryFormData,
-        inlineFilterConfig,
-        inlineFilterSelection,
-        inlineDashboardOverrides,
-      ),
-    [
-      formData,
-      inlineFilterConfig,
-      inlineFilterSelection,
-      inlineDashboardOverrides,
-    ],
   );
 
   // Memoize ownState so it keeps a stable reference across re-renders that
@@ -981,7 +965,6 @@ const Chart = (props: ChartProps) => {
               | undefined
           }
           dashboardFilters={inlineDashboardFilters}
-          dashboardFilterOverrides={inlineDashboardOverrides}
         />
       )}
 
