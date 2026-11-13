@@ -1674,8 +1674,8 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[4].style.text).toContain('1234');
     expect(graphic[5].style.text).toContain('5678');
     // Both rows split the SAME available width into two equal columns, so
-    // their second indicators line up even though the labels differ. A row
-    // with a different indicator count would get its own column boundaries.
+    // their second indicators line up even though the labels differ. Rows
+    // with different indicator counts share the widest row's grid too.
     expect(graphic[4].left).toBe(graphic[2].left);
     expect(graphic[5].left).toBe(graphic[3].left);
     expect(graphic[3].left).toBeGreaterThanOrEqual(
@@ -1736,7 +1736,7 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[4].style.fontSize).toBe(graphic[2].style.fontSize);
   });
 
-  test('rows with different slot counts flow independently', () => {
+  test('rows with different slot counts share the widest row grid', () => {
     const result = transformProps(
       buildChartProps(
         [
@@ -1765,11 +1765,67 @@ describe('BigNumberYoyMom transformProps', () => {
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
     expect(graphic).toHaveLength(6);
+    // The first row still owns three 1/3 columns of the shared grid.
+    expect(graphic[3].left).toBeCloseTo(20 + 380 / 3, 1);
+    expect(graphic[4].left).toBeCloseTo(20 + (2 * 380) / 3, 1);
     // The single-indicator row starts at the left edge instead of being
     // pushed to the third column of the row above it.
     expect(graphic[5].left).toBe(graphic[2].left);
     expect(graphic[5].top).toBeGreaterThan(graphic[2].top);
     expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+  });
+
+  const mixedRows = [
+    {
+      slots: [
+        { label: 'A', mode: 'time_shift', offset: '1 month ago' },
+        { label: 'B', mode: 'time_shift', offset: '1 year ago' },
+        { label: 'C', mode: 'time_shift', offset: '1 year ago' },
+      ],
+    },
+    {
+      slots: [
+        { label: 'D', mode: 'time_shift', offset: '1 month ago' },
+        { label: 'E', mode: 'time_shift', offset: '1 year ago' },
+      ],
+    },
+  ];
+
+  test('a two-indicator row lines up with the three-column grid', () => {
+    const graphic = buildSizedTile(400, 260, {
+      bigNumberLeft: 0,
+      metric_rows: mixedRows,
+    });
+    // Title, big number, three indicators on row 1, two on row 2.
+    expect(graphic).toHaveLength(7);
+    // Row 2 uses the SAME first two 1/3 columns as row 1 instead of its
+    // own wider 1/2 columns.
+    expect(graphic[5].left).toBe(graphic[2].left);
+    expect(graphic[6].left).toBe(graphic[3].left);
+    expect(graphic[3].left).toBeCloseTo(400 / 3, 1);
+    expect(graphic[4].left).toBeCloseTo(800 / 3, 1);
+    expect(graphic[6].left).toBeLessThan(200);
+    // The whole chart still renders at ONE comparison font size.
+    expect(graphic[5].style.fontSize).toBe(graphic[2].style.fontSize);
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+  });
+
+  test('the spacing slider moves every row by the same amount', () => {
+    const build = (comparisonGap: number) =>
+      buildSizedTile(400, 260, {
+        bigNumberLeft: 0,
+        comparisonGap,
+        metric_rows: mixedRows,
+      });
+    const tight = build(0);
+    const normal = build(24);
+    const loose = build(40);
+    [tight, normal, loose].forEach(graphic => {
+      expect(graphic[6].left).toBe(graphic[3].left);
+      expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+    });
+    expect(tight[3].left).toBeLessThan(normal[3].left);
+    expect(normal[3].left).toBeLessThan(loose[3].left);
   });
 
   test('a hidden slot in a three-indicator row does not reserve a column', () => {

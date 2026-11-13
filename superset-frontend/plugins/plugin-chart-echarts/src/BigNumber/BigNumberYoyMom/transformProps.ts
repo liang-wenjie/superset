@@ -818,6 +818,13 @@ export default function transformProps(
     contents.some(Boolean),
   );
   const hasComparison = visibleRows.length > 0;
+  // ONE column grid for the whole chart, sized by the row with the MOST
+  // indicators. A two-indicator row must line up with the first two columns
+  // of a three-indicator row instead of getting its own wider 1/2 columns.
+  const maxSlotCount = Math.max(
+    1,
+    ...visibleRows.map(contents => contents.filter(Boolean).length),
+  );
   // All rows measure with estimateComparisonTextWidth (0.5em ASCII / 1em
   // full-width): the generic estimator overstated a "同比 ↑104.79%" slot by
   // ~60% and flattened every configured font size to the same tiny value.
@@ -846,15 +853,15 @@ export default function transformProps(
   const activeWidthsOf = (widths: number[], rowIndex: number): number[] =>
     widths.filter((_, slotIndex) => visibleRows[rowIndex][slotIndex] !== null);
   // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Every visible indicator
-  // owns one EQUAL column, so adding an indicator narrows ALL columns instead
-  // of piling text up against a fixed center line. Shrink the ONE shared font
-  // size until the widest indicator of EVERY row fits inside its own column;
+  // owns one of the SHARED 1/maxSlotCount columns, so adding an indicator to
+  // any row narrows the columns for ALL rows. Shrink the ONE shared font size
+  // until the widest indicator of EVERY row fits inside one shared column;
   // all rows keep the same size, so row/slot counts cannot make one drift.
   const comparisonRowFits = (size: number, bound: number): boolean =>
     comparisonSlotWidthsAt(size).every((widths, rowIndex) => {
       const active = activeWidthsOf(widths, rowIndex);
       if (active.length === 0) return true;
-      const columnWidth = Math.max(0, bound - comparisonLeft) / active.length;
+      const columnWidth = Math.max(0, bound - comparisonLeft) / maxSlotCount;
       return active.every(slotWidth => slotWidth <= columnWidth);
     });
   const minComparisonFontSizePx = uniformBigNumberFontSize
@@ -883,68 +890,73 @@ export default function transformProps(
     comparisonFontSizePx -= 1;
   }
 
-  // LAYOUT ONLY. Each row owns its OWN equal-width columns: with N visible
-  // indicators the anchors sit at comparisonLeft + i * (availableWidth / N),
-  // so three indicators start at 0, 1/3 and 2/3 instead of every one being
-  // measured from the tile center line. The spacing slider pulls all columns
-  // apart/together from that equal split. Nothing above reads the slider, so
-  // spacing can never influence the font size.
+  // LAYOUT ONLY. ALL rows share ONE column grid sized by maxSlotCount: with a
+  // three-indicator row and a two-indicator row, both use 1/3 columns and the
+  // shorter row fills the first two, so its indicators line up exactly with
+  // the longer row's. The spacing slider pulls this ONE shared grid apart or
+  // together. Nothing above reads the slider, so it can never change the font
+  // size or make one row drift away from another.
   const slotWidths = comparisonSlotWidthsAt(comparisonFontSizePx);
   // Never let a pulled column push its text off the canvas.
   const clampLeft = (left: number, textWidth: number): number =>
     Math.min(Math.max(0, left), Math.max(0, width - textWidth));
   // Absolute positions saved by very old charts only apply to row 1's first
-  // two slots, and only while that row still HAS two indicators. Once the
-  // user adds a third one the row joins the equal-column layout instead.
+  // two slots, and only while the whole chart still uses a two-column grid.
+  // Adding a third indicator to any row switches on the shared grid instead.
   const legacyLefts = metricRows[0]?.slots.map(slot => slot.left) ?? [];
   const hasLegacyComparisonLefts = legacyLefts.some(left => left !== undefined);
-  const comparisonLeftsForRow = (rowIndex: number): (number | null)[] => {
-    const contents = visibleRows[rowIndex];
+  const availableWidth = Math.max(0, width - comparisonLeft);
+  const columnWidth = availableWidth / maxSlotCount;
+  const rowLayouts = visibleRows.map((contents, rowIndex) => {
     const widths = slotWidths[rowIndex] ?? [];
     const activeIndexes = contents
       .map((content, slotIndex) => (content ? slotIndex : -1))
       .filter(slotIndex => slotIndex >= 0);
     // Reversing BEFORE placing preserves the legacy "swap the two columns"
     // behaviour and extends naturally to three or more indicators: the whole
-    // row is reversed while still filling the same equal columns.
+    // row is reversed while still filling the same shared columns.
     const reverse =
       swapComparisonOrder && !(rowIndex === 0 && hasLegacyComparisonLefts);
     const displayIndexes = reverse
       ? [...activeIndexes].reverse()
       : activeIndexes;
-    const columnCount = displayIndexes.length;
-    const availableWidth = Math.max(0, width - comparisonLeft);
-    const columnWidth = columnCount > 0 ? availableWidth / columnCount : 0;
-    const displayWidths = displayIndexes.map(
-      slotIndex => widths[slotIndex] ?? 0,
-    );
-    // Cap the pulled step so the LAST indicator stays on the canvas, and floor
-    // it so no indicator can overlap the previous one when columns are pulled
-    // together. At the default slider value this is exactly columnWidth.
-    const maxStep =
-      columnCount > 1
-        ? Math.max(
-            0,
-            (availableWidth - (displayWidths[columnCount - 1] ?? 0)) /
-              (columnCount - 1),
-          )
-        : 0;
-    const minStep =
-      columnCount > 1 ? Math.max(0, ...displayWidths.slice(0, -1)) : 0;
-    const step =
-      columnCount > 1
-        ? Math.max(minStep, Math.min(columnWidth + gapPullPx, maxStep))
-        : 0;
+    return {
+      contents,
+      widths,
+      displayIndexes,
+      displayWidths: displayIndexes.map(slotIndex => widths[slotIndex] ?? 0),
+    };
+  });
+  // ONE step for every row. The floor keeps ANY row's adjacent indicators
+  // from overlapping when columns are pulled together; the cap keeps ANY
+  // row's last indicator on the canvas when they are pulled apart. At the
+  // default slider value this is exactly the shared columnWidth.
+  const minStep = Math.max(
+    0,
+    ...rowLayouts.flatMap(layout => layout.displayWidths.slice(0, -1)),
+  );
+  const maxStep = Math.min(
+    availableWidth,
+    ...rowLayouts
+      .filter(layout => layout.displayIndexes.length > 1)
+      .map(layout => {
+        const count = layout.displayIndexes.length;
+        return Math.max(
+          0,
+          (availableWidth - layout.displayWidths[count - 1]) / (count - 1),
+        );
+      }),
+  );
+  const step = Math.max(minStep, Math.min(columnWidth + gapPullPx, maxStep));
+  const comparisonLeftsForRow = (rowIndex: number): (number | null)[] => {
+    const { contents, widths, displayIndexes, displayWidths } =
+      rowLayouts[rowIndex];
     const lefts: (number | null)[] = contents.map(() => null);
     displayIndexes.forEach((slotIndex, positionIndex) => {
       const desired = comparisonLeft + positionIndex * step;
       lefts[slotIndex] = clampLeft(desired, displayWidths[positionIndex]);
     });
-    if (
-      rowIndex === 0 &&
-      hasLegacyComparisonLefts &&
-      activeIndexes.length <= 2
-    ) {
+    if (rowIndex === 0 && hasLegacyComparisonLefts && maxSlotCount <= 2) {
       [0, 1].forEach(slotIndex => {
         if (slotIndex >= lefts.length) return;
         const saved = legacyLefts[slotIndex];

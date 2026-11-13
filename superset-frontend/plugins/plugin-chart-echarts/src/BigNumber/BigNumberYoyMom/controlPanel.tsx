@@ -75,7 +75,7 @@ const config: ControlPanelConfig = {
               label: t('Metric rows'),
               renderTrigger: true,
               description: t(
-                'Rows of metrics shown below the big number. Add as many rows as you need, then add or remove indicators inside any row (up to six): a row can hold one, two, three or more independently configured slots. Drag a row by its grip to reorder it. The first row starts as the MoM/YoY pair. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the style settings below, and each row flows its own indicators from the left edge.',
+                'Rows of metrics shown below the big number. Add as many rows as you need, then add or remove indicators inside any row (up to six): a row can hold one, two, three or more independently configured slots. Drag a row by its grip to reorder it. The first row starts as the MoM/YoY pair. A slot either shows a time comparison percentage or a metric value with its own label and number format. All rows share the style settings below and ONE column grid sized by the row with the most indicators, so rows with different indicator counts still line up.',
               ),
               // The old `comparison1_*` / `comparison2_*` controls no longer
               // exist, so form data rebuilt from `getFormDataFromControls()`
@@ -306,7 +306,7 @@ const config: ControlPanelConfig = {
               default: DEFAULT_COMPARISON_GAP,
               renderTrigger: true,
               description: t(
-                'Pulls the equal-width columns apart (larger) or together (smaller). At the default value each indicator starts at its own 1/N column boundary - three indicators start at 0, 1/3 and 2/3. Every row uses its own indicator count. It only moves the indicators and never changes the font size.',
+                'Pulls the equal-width columns apart (larger) or together (smaller). N is the LARGEST indicator count of any row, so a two-indicator row uses the same 1/3 columns as a three-indicator row and the two rows stay aligned. At the default value columns are exactly 1/N of the available width - three indicators start at 0, 1/3 and 2/3. It only moves the indicators and never changes the font size.',
               ),
             },
           },
