@@ -18,6 +18,7 @@
  */
 import type { QueryFormData } from '@superset-ui/core';
 import { injectInlineFilters } from './injectInlineFilters';
+import { getDashboardFilterOverrides } from './dashboardFilterOverrides';
 import {
   buildInlineAdhocFilter,
   getInlineFilterDependencies,
@@ -551,4 +552,77 @@ test('cascading defaults to siblings on the same query plus unscoped ones', () =
       f => f.id,
     ),
   ).toEqual(['c']);
+});
+
+test('a dashboard filter on the same column suppresses the stale inline clause', () => {
+  const result = injectInlineFilters(
+    makeFormData(),
+    [{ ...single, required: true }],
+    { f1: '202607' },
+    { category: { value: '202606' } },
+  );
+  expect(injectedFilters(result)).toEqual([]);
+  // The chart's own saved WHERE filters are preserved.
+  expect(result.adhoc_filters).toEqual(makeFormData().adhoc_filters);
+});
+
+test('an override strips a clause injected by an earlier render', () => {
+  const before = injectInlineFilters(makeFormData(), [single], {
+    f1: '202607',
+  });
+  expect(injectedFilters(before)).toHaveLength(1);
+  const after = injectInlineFilters(
+    before,
+    [single],
+    { f1: '202607' },
+    { category: {} },
+  );
+  expect(injectedFilters(after)).toEqual([]);
+  expect(after.adhoc_filters).toEqual(makeFormData().adhoc_filters);
+});
+
+test('filters on other columns keep their inline clauses', () => {
+  const other: InlineFilterConfig = { id: 'f2', column: 'region' };
+  const result = injectInlineFilters(
+    makeFormData(),
+    [single, other],
+    { f1: 'stale', f2: 'CN' },
+    { category: { value: 'fresh' } },
+  );
+  expect(injectedFilters(result)).toHaveLength(1);
+  expect(injectedFilters(result)[0]).toMatchObject({
+    subject: 'region',
+    filterOptionName: 'inline_f2',
+  });
+});
+
+test('without overrides the inline selection is still injected', () => {
+  const result = injectInlineFilters(makeFormData(), [single], { f1: 'A' });
+  expect(injectedFilters(result)).toHaveLength(1);
+});
+
+test('regression: dashboard 7 month filter wins over a stale chart selection', () => {
+  // Shape of the native filter state saved in the dashboard permalink.
+  const nativeFilters = [
+    { col: '年份', op: 'IN', val: [2026] },
+    { col: '报告月份', op: 'IN', val: [202606] },
+  ];
+  const inline: InlineFilterConfig = {
+    id: 'inline_1794394932843_1',
+    column: '报告月份',
+    filterType: 'single',
+    required: true,
+    defaultToFirstItem: true,
+  };
+  const overrides = getDashboardFilterOverrides(nativeFilters);
+  expect(overrides['报告月份']).toEqual({ value: '202606' });
+
+  const result = injectInlineFilters(
+    makeFormData(),
+    [inline],
+    { [inline.id]: '202607' },
+    overrides,
+  );
+  // The chart query now only carries 报告月份 IN (202606) from the dashboard.
+  expect(injectedFilters(result)).toEqual([]);
 });

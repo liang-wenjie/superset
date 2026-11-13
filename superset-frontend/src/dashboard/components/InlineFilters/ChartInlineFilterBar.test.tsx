@@ -781,3 +781,70 @@ test('a Query B filter inherits Query B saved filters for its value list', async
     ),
   ).toEqual(['from_b']);
 });
+
+test('a dashboard filter overrides the stale inline value and locks the control', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['202606'] } });
+  const onSelect = jest.fn();
+  const dashboardFilters = [{ col: 'account', op: 'IN', val: [202606] }];
+
+  const { rerender } = render(
+    <ChartInlineFilterBar
+      filters={[{ ...filters[0], required: true, defaultToFirstItem: true }]}
+      selection={{ 'filter-1': '202607' }}
+      onSelect={onSelect}
+      datasourceId={1}
+      datasourceType="table"
+      dashboardFilters={dashboardFilters}
+      dashboardFilterOverrides={{ account: { value: '202606' } }}
+    />,
+  );
+
+  expect(await screen.findByText('202606')).toBeInTheDocument();
+  expect(screen.queryByText('202607')).not.toBeInTheDocument();
+  expect(document.querySelector('.ant-select-disabled')).toBeInTheDocument();
+  expect(
+    document.querySelector('[data-test="inline-filter-dashboard-controlled"]'),
+  ).toBeInTheDocument();
+  // No clause is injected for an overridden column, so no default is seeded.
+  expect(onSelect).not.toHaveBeenCalled();
+
+  // Once the dashboard filter is cleared the inline filter is usable again.
+  rerender(
+    <ChartInlineFilterBar
+      filters={filters}
+      selection={{ 'filter-1': '202607' }}
+      onSelect={onSelect}
+      datasourceId={1}
+      datasourceType="table"
+    />,
+  );
+  expect(
+    document.querySelector('.ant-select-disabled'),
+  ).not.toBeInTheDocument();
+  expect(await screen.findByText('202607')).toBeInTheDocument();
+});
+
+test('a transformed dashboard clause falls back to the first surviving value', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['202506'] } });
+  render(
+    <ChartInlineFilterBar
+      filters={filters}
+      selection={{ 'filter-1': '202607' }}
+      onSelect={jest.fn()}
+      datasourceId={1}
+      datasourceType="table"
+      dashboardFilters={[
+        {
+          col: 'account',
+          op: 'IN',
+          val: [202606],
+          valueTransform: 'account+100',
+        },
+      ]}
+      dashboardFilterOverrides={{ account: {} }}
+    />,
+  );
+
+  expect(await screen.findByText('202506')).toBeInTheDocument();
+  expect(screen.queryByText('202607')).not.toBeInTheDocument();
+});

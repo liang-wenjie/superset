@@ -23,6 +23,14 @@ export {
 export { DashboardInlineFilterBar } from './DashboardInlineFilterBar';
 export { injectInlineFilters } from './injectInlineFilters';
 export {
+  getDashboardFilterOverrides,
+  hasDashboardFilterOverride,
+} from './dashboardFilterOverrides';
+export type {
+  DashboardFilterOverride,
+  DashboardFilterOverrides,
+} from './dashboardFilterOverrides';
+export {
   buildInlineAdhocFilter,
   getInlineFilterDependencies,
   getInlineFilterType,

@@ -25,6 +25,8 @@ import {
   SupersetClient,
 } from '@superset-ui/core';
 import { t } from '@apache-superset/core/translation';
+import type { DashboardFilterOverrides } from './dashboardFilterOverrides';
+import { hasDashboardFilterOverride } from './dashboardFilterOverrides';
 import type {
   InlineFilterChangeValue,
   InlineFilterConfig,
@@ -265,6 +267,15 @@ const StyledInput = styled(Input)`
   flex-shrink: 0;
 `;
 
+// A disabled control does not emit pointer events, so the tooltip explaining
+// why it is read-only needs a wrapper element to attach to.
+const ControlWrapper = styled.span`
+  display: inline-flex;
+  flex-shrink: 0;
+`;
+
+const EMPTY_OVERRIDES: DashboardFilterOverrides = {};
+
 interface OptionsCacheEntry {
   options: { label: string; value: string }[];
   /** True when the order came from a sort-metric query (do not re-sort). */
@@ -304,6 +315,13 @@ export interface ChartInlineFilterBarProps {
    * and can carry a per-instance SQL `valueTransform`.
    */
   dashboardFilters?: JsonObject[];
+  /**
+   * Columns already pinned by those dashboard filters. A dashboard filter
+   * takes precedence over a chart inline filter on the same column: the
+   * inline dropdown shows the dashboard value and becomes read-only instead
+   * of keeping a stale selection that contradicts the dashboard filter.
+   */
+  dashboardFilterOverrides?: DashboardFilterOverrides;
 }
 
 /**
@@ -320,6 +338,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   chartAdhocFiltersB,
   chartLegacyFilters,
   dashboardFilters,
+  dashboardFilterOverrides = EMPTY_OVERRIDES,
 }) => {
   const [optionsCache, setOptionsCache] = useState<
     Record<string, OptionsCacheEntry>
@@ -339,6 +358,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   const chartAdhocFiltersBKey = JSON.stringify(chartAdhocFiltersB);
   const chartLegacyFiltersKey = JSON.stringify(chartLegacyFilters);
   const dashboardFiltersKey = JSON.stringify(dashboardFilters);
+  const dashboardFilterOverridesKey = JSON.stringify(dashboardFilterOverrides);
   const searchTermsKey = JSON.stringify(searchTerms);
 
   const optionsFor = useCallback(
@@ -353,6 +373,29 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     [optionsCache],
   );
 
+  /**
+   * The value the chart is actually filtered on. When a dashboard filter owns
+   * the column we mirror its value (or the first surviving distinct value for
+   * a transformed clause) instead of the potentially stale inline selection.
+   * No inline clause is injected for that column, so the dashboard filter is
+   * the single source of truth.
+   */
+  const effectiveValueFor = (
+    config: InlineFilterConfig,
+    options: InlineFilterOption[],
+  ): InlineFilterSelectionValue | null => {
+    if (!hasDashboardFilterOverride(dashboardFilterOverrides, config.column)) {
+      return resolveInlineFilterValue(config, selection, options);
+    }
+    const multi = isInlineFilterMulti(config);
+    const value = dashboardFilterOverrides[config.column]?.value;
+    if (value !== undefined) {
+      return normalizeInlineFilterValue(value, multi);
+    }
+    const [first] = options;
+    return first ? normalizeInlineFilterValue(first.value, multi) : null;
+  };
+
   // Build extra filters from the configured dependencies (all siblings by
   // default, or only the ones named in `dependsOn`). Defaults count too,
   // otherwise a filter that has never been touched would not narrow the values
@@ -364,7 +407,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
       .filter(f => Boolean(f.column))
       .map(f => ({
         col: f.column,
-        val: resolveInlineFilterValue(f, selection, optionsFor(f)),
+        val: effectiveValueFor(f, optionsFor(f)),
         inverse: isInlineFilterInverse(f),
       }))
       .filter((entry): entry is InlineExtraFilterEntry => entry.val !== null);
@@ -467,6 +510,7 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     chartAdhocFiltersBKey,
     chartLegacyFiltersKey,
     dashboardFiltersKey,
+    dashboardFilterOverridesKey,
     searchTermsKey,
   ]);
 
@@ -477,6 +521,12 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   // A required filter still gets a fallback value even after a stray clear.
   useEffect(() => {
     filters.forEach(f => {
+      // A dashboard-controlled filter injects no clause of its own, so there
+      // is nothing to seed. Writing a value here would only preserve a stale
+      // selection for the moment the dashboard filter is cleared.
+      if (hasDashboardFilterOverride(dashboardFilterOverrides, f.column)) {
+        return;
+      }
       const options = optionsFor(f);
       const neverTouched = selection[f.id] === undefined;
       if (f.defaultToFirstItem && neverTouched) {
@@ -484,16 +534,19 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
         if (fallback !== null) onSelect(f.id, fallback);
         return;
       }
-      if (
-        f.required &&
-        resolveInlineFilterValue(f, selection, options) === null
-      ) {
+      if (f.required && effectiveValueFor(f, options) === null) {
         const fallback = getInlineFilterFallbackValue(f, options);
         if (fallback !== null) onSelect(f.id, fallback);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtersKey, selectionKey, optionsCache, onSelect]);
+  }, [
+    filtersKey,
+    selectionKey,
+    optionsCache,
+    onSelect,
+    dashboardFilterOverridesKey,
+  ]);
 
   // A free-text box keeps a local draft while typing, so an external reset
   // (e.g. "clear all filters") must drop that draft to show the new value.
@@ -576,9 +629,13 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
         const showSearch = !isInput && f.showSearch !== false;
         // A missing selection key applies the configured default (including a
         // dynamic "first sorted value"); an explicit `null` stays cleared.
-        // `resolveInlineFilterValue` also normalizes stale scalar/array values
-        // when the filter type changed.
-        const effective = resolveInlineFilterValue(f, selection, options);
+        // When a dashboard filter owns this column its value is mirrored here
+        // so the dropdown never keeps a stale selection that contradicts it.
+        const dashboardControlled = hasDashboardFilterOverride(
+          dashboardFilterOverrides,
+          f.column,
+        );
+        const effective = effectiveValueFor(f, options);
         const scalarText =
           effective === null
             ? ''
@@ -600,6 +657,62 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
             {f.description ? ' ⓘ:' : ':'}
           </FilterLabel>
         );
+        const control = isInput ? (
+          <StyledInput
+            size="small"
+            aria-label={f.label || f.column}
+            disabled={dashboardControlled}
+            placeholder={
+              f.matchMode === 'contains'
+                ? t('Type to search (contains)')
+                : t('Type an exact value')
+            }
+            value={
+              dashboardControlled
+                ? scalarText
+                : (inputDrafts[f.id] ?? scalarText)
+            }
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              handleInputChange(f, e.target.value)
+            }
+            onBlur={() => handleInputBlur(f, scalarText)}
+          />
+        ) : (
+          <StyledSelect
+            size="small"
+            allowClear={!required}
+            disabled={dashboardControlled}
+            showSearch={showSearch}
+            onSearch={showSearch ? text => handleSearch(f.id, text) : undefined}
+            mode={multi ? 'multiple' : 'single'}
+            oneLine={multi}
+            placeholder={
+              required ? t('Required') : inverse ? t('Exclude') : t('All')
+            }
+            value={currentValue as never}
+            options={options as never}
+            popupMatchSelectWidth={getInlineFilterPopupWidth(options)}
+            onChange={(value: never) => {
+              const next: InlineFilterChangeValue = multi
+                ? Array.isArray(value)
+                  ? (value as InlineFilterValue[])
+                  : []
+                : (value as InlineFilterValue | undefined);
+              if (required && isEmptyInlineFilterValue(next)) {
+                const fallback = getInlineFilterFallbackValue(f, options);
+                if (fallback !== null) {
+                  onSelect(f.id, fallback);
+                }
+                // No fallback yet: leave the controlled value alone so the
+                // select snaps back instead of storing an empty selection.
+                return;
+              }
+              // An empty IN list is invalid SQL; `null` marks an explicit
+              // clear so the default value is not silently reapplied.
+              onSelect(f.id, isEmptyInlineFilterValue(next) ? null : next);
+            }}
+          />
+        );
         return (
           <React.Fragment key={f.id}>
             {scopeLabel && (
@@ -614,57 +727,14 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
                 labelNode
               )
             ) : null}
-            {isInput ? (
-              <StyledInput
-                size="small"
-                aria-label={f.label || f.column}
-                placeholder={
-                  f.matchMode === 'contains'
-                    ? t('Type to search (contains)')
-                    : t('Type an exact value')
-                }
-                value={inputDrafts[f.id] ?? scalarText}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  handleInputChange(f, e.target.value)
-                }
-                onBlur={() => handleInputBlur(f, scalarText)}
-              />
+            {dashboardControlled ? (
+              <Tooltip title={t('Controlled by a dashboard filter')}>
+                <ControlWrapper data-test="inline-filter-dashboard-controlled">
+                  {control}
+                </ControlWrapper>
+              </Tooltip>
             ) : (
-              <StyledSelect
-                size="small"
-                allowClear={!required}
-                showSearch={showSearch}
-                onSearch={
-                  showSearch ? text => handleSearch(f.id, text) : undefined
-                }
-                mode={multi ? 'multiple' : 'single'}
-                oneLine={multi}
-                placeholder={
-                  required ? t('Required') : inverse ? t('Exclude') : t('All')
-                }
-                value={currentValue as never}
-                options={options as never}
-                popupMatchSelectWidth={getInlineFilterPopupWidth(options)}
-                onChange={(value: never) => {
-                  const next: InlineFilterChangeValue = multi
-                    ? Array.isArray(value)
-                      ? (value as InlineFilterValue[])
-                      : []
-                    : (value as InlineFilterValue | undefined);
-                  if (required && isEmptyInlineFilterValue(next)) {
-                    const fallback = getInlineFilterFallbackValue(f, options);
-                    if (fallback !== null) {
-                      onSelect(f.id, fallback);
-                    }
-                    // No fallback yet: leave the controlled value alone so the
-                    // select snaps back instead of storing an empty selection.
-                    return;
-                  }
-                  // An empty IN list is invalid SQL; `null` marks an explicit
-                  // clear so the default value is not silently reapplied.
-                  onSelect(f.id, isEmptyInlineFilterValue(next) ? null : next);
-                }}
-              />
+              control
             )}
           </React.Fragment>
         );

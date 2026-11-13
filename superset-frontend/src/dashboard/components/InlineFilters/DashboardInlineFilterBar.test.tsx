@@ -33,15 +33,20 @@ jest.mock('./ChartInlineFilterBar', () => ({
     selection,
     onSelect,
     dashboardFilters,
+    dashboardFilterOverrides,
   }: {
     selection: Record<string, unknown>;
     onSelect: (filterId: string, value: string) => void;
     dashboardFilters?: Record<string, unknown>[];
+    dashboardFilterOverrides?: Record<string, unknown>;
   }) => (
     <div>
       <span data-test="selection">{JSON.stringify(selection)}</span>
       <span data-test="dashboard-filters">
         {JSON.stringify(dashboardFilters ?? [])}
+      </span>
+      <span data-test="dashboard-overrides">
+        {JSON.stringify(dashboardFilterOverrides ?? {})}
       </span>
       <button type="button" onClick={() => onSelect('f1', 'C')}>
         pick
@@ -91,6 +96,21 @@ test('forwards the holder runtime filters to the option query', () => {
 
   expect(screen.getByTestId('dashboard-filters')).toHaveTextContent(
     JSON.stringify(dashboardFilters),
+  );
+});
+
+test('forwards dashboard filter overrides to the inline bar', () => {
+  const dashboardFilterOverrides = { country: { value: 'CN' } };
+  render(
+    <DashboardInlineFilterBar
+      chartKey="7::CHART-a"
+      rawConfig={config}
+      dashboardFilterOverrides={dashboardFilterOverrides}
+    />,
+  );
+
+  expect(screen.getByTestId('dashboard-overrides')).toHaveTextContent(
+    JSON.stringify(dashboardFilterOverrides),
   );
 });
 

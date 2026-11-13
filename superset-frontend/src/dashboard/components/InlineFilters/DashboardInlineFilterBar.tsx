@@ -20,6 +20,7 @@ import React, { useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { JsonObject } from '@superset-ui/core';
 import { ChartInlineFilterBar } from './ChartInlineFilterBar';
+import type { DashboardFilterOverrides } from './dashboardFilterOverrides';
 import type { InlineFilterChangeValue, InlineFilterConfig } from './types';
 import type { RootState } from '../../types';
 import { setChartInlineFilter } from '../../actions/dashboardState';
@@ -40,6 +41,8 @@ interface DashboardInlineFilterBarProps {
   chartLegacyFilters?: JsonObject[];
   /** Runtime dashboard/cross filters already applied to this holder's query. */
   dashboardFilters?: JsonObject[];
+  /** Columns those dashboard filters pin; they take precedence inline. */
+  dashboardFilterOverrides?: DashboardFilterOverrides;
 }
 
 /** Coerce the loosely-typed formData value into InlineFilterConfig[]. */
@@ -70,6 +73,7 @@ export const DashboardInlineFilterBar: React.FC<
   chartAdhocFiltersB,
   chartLegacyFilters,
   dashboardFilters,
+  dashboardFilterOverrides,
 }) => {
   const dispatch = useDispatch();
   const selection = useSelector(
@@ -98,6 +102,7 @@ export const DashboardInlineFilterBar: React.FC<
       chartAdhocFiltersB={chartAdhocFiltersB}
       chartLegacyFilters={chartLegacyFilters}
       dashboardFilters={dashboardFilters}
+      dashboardFilterOverrides={dashboardFilterOverrides}
     />
   );
 };

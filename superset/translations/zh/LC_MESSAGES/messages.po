@@ -23242,3 +23242,7 @@ msgstr "不冻结"
 #: superset-frontend/plugins/plugin-chart-table/src/controlPanel.tsx
 msgid "Keep this many leftmost columns visible while scrolling horizontally. Requires sticky table headers."
 msgstr "横向滚动时保持左侧指定数量的列始终可见。需要启用表头固定（Sticky header）。"
+
+#: superset-frontend/src/dashboard/components/InlineFilters/ChartInlineFilterBar.tsx
+msgid "Controlled by a dashboard filter"
+msgstr "由看板筛选器控制，优先级高于图表筛选器"
