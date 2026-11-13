@@ -175,11 +175,10 @@ const DEFAULT_UNIFORM_BIG_NUMBER_REFERENCE_PX = 40;
 // Readability floor for the free (non-uniform) layout. The hard canvas guard
 // below may still go smaller when that is the only way to avoid clipping.
 const MIN_COMPARISON_FONT_SIZE_PX = 10;
-// Sizing reserves ONE fixed design gap between the two slots. The
-// comparison_gap control is never read here: changing the spacing slider may
-// move the second slot but must NEVER change the font size, in either anchor
-// mode. Use the plugin default so normal spacing still fits without shrinking.
-const COMPARISON_FIT_RESERVED_GAP = DEFAULT_COMPARISON_GAP;
+// Sizing splits the available width into EQUAL columns, one per visible
+// indicator. The comparison_gap control is never read here: pulling the
+// slider may move the columns but must NEVER change the font size. At the
+// slider's default value each column is exactly 1/N of the available width.
 // The YoY/MoM row is secondary information. Its Tiny..Huge ratios are
 // converted against a FIXED reference height instead of the tile's real
 // height: on a tall tile 0.15 * 190 = 29px made the comparison text as large
@@ -310,13 +309,10 @@ export default function transformProps(
   // saved before `metric_rows` existed resolve to that same legacy pair.
   const metricRows = resolveMetricRows(formDataRecord);
   const comparisonGap = pick<number>('comparisonGap') ?? DEFAULT_COMPARISON_GAP;
-  // A checkbox switches the ANCHOR of comparison_gap, not its value. Both
-  // modes reuse the very same slider (and its drag behaviour): off (default,
-  // and for charts saved before the checkbox existed) measures the gap from
-  // the MoM text; on measures it from the tile's horizontal center line.
-  // Charts saved with the short-lived separate center-gap control simply
-  // fall back to MoM spacing, since that field is never read here.
-  const useCenterGap = pick<boolean>('comparisonUseCenterGap') ?? false;
+  // The old `comparison_use_center_gap` checkbox is intentionally NOT read:
+  // every row now splits its width into equal columns instead of pinning the
+  // second indicator to the tile center line. The control stays registered
+  // (hidden) so charts saved with that flag keep their form data intact.
   const swapComparisonOrder = pick<boolean>('swapComparisonOrder') ?? false;
   const comparisonFontSize =
     pick<number>('comparisonFontSize') ?? DEFAULT_COMPARISON_FONT_SIZE;
@@ -702,6 +698,11 @@ export default function transformProps(
   // stays symmetric with the big number.
   const comparisonLeft = bigNumberLeft;
   const comparisonGapPx = scaleGap(Math.max(0, Number(comparisonGap) || 0));
+  // The slider's DEFAULT is the exact equal split; dragging it away from the
+  // default pulls the columns apart (larger) or together (smaller) by the
+  // delta. Keeping the slider centred on the default means saved charts keep
+  // their old value while every row still starts from a clean 1/N layout.
+  const gapPullPx = comparisonGapPx - scaleGap(DEFAULT_COMPARISON_GAP);
 
   const slotComparisonValue = (
     mode: BigNumberMetricSlotMode | undefined,
@@ -844,17 +845,17 @@ export default function transformProps(
     );
   const activeWidthsOf = (widths: number[], rowIndex: number): number[] =>
     widths.filter((_, slotIndex) => visibleRows[rowIndex][slotIndex] !== null);
-  // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Fit the visible slots of
-  // EVERY row back-to-back plus a FIXED design gap between consecutive slots,
-  // then place them using the configured spacing. One shared font size is used
-  // by all rows, so adding rows or indicators cannot make one row drift.
+  // FONT SIZE IS INDEPENDENT OF THE SPACING CONTROL. Every visible indicator
+  // owns one EQUAL column, so adding an indicator narrows ALL columns instead
+  // of piling text up against a fixed center line. Shrink the ONE shared font
+  // size until the widest indicator of EVERY row fits inside its own column;
+  // all rows keep the same size, so row/slot counts cannot make one drift.
   const comparisonRowFits = (size: number, bound: number): boolean =>
     comparisonSlotWidthsAt(size).every((widths, rowIndex) => {
       const active = activeWidthsOf(widths, rowIndex);
-      const total =
-        active.reduce((sum, slotWidth) => sum + slotWidth, 0) +
-        Math.max(0, active.length - 1) * COMPARISON_FIT_RESERVED_GAP;
-      return comparisonLeft + total <= bound;
+      if (active.length === 0) return true;
+      const columnWidth = Math.max(0, bound - comparisonLeft) / active.length;
+      return active.every(slotWidth => slotWidth <= columnWidth);
     });
   const minComparisonFontSizePx = uniformBigNumberFontSize
     ? MIN_UNIFORM_COMPARISON_FONT_SIZE
@@ -882,20 +883,19 @@ export default function transformProps(
     comparisonFontSizePx -= 1;
   }
 
-  // LAYOUT ONLY. Every row flows its visible slots from the left edge in its
-  // own order: rows are NOT forced onto shared column boundaries, so a row
-  // with three indicators simply gets three positions. One slider drives the
-  // gap between consecutive slots; the center anchor still pins the SECOND
-  // position to the tile center line. Nothing above reads either value, so
+  // LAYOUT ONLY. Each row owns its OWN equal-width columns: with N visible
+  // indicators the anchors sit at comparisonLeft + i * (availableWidth / N),
+  // so three indicators start at 0, 1/3 and 2/3 instead of every one being
+  // measured from the tile center line. The spacing slider pulls all columns
+  // apart/together from that equal split. Nothing above reads the slider, so
   // spacing can never influence the font size.
   const slotWidths = comparisonSlotWidthsAt(comparisonFontSizePx);
-  // Never let a large gap push a slot off the canvas or back into the previous
-  // one: each position is clamped, and the next one continues from the actual
-  // clamped position.
+  // Never let a pulled column push its text off the canvas.
   const clampLeft = (left: number, textWidth: number): number =>
     Math.min(Math.max(0, left), Math.max(0, width - textWidth));
   // Absolute positions saved by very old charts only apply to row 1's first
-  // two slots; every other row uses the flow layout above.
+  // two slots, and only while that row still HAS two indicators. Once the
+  // user adds a third one the row joins the equal-column layout instead.
   const legacyLefts = metricRows[0]?.slots.map(slot => slot.left) ?? [];
   const hasLegacyComparisonLefts = legacyLefts.some(left => left !== undefined);
   const comparisonLeftsForRow = (rowIndex: number): (number | null)[] => {
@@ -905,33 +905,46 @@ export default function transformProps(
       .map((content, slotIndex) => (content ? slotIndex : -1))
       .filter(slotIndex => slotIndex >= 0);
     // Reversing BEFORE placing preserves the legacy "swap the two columns"
-    // behaviour (the left column then measures the second slot) and extends
-    // naturally to three or more indicators: the whole row is reversed.
+    // behaviour and extends naturally to three or more indicators: the whole
+    // row is reversed while still filling the same equal columns.
     const reverse =
       swapComparisonOrder && !(rowIndex === 0 && hasLegacyComparisonLefts);
     const displayIndexes = reverse
       ? [...activeIndexes].reverse()
       : activeIndexes;
-    const positions: number[] = [];
-    let cursor = comparisonLeft;
-    displayIndexes.forEach((slotIndex, positionIndex) => {
-      const textWidth = widths[slotIndex] ?? 0;
-      let desired = cursor;
-      if (positionIndex === 1 && useCenterGap) {
-        desired = Math.max(
-          comparisonLeft + (widths[displayIndexes[0]] ?? 0),
-          Math.round(width / 2) + comparisonGapPx,
-        );
-      }
-      const left = clampLeft(desired, textWidth);
-      positions.push(left);
-      cursor = left + textWidth + comparisonGapPx;
-    });
+    const columnCount = displayIndexes.length;
+    const availableWidth = Math.max(0, width - comparisonLeft);
+    const columnWidth = columnCount > 0 ? availableWidth / columnCount : 0;
+    const displayWidths = displayIndexes.map(
+      slotIndex => widths[slotIndex] ?? 0,
+    );
+    // Cap the pulled step so the LAST indicator stays on the canvas, and floor
+    // it so no indicator can overlap the previous one when columns are pulled
+    // together. At the default slider value this is exactly columnWidth.
+    const maxStep =
+      columnCount > 1
+        ? Math.max(
+            0,
+            (availableWidth - (displayWidths[columnCount - 1] ?? 0)) /
+              (columnCount - 1),
+          )
+        : 0;
+    const minStep =
+      columnCount > 1 ? Math.max(0, ...displayWidths.slice(0, -1)) : 0;
+    const step =
+      columnCount > 1
+        ? Math.max(minStep, Math.min(columnWidth + gapPullPx, maxStep))
+        : 0;
     const lefts: (number | null)[] = contents.map(() => null);
     displayIndexes.forEach((slotIndex, positionIndex) => {
-      lefts[slotIndex] = positions[positionIndex];
+      const desired = comparisonLeft + positionIndex * step;
+      lefts[slotIndex] = clampLeft(desired, displayWidths[positionIndex]);
     });
-    if (rowIndex === 0 && hasLegacyComparisonLefts) {
+    if (
+      rowIndex === 0 &&
+      hasLegacyComparisonLefts &&
+      activeIndexes.length <= 2
+    ) {
       [0, 1].forEach(slotIndex => {
         if (slotIndex >= lefts.length) return;
         const saved = legacyLefts[slotIndex];

@@ -280,11 +280,16 @@ const config: ControlPanelConfig = {
             name: 'comparison_use_center_gap',
             config: {
               type: 'CheckboxControl',
+              // Deprecated but kept registered: charts saved before
+              // equal-width columns existed still carry this flag in their
+              // form data. Hide it from the editor and never read it in the
+              // renderer so no indicator is pinned to the center line.
+              visibility: () => false,
               label: t('Anchor second slot to center'),
               default: false,
               renderTrigger: true,
               description: t(
-                'Off (default): "Comparison spacing" is measured from the previous slot. On: the SAME slider is measured from the tile center line instead, so the second indicator no longer drifts when the first one changes length. With more than two indicators only the second one is anchored; the rest keep flowing from it. Only the anchor changes - the slider, its drag behaviour and its saved value are shared by both modes.',
+                'Deprecated: metric rows now split the tile into equal columns for every indicator. This control is kept only so charts saved with it keep their settings; it no longer affects the layout.',
               ),
             },
           },
@@ -301,7 +306,7 @@ const config: ControlPanelConfig = {
               default: DEFAULT_COMPARISON_GAP,
               renderTrigger: true,
               description: t(
-                'Gap between consecutive indicators in a row, measured from the previous slot by default or from the tile center line for the second slot when "Anchor second slot to center" is checked. Both modes use this one slider. It only moves the slots and never changes the font size.',
+                'Pulls the equal-width columns apart (larger) or together (smaller). At the default value each indicator starts at its own 1/N column boundary - three indicators start at 0, 1/3 and 2/3. Every row uses its own indicator count. It only moves the indicators and never changes the font size.',
               ),
             },
           },

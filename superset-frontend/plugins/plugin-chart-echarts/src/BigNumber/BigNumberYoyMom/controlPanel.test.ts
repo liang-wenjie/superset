@@ -202,8 +202,12 @@ describe('BigNumberYoyMom metric rows controls', () => {
     expect(checkbox?.default).toBe(false);
     expect(spacing?.default).toBe(24);
     expect(spacing?.renderTrigger).toBe(true);
+    // The deprecated center anchor is kept registered for charts that saved
+    // the flag, but is hidden from the editor and no longer read by the
+    // renderer (all rows now use equal-width columns).
+    expect(typeof checkbox?.visibility).toBe('function');
+    expect(checkbox?.visibility()).toBe(false);
     // No visibility tied to the removed show_comparison* controls.
-    expect(checkbox?.visibility).toBeUndefined();
     expect(spacing?.visibility).toBeUndefined();
     expect(swap?.visibility).toBeUndefined();
     expect(findConfig('comparison_yoy_axis_gap')).toBeUndefined();

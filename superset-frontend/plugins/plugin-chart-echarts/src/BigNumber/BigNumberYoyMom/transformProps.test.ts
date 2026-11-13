@@ -155,11 +155,12 @@ describe('BigNumberYoyMom transformProps', () => {
 
     expect(graphic[3].style.text).toBe('YoY ↓17.70%');
     expect(graphic[3].style.fill).toBe('rgb(245, 63, 63)');
-    // The second slot starts after the MoM width (108px) plus the gap.
-    expect(graphic[3].left).toBe(152);
+    // Equal columns: 400px tile minus the 20px left offset leaves 380px, so
+    // the second indicator starts at 20 + 380/2 instead of right after MoM.
+    expect(graphic[3].left).toBe(210);
   });
 
-  test('separates comparisons by estimated width when the gap is zero', () => {
+  test('pulls the equal columns together at gap zero without overlapping', () => {
     const result = transformProps(
       buildChartProps(
         [
@@ -173,9 +174,11 @@ describe('BigNumberYoyMom transformProps', () => {
       ),
     );
     const graphic = result.echartOptions.graphic as Record<string, any>[];
-    // No overlap even at gap 0: YoY starts immediately after the MoM text.
+    // The default 24px is the exact equal split; gap 0 pulls the columns
+    // 24px closer (20 + 190 - 24), still leaving plenty of room for MoM.
     expect(graphic[2].left).toBe(20);
-    expect(graphic[3].left).toBe(
+    expect(graphic[3].left).toBe(186);
+    expect(graphic[3].left).toBeGreaterThanOrEqual(
       graphic[2].left + comparisonTextWidth(graphic[2]),
     );
   });
@@ -1053,7 +1056,9 @@ describe('BigNumberYoyMom transformProps', () => {
     const result = transformProps({
       ...buildChartProps(
         [{ 'SUM(sales)': 100, 'SUM(sales)__1 month ago': 90 }],
-        { headerText: '2026年全年销售收入汇总' },
+        {
+          headerText: '2026年全年销售收入汇总',
+        },
       ),
       // A narrow dashboard KPI card; the long Chinese title would be clipped
       // on the right without the same auto-shrink applied to the other rows.
@@ -1363,7 +1368,7 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[1].style.fill).toBe(DARK_THEME.colorText);
   });
 
-  // --- Optional YoY center-line gap and comparison sizing controls --------
+  // --- Equal-width metric columns and comparison sizing controls ----------
 
   const sizingRows = [
     {
@@ -1384,19 +1389,48 @@ describe('BigNumberYoyMom transformProps', () => {
       height: tileHeight,
     }).echartOptions.graphic as Record<string, any>[];
 
-  test('anchors YoY to the center line while reusing comparison spacing', () => {
-    const base = {
-      bigNumberLeft: 0,
-      comparisonUseCenterGap: true,
-      comparisonGap: 8,
-    };
-    const normal = buildSizedTile(400, 200, base);
-    // 400 / 2 + 8: the ONE spacing slider, measured from the center line.
-    expect(normal[3].left).toBe(208);
-    expect(normal[2].left).toBe(0);
+  test('splits a two-indicator row into equal halves', () => {
+    const graphic = buildSizedTile(400, 200, { bigNumberLeft: 0 });
+    expect(graphic[2].left).toBe(0);
+    // At the default spacing the second indicator starts at exactly 1/2 of
+    // the available width, not right after the first text.
+    expect(graphic[3].left).toBe(200);
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+  });
 
-    // The whole point of the checkbox: the anchored slot no longer moves
-    // when the MoM text gets longer or shorter.
+  test('starts the second indicator at one third with three indicators', () => {
+    const graphic = buildSizedTile(400, 200, {
+      bigNumberLeft: 0,
+      metric_rows: [
+        {
+          slots: [
+            { label: 'A', mode: 'time_shift', offset: '1 month ago' },
+            { label: 'B', mode: 'time_shift', offset: '1 year ago' },
+            { label: 'C', mode: 'time_shift', offset: '1 year ago' },
+          ],
+        },
+      ],
+    });
+    const lefts = graphic.slice(2).map(element => element.left);
+    expect(lefts).toHaveLength(3);
+    expect(lefts[0]).toBe(0);
+    expect(lefts[1]).toBeCloseTo(400 / 3, 1);
+    expect(lefts[2]).toBeCloseTo(800 / 3, 1);
+    // Adding an indicator narrows EVERY column instead of pinning the row to
+    // the center line. No overlap, nothing clipped.
+    expect(lefts[1]).toBeLessThan(200);
+    expect(lefts[1]).toBeGreaterThanOrEqual(
+      lefts[0] + comparisonTextWidth(graphic[2]),
+    );
+    expect(lefts[2]).toBeGreaterThanOrEqual(
+      lefts[1] + comparisonTextWidth(graphic[3]),
+    );
+    expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+  });
+
+  test('equal columns stay put when the first label changes length', () => {
+    const base = { bigNumberLeft: 0 };
+    const normal = buildSizedTile(400, 200, base);
     const longLabel = buildSizedTile(400, 200, {
       ...base,
       comparison1Label: '环比',
@@ -1406,83 +1440,61 @@ describe('BigNumberYoyMom transformProps', () => {
       comparison1Label: 'M',
     });
     expect(longLabel[2].style.text).not.toBe(normal[2].style.text);
-    expect(longLabel[3].left).toBe(208);
-    expect(shortLabel[3].left).toBe(208);
+    expect(longLabel[3].left).toBe(200);
+    expect(shortLabel[3].left).toBe(200);
     expect(comparisonRightEdge(longLabel)).toBeLessThanOrEqual(400);
   });
 
-  test('reads the snake_case checkbox and shared spacing saved by Explore', () => {
-    const graphic = buildSizedTile(400, 200, {
+  test('ignores the deprecated center-anchor flag, including snake_case', () => {
+    const shared = { bigNumberLeft: 0, comparisonGap: 12 };
+    const legacyChart = buildSizedTile(400, 200, shared);
+    const camelCase = buildSizedTile(400, 200, {
+      ...shared,
+      comparisonUseCenterGap: true,
+    });
+    const snakeCase = buildSizedTile(400, 200, {
       bigNumberLeft: 0,
       comparison_use_center_gap: true,
       comparison_gap: 12,
     });
-    // 400 / 2 + 12
-    expect(graphic[3].left).toBe(212);
-  });
-
-  test('an unchecked box keeps MoM-relative spacing', () => {
-    const shared = { bigNumberLeft: 0, comparisonGap: 40 };
-    const legacyChart = buildSizedTile(400, 200, shared);
-    const explicitlyOff = buildSizedTile(400, 200, {
-      ...shared,
-      comparisonUseCenterGap: false,
-    });
-    // Charts saved before the checkbox existed have no flag at all.
-    expect(explicitlyOff[3].left).toBe(legacyChart[3].left);
-    expect(legacyChart[3].left).toBe(148);
+    // 200 - (24 - 12): the slider pulls the columns together by its delta.
+    expect(legacyChart[3].left).toBe(188);
+    expect(camelCase[3].left).toBe(legacyChart[3].left);
+    expect(snakeCase[3].left).toBe(legacyChart[3].left);
     expect(comparisonRightEdge(legacyChart)).toBeLessThanOrEqual(400);
   });
 
-  test('the center anchor reuses the same spacing slider value', () => {
+  test('the spacing slider pulls the equal columns apart and together', () => {
     const build = (comparisonGap: number): Record<string, any>[] =>
-      buildSizedTile(400, 200, {
-        bigNumberLeft: 0,
-        comparisonUseCenterGap: true,
-        comparisonGap,
-      });
+      buildSizedTile(400, 200, { bigNumberLeft: 0, comparisonGap });
     const zero = build(0);
     const small = build(8);
     const large = build(40);
-    expect(zero[3].left).toBe(200); // exactly on the center line
-    expect(small[3].left).toBe(208); // 400 / 2 + 8
-    expect(large[3].left).toBe(240);
-    // Dragging the slider moves the slot by the same delta in this mode.
+    // The default (24) is the exact 1/2 split; every step away from it moves
+    // the columns by the same delta.
+    expect(zero[3].left).toBe(176);
+    expect(small[3].left).toBe(184);
+    expect(large[3].left).toBe(216);
     expect(large[3].left - small[3].left).toBe(32);
     expect(comparisonRightEdge(large)).toBeLessThanOrEqual(400);
   });
 
-  test('one slider value produces two different anchors', () => {
-    const shared = { bigNumberLeft: 0, comparisonGap: 24 };
-    const fromMom = buildSizedTile(400, 200, shared);
-    const fromCenter = buildSizedTile(400, 200, {
-      ...shared,
-      comparisonUseCenterGap: true,
-    });
-    expect(fromCenter[3].left).toBe(224); // 400 / 2 + 24
-    expect(fromCenter[3].left).not.toBe(fromMom[3].left);
-    // Switching the anchor never re-sizes the text.
-    expect(fromCenter[2].style.fontSize).toBe(fromMom[2].style.fontSize);
-    expect(comparisonRightEdge(fromCenter)).toBeLessThanOrEqual(400);
-  });
-
-  test('swaps both slots while the center anchor stays on the right', () => {
+  test('reverses the row without changing the equal columns', () => {
     const graphic = buildSizedTile(400, 200, {
       bigNumberLeft: 0,
-      comparisonUseCenterGap: true,
       comparisonGap: 8,
       swapComparisonOrder: true,
     });
-    // The anchor is a fixed POSITION; swap decides which label sits there.
-    expect(graphic[2].left).toBe(208);
+    // Columns are fixed positions; reverse decides which label sits there.
+    expect(graphic[2].style.text).toContain('MoM');
+    expect(graphic[2].left).toBe(184);
     expect(graphic[3].left).toBe(0);
     expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
   });
 
-  test('keeps the anchored slots from overlapping on a long MoM label', () => {
+  test('keeps the equal columns from overlapping on a long MoM label', () => {
     const graphic = buildSizedTile(300, 200, {
       bigNumberLeft: 0,
-      comparisonUseCenterGap: true,
       comparisonGap: 8,
       comparison1Label: 'A very long MoM comparison label',
     });
@@ -1548,17 +1560,17 @@ describe('BigNumberYoyMom transformProps', () => {
     });
   });
 
-  test('keeps an anchored row inside the canvas on a narrow tile', () => {
+  test('keeps an equal-split row inside the canvas on a narrow tile', () => {
     const tileWidth = 200;
     const graphic = buildSizedTile(tileWidth, 190, {
       bigNumberLeft: 0,
-      comparisonUseCenterGap: true,
       comparisonGap: 8,
       comparison1Label: '同比',
       comparison2Label: '环比',
     });
-    // 200 / 2 + 8; the anchor holds even on a narrow tile.
-    expect(graphic[3].left).toBe(108);
+    // Pulling the columns together stops as soon as the texts would touch.
+    expect(graphic[3].left).toBeGreaterThan(0);
+    expect(graphic[3].left).toBeLessThanOrEqual(tileWidth);
     expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(tileWidth);
     expect(
       graphic[2].left + comparisonTextWidth(graphic[2]),
@@ -1569,49 +1581,58 @@ describe('BigNumberYoyMom transformProps', () => {
     const build = (gap: number): Record<string, any>[] =>
       buildSizedTile(400, 200, { bigNumberLeft: 0, comparisonGap: gap });
     const sizes = [0, 24, 120, 240].map(gap => build(gap)[2].style.fontSize);
-    // The spacing control only MOVES the second slot. Sizing reserves a fixed
-    // design gap and never reads this control.
+    // The spacing control only MOVES the columns. Sizing splits the width
+    // into equal columns and never reads this control.
     expect(new Set(sizes).size).toBe(1);
     expect(build(0)[3].left).toBeLessThan(build(24)[3].left);
     expect(build(24)[3].left).toBeLessThan(build(120)[3].left);
     [0, 24, 120, 240].forEach(gap => {
-      // A gap too large for the tile is clamped back inside the canvas.
-      expect(comparisonRightEdge(build(gap))).toBeLessThanOrEqual(400);
+      const graphic = build(gap);
+      // Even a slider pushed to its maximum stays inside the canvas and
+      // never lets two indicators overlap.
+      expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(400);
+      expect(
+        graphic[2].left + comparisonTextWidth(graphic[2]),
+      ).toBeLessThanOrEqual(graphic[3].left);
     });
   });
 
-  test('the center anchor never changes the comparison font size', () => {
-    const build = (gap: number): Record<string, any>[] =>
-      buildSizedTile(400, 200, {
-        bigNumberLeft: 0,
-        comparisonUseCenterGap: true,
-        comparisonGap: gap,
-      });
-    const sizes = [0, 8, 40, 240].map(gap => build(gap)[2].style.fontSize);
-    expect(new Set(sizes).size).toBe(1);
-    const fromMom = buildSizedTile(400, 200, {
+  test('adding an indicator shares one smaller font size across every row', () => {
+    const two = buildSizedTile(400, 200, { bigNumberLeft: 0 });
+    const three = buildSizedTile(240, 200, {
       bigNumberLeft: 0,
-      comparisonGap: 40,
+      metric_rows: [
+        {
+          slots: [
+            { label: 'A', mode: 'time_shift', offset: '1 month ago' },
+            { label: 'B', mode: 'time_shift', offset: '1 year ago' },
+            { label: 'C', mode: 'time_shift', offset: '1 year ago' },
+          ],
+        },
+      ],
     });
-    // The checkbox only changes the anchor, so both modes share one size.
-    expect(sizes[0]).toBe(fromMom[2].style.fontSize);
-    expect(comparisonRightEdge(build(240))).toBeLessThanOrEqual(400);
+    const sizes = three
+      .slice(2)
+      .map(element => element.style.fontSize as number);
+    expect(new Set(sizes).size).toBe(1);
+    expect(sizes[0]).toBeLessThan(two[2].style.fontSize);
+    expect(comparisonRightEdge(three)).toBeLessThanOrEqual(240);
   });
 
-  test('the shared slider alone drives the center anchor', () => {
+  test('deprecated center-anchor fields never move the row', () => {
     const shared = { bigNumberLeft: 0, comparisonGap: 40 };
     const withStaleField = buildSizedTile(400, 200, {
       ...shared,
       comparisonUseCenterGap: true,
       comparisonYoyAxisGap: 8,
     });
-    const withoutStaleField = buildSizedTile(400, 200, {
-      ...shared,
-      comparisonUseCenterGap: true,
-    });
-    // A leftover value from the removed separate control is ignored.
+    const withoutStaleField = buildSizedTile(400, 200, shared);
+    // 200 + (40 - 24): the equal split pulled apart by the slider delta.
+    expect(withStaleField[3].left).toBe(216);
     expect(withStaleField[3].left).toBe(withoutStaleField[3].left);
-    expect(withStaleField[3].left).toBe(240); // 400 / 2 + 40
+    expect(withStaleField[2].style.fontSize).toBe(
+      withoutStaleField[2].style.fontSize,
+    );
   });
 
   test('renders additional metric rows below the MoM/YoY pair', () => {
@@ -1652,11 +1673,11 @@ describe('BigNumberYoyMom transformProps', () => {
     expect(graphic[4].style.text).toContain('在职');
     expect(graphic[4].style.text).toContain('1234');
     expect(graphic[5].style.text).toContain('5678');
-    // Every row flows its own slots from the left edge. Both rows start at
-    // the same offset, but each second slot follows THAT row's first label,
-    // so the two rows are no longer forced onto a shared column boundary.
+    // Both rows split the SAME available width into two equal columns, so
+    // their second indicators line up even though the labels differ. A row
+    // with a different indicator count would get its own column boundaries.
     expect(graphic[4].left).toBe(graphic[2].left);
-    expect(graphic[5].left).not.toBe(graphic[3].left);
+    expect(graphic[5].left).toBe(graphic[3].left);
     expect(graphic[3].left).toBeGreaterThanOrEqual(
       graphic[2].left + comparisonTextWidth(graphic[2]),
     );
