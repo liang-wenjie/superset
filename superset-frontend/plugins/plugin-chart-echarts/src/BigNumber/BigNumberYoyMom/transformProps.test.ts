@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { DEFAULT_COMPARISON_GAP } from './constants';
+import { DEFAULT_COMPARISON_GAP, MAX_COMPARISON_GAP } from './constants';
 import { BigNumberYoyMomChartProps } from './types';
 import transformProps from './transformProps';
 
@@ -92,7 +92,7 @@ describe('BigNumberYoyMom transformProps', () => {
   const comparisonTextWidth = (element: Record<string, any>): number =>
     Math.ceil(
       Array.from(String(element.style.text)).reduce(
-        (total, char) => total + (char.charCodeAt(0) > 255 ? 1 : 0.5),
+        (total, char) => total + (char.charCodeAt(0) > 255 ? 1 : 0.55),
         0,
       ) * element.style.fontSize,
     );
@@ -2024,6 +2024,96 @@ describe('BigNumberYoyMom transformProps', () => {
       }).echartOptions.graphic as Record<string, any>[];
       expect(comparisonRightEdge(graphic)).toBeLessThanOrEqual(160 - 3);
       expect(graphic[3].left).toBeGreaterThan(graphic[2].left);
+    });
+  });
+
+  describe('dashboard 5 percent-sign clipping regression', () => {
+    // An INDEPENDENT, browser-like glyph model. The plugin uses a single flat
+    // ASCII factor for comparison labels, so validate the painted right edge
+    // with a per-glyph model instead: the assertion must not pass just because
+    // the layout and the test share the same optimistic numbers.
+    const paintedWidth = (element: Record<string, any>): number =>
+      Math.ceil(
+        Array.from(String(element.style.text)).reduce((total, char) => {
+          if (char.charCodeAt(0) > 255) return total + 1;
+          if (char >= '0' && char <= '9') return total + 0.56;
+          if ('%,'.includes(char)) return total + 0.9;
+          if ('.- '.includes(char)) return total + 0.3;
+          return total + 0.62;
+        }, 0) * element.style.fontSize,
+      );
+
+    // slice 17 "财报分析_概览_费用合计": two metric slots formatted as
+    // percentages, uniform sizing on, spacing slider at its maximum.
+    const feeTotalGraphic = (tileWidth: number): Record<string, any>[] =>
+      transformProps({
+        ...buildChartProps(
+          [
+            {
+              'SUM(当月金额)': 1234567,
+              'SUM(当月金额)/SUM(上年同期金额)': 1,
+              'SUM(当月金额)/SUM(上月金额)': -1,
+            },
+          ],
+          {
+            bigNumberLeft: 0,
+            comparisonGap: MAX_COMPARISON_GAP,
+            comparisonFontSize: 0.125,
+            comparisonShowArrow: true,
+            uniformBigNumberFontSize: true,
+            uniformBigNumberReferenceTexts: ['$3,808,637.34'],
+            yAxisFormat: ',.2f',
+            metric_rows: [
+              {
+                slots: [
+                  {
+                    label: '同比',
+                    mode: 'metric',
+                    numberFormat: ',.2%',
+                    column: {
+                      expressionType: 'SQL',
+                      label: 'SUM(当月金额)/SUM(上年同期金额)',
+                      sqlExpression: 'SUM(当月金额)/SUM(上年同期金额)',
+                    },
+                  },
+                  {
+                    label: '环比',
+                    mode: 'metric',
+                    numberFormat: ',.2%',
+                    column: {
+                      expressionType: 'SQL',
+                      label: 'SUM(当月金额)/SUM(上月金额)',
+                      sqlExpression: 'SUM(当月金额)/SUM(上月金额)',
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ),
+        width: tileWidth,
+        height: 120,
+      }).echartOptions.graphic as Record<string, any>[];
+
+    test('keeps the trailing % of -100.00% clear of the tile border', () => {
+      [140, 150, 160, 180, 200, 240, 300].forEach(tileWidth => {
+        const comparisons = feeTotalGraphic(tileWidth).slice(2);
+        expect(comparisons.map(element => String(element.style.text))).toEqual([
+          '同比 ↑100.00%',
+          '环比 ↓-100.00%',
+        ]);
+        const paintedRight = Math.max(
+          ...comparisons.map(element => element.left + paintedWidth(element)),
+        );
+        // The tile border sits just inside the canvas. Before the dedicated
+        // border padding this value was `tileWidth - 1` on a 150px card, so
+        // the last pixel of the percent sign was shaved off.
+        expect(paintedRight).toBeLessThanOrEqual(tileWidth - 8);
+        // Pulling the columns apart must not make them overlap either.
+        expect(comparisons[1].left).toBeGreaterThanOrEqual(
+          comparisons[0].left + paintedWidth(comparisons[0]),
+        );
+      });
     });
   });
 

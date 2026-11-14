@@ -115,6 +115,12 @@ const estimateTextWidth = (
  * 60%, shrinking the text and leaving a wide empty gap on the right. Full-width
  * glyphs (Chinese labels, arrows) stay at ~1em. Keep this separate from the
  * big-number estimate so the number's own auto-fit behaviour is unchanged.
+ *
+ * 0.55em per ASCII glyph is deliberately a shade WIDER than the old flat 0.5em:
+ * a real `%` is ~0.89em and a digit ~0.56em, so 0.5em understated a value such
+ * as "-100.00%" enough to shave the last pixel off the percent sign once the
+ * spacing slider pushed the indicator against the tile border. Punctuation is
+ * narrower than 0.55em, which leaves a small net safety allowance.
  */
 const estimateComparisonTextWidth = (
   text: string,
@@ -122,7 +128,7 @@ const estimateComparisonTextWidth = (
 ): number =>
   Math.ceil(
     Array.from(text).reduce(
-      (width, char) => width + (char.charCodeAt(0) > 255 ? 1 : 0.5),
+      (width, char) => width + (char.charCodeAt(0) > 255 ? 1 : 0.55),
       0,
     ) * fontSizePx,
   );
@@ -131,6 +137,12 @@ const estimateComparisonTextWidth = (
 // render can differ by a few pixels depending on the actual font. Auto-shrink
 // against a slightly reduced available width so text stays off the canvas edge.
 const TEXT_FIT_SAFETY_MARGIN = 3;
+// Comparison rows are deliberately pulled to the right edge by the spacing
+// slider, and the tile border sits just inside the canvas: on dashboard 5's
+// "费用合计" card the trailing `%` of "-100.00%" was shaved off. Reserve real
+// whitespace after the LAST indicator instead of trusting the width estimate
+// down to the last pixel (glyph widths still vary across fonts).
+const COMPARISON_BORDER_PADDING = 10;
 
 /**
  * Width of a formatted number at 1px, in font-size units. The legacy estimate
@@ -772,10 +784,18 @@ export default function transformProps(
   // big_number_left keeps both rows in sync, and the available-width rule
   // stays symmetric with the big number.
   const comparisonLeft = bigNumberLeft;
-  // HARD border guard: both the font fit and the column layout must stop at
-  // this right edge. Leaving the layout bound at `width` let the last
-  // indicator sit flush against the tile border and get visually clipped.
-  const comparisonRightEdge = Math.max(0, width - TEXT_FIT_SAFETY_MARGIN);
+  // HARD border guard: BOTH the font fit and the column layout stop at this
+  // right edge. Comparison rows are deliberately pulled to the right edge by
+  // the spacing slider, and canvas glyphs can be a couple of pixels wider than
+  // any heuristic estimate (the trailing `%` of "-100.00%" on dashboard 5 was
+  // being shaved off). Reserve real whitespace after the LAST indicator instead
+  // of trusting the estimate down to the last pixel. Sharing the bound with the
+  // font fit lets a narrow tile shrink its text rather than pulling the last
+  // indicator back until it overlaps its neighbour.
+  const comparisonRightEdge = Math.max(
+    0,
+    width - TEXT_FIT_SAFETY_MARGIN - COMPARISON_BORDER_PADDING,
+  );
   const comparisonGapPx = scaleGap(Math.max(0, Number(comparisonGap) || 0));
   // 24 is still the exact equal split (1/N columns). The slider's DEFAULT is
   // the maximum value, which simply asks the layout to pull the columns as
@@ -912,7 +932,7 @@ export default function transformProps(
     1,
     ...visibleRows.map(contents => contents.filter(Boolean).length),
   );
-  // All rows measure with estimateComparisonTextWidth (0.5em ASCII / 1em
+  // All rows measure with estimateComparisonTextWidth (0.55em ASCII / 1em
   // full-width): the generic estimator overstated a "同比 ↑104.79%" slot by
   // ~60% and flattened every configured font size to the same tiny value.
   // Uniform sizing measures a data-independent design text for EVERY slot so
