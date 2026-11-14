@@ -741,9 +741,10 @@ const config: ControlPanelConfig = {
   ],
   formDataOverrides: formData => {
     const values = formData as Record<string, unknown>;
-    const secondaryIndexes = QUERY_SUFFIXES.slice(1).map(
-      (_, offset) => offset + MIN_QUERY_COUNT,
-    );
+    // Every query except A owns a suffixed `groupby`/`metrics` pair. Index 0
+    // is A; `MIN_QUERY_COUNT` counts the always-on A/B queries and is NOT the
+    // first secondary index.
+    const secondaryIndexes = QUERY_SUFFIXES.map((_, index) => index).slice(1);
     const secondaryGroupbys = secondaryIndexes.flatMap(index =>
       ensureIsArray(
         values[queryKey('groupby', index)] as QueryFormColumn[] | undefined,

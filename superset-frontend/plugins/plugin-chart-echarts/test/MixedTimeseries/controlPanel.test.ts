@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { getStandardizedControls } from '@superset-ui/chart-controls';
 import { ControlPanelsContainerProps } from '@superset-ui/chart-controls/types';
 import controlPanel from '../../src/MixedTimeseries/controlPanel';
 
@@ -269,6 +270,33 @@ test('swap Y axes is a checkbox directly below the orientation control', () => {
     );
   expect(rowIndex('orientation')).toBeGreaterThanOrEqual(0);
   expect(rowIndex('swapYAxes')).toBe(rowIndex('orientation') + 1);
+});
+
+test('formDataOverrides excludes metrics and groupby from every secondary query', () => {
+  const standardized = getStandardizedControls as unknown as jest.Mock;
+  standardized.mockReturnValueOnce({
+    controls: {
+      columns: ['region', 'channel_b', 'segment_c', 'area_d'],
+      metrics: ['metric_a', 'metric_b', 'metric_c', 'metric_d'],
+    },
+  });
+
+  const formDataOverrides = config.formDataOverrides as (
+    formData: Record<string, unknown>,
+  ) => Record<string, unknown>;
+  const result = formDataOverrides({
+    metrics_b: ['metric_b'],
+    metrics_c: ['metric_c'],
+    metrics_d: ['metric_d'],
+    groupby_b: ['channel_b'],
+    groupby_c: ['segment_c'],
+    groupby_d: ['area_d'],
+  });
+
+  // Query A keeps only what no secondary query claimed. A regression that
+  // skipped index 1 would wrongly leave channel_b/metric_b on Query A.
+  expect(result.metrics).toEqual(['metric_a']);
+  expect(result.groupby).toEqual(['region']);
 });
 
 test('minimum label column width follows the data table control', () => {
