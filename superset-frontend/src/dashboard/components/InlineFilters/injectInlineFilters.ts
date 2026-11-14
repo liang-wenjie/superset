@@ -69,9 +69,21 @@ export function injectInlineFilters(
   // filter sharing to copy them over would lose the clauses when the build
   // query strips inline filters from the shared list.
   const hasQueryBSection = Object.keys(source).some(key => key.endsWith('_b'));
-  if (hasScopedFilters || hasQueryBSection) {
+  // A mixed chart can enable extra queries (C/D) by configuring their
+  // metrics. Materialize each enabled query's adhoc-filter key so an
+  // unscoped filter reaches them too; without the key the injection layer has
+  // nowhere to put the clause and that query would silently ignore it.
+  const extraQuerySuffixes = (['_c', '_d'] as const).filter(
+    suffix =>
+      ensureIsArray(source[`metrics${suffix}`] as unknown[] | undefined)
+        .length > 0,
+  );
+  if (hasScopedFilters || hasQueryBSection || extraQuerySuffixes.length > 0) {
     adhocKeys.add(INLINE_FILTER_ADHOC_KEY_A);
     adhocKeys.add(INLINE_FILTER_ADHOC_KEY_B);
+    extraQuerySuffixes.forEach(suffix => {
+      adhocKeys.add(`adhoc_filters${suffix}`);
+    });
   }
   if (adhocKeys.size === 0) return formData;
 

@@ -91,55 +91,61 @@ SHARED_FORM_DATA_QUERY_ROLE_KEYS = frozenset(
 )
 
 
-# Mixed Timeseries builds query B by stripping ``_b`` from every suffixed
-# control before passing it through the same shared query builder as query A.
-# This is the complete dataset/query vocabulary exposed by the frontend query
-# and advanced-analytics sections.  Key presence is significant: an explicit
-# ``[]``/``None`` on a suffixed control overrides the unsuffixed value rather
-# than falling back to query A.
+# Mixed Timeseries builds each secondary query by stripping its suffix from
+# every suffixed control before passing it through the same shared query
+# builder as query A. Queries A and B always run; C and D run only when their
+# own metrics are configured, in order, so ``queries[i]`` always corresponds
+# to ``("", "_b", "_c", "_d")[i]``. Keep this list in sync with the frontend
+# ``queryConfig.ts``.
+MIXED_TIMESERIES_QUERY_SUFFIXES = ("_b", "_c", "_d")
+MIXED_TIMESERIES_SECONDARY_QUERY_BASE_KEYS = (
+    "adhoc_filters",
+    "all_columns",
+    "annotation_layers",
+    "annotations",
+    "columns",
+    "comparison_type",
+    "custom_params",
+    "extra_filters",
+    "extra_form_data",
+    "filters",
+    "granularity",
+    "granularity_sqla",
+    "group_others_when_limit_reached",
+    "groupby",
+    "having",
+    "limit",
+    "metrics",
+    "min_periods",
+    "order_by_cols",
+    "order_desc",
+    "orderby",
+    "query_mode",
+    "resample_method",
+    "resample_rule",
+    "rolling_periods",
+    "rolling_type",
+    "row_limit",
+    "row_offset",
+    "series_columns",
+    "series_limit",
+    "series_limit_metric",
+    "temporal_columns_lookup",
+    "time_compare",
+    "time_grain",
+    "time_grain_sqla",
+    "time_range",
+    "timeseries_limit_metric",
+    "truncate_metric",
+    "url_params",
+    "where",
+)
+# Key presence is significant: an explicit ``[]``/``None`` on a suffixed
+# control overrides the unsuffixed value rather than falling back to query A.
 MIXED_TIMESERIES_SECONDARY_QUERY_KEYS = frozenset(
-    {
-        "adhoc_filters_b",
-        "all_columns_b",
-        "annotation_layers_b",
-        "annotations_b",
-        "columns_b",
-        "comparison_type_b",
-        "custom_params_b",
-        "extra_filters_b",
-        "extra_form_data_b",
-        "filters_b",
-        "granularity_b",
-        "granularity_sqla_b",
-        "group_others_when_limit_reached_b",
-        "groupby_b",
-        "having_b",
-        "limit_b",
-        "metrics_b",
-        "min_periods_b",
-        "order_by_cols_b",
-        "order_desc_b",
-        "orderby_b",
-        "query_mode_b",
-        "resample_method_b",
-        "resample_rule_b",
-        "rolling_periods_b",
-        "rolling_type_b",
-        "row_limit_b",
-        "row_offset_b",
-        "series_columns_b",
-        "series_limit_b",
-        "series_limit_metric_b",
-        "temporal_columns_lookup_b",
-        "time_compare_b",
-        "time_grain_b",
-        "time_grain_sqla_b",
-        "time_range_b",
-        "timeseries_limit_metric_b",
-        "truncate_metric_b",
-        "url_params_b",
-        "where_b",
-    }
+    f"{key}{suffix}"
+    for suffix in MIXED_TIMESERIES_QUERY_SUFFIXES
+    for key in MIXED_TIMESERIES_SECONDARY_QUERY_BASE_KEYS
 )
 
 
@@ -473,31 +479,45 @@ def _deduplicate_fields(values: list[Any], *, metric: bool = False) -> list[Any]
 
 def retain_mixed_timeseries_secondary_form_data(
     form_data: Mapping[str, Any],
+    suffix: str = "_b",
 ) -> dict[str, Any]:
-    """Mirror ``retainFormDataSuffix(formData, '_b')`` exactly.
+    """Mirror ``retainQuerySuffix(formData, index)`` exactly.
 
     Suffixed values are installed first, including falsey values, and shared
-    unsuffixed controls fill only keys that query B did not explicitly set.
+    unsuffixed controls fill only keys that this query did not explicitly set.
+    Keys belonging to *other* query suffixes are dropped so they cannot leak
+    into the shared query builder.
     """
     secondary: dict[str, Any] = {}
     for key, value in form_data.items():
-        if key.endswith("_b"):
-            secondary[key[:-2]] = value
+        if key.endswith(suffix):
+            secondary[key[: -len(suffix)]] = value
     for key, value in form_data.items():
-        if not key.endswith("_b") and key not in secondary:
+        if not key.endswith(suffix) and key not in secondary:
             secondary[key] = value
+    other_suffixes = tuple(
+        item for item in MIXED_TIMESERIES_QUERY_SUFFIXES if item != suffix
+    )
+    secondary = {
+        key: value
+        for key, value in secondary.items()
+        if not any(key.endswith(other) for other in other_suffixes)
+    }
     secondary_filter_keys = {
-        "adhoc_filters": "adhoc_filters_b",
-        "extra_filters": "extra_filters_b",
-        "filters": "filters_b",
-        "having": "having_b",
-        "where": "where_b",
+        primary: f"{primary}{suffix}"
+        for primary in (
+            "adhoc_filters",
+            "extra_filters",
+            "filters",
+            "having",
+            "where",
+        )
     }
     if any(suffixed in form_data for suffixed in secondary_filter_keys.values()):
-        # The frontend exposes adhoc_filters_b, while saved/server payloads can
-        # carry equivalent legacy aliases. Treat the family atomically: an
-        # explicit clear in any B alias must not be repopulated by query A's
-        # differently named filter representation.
+        # The frontend exposes adhoc_filters_<suffix>, while saved/server
+        # payloads can carry equivalent legacy aliases. Treat the family
+        # atomically: an explicit clear in any alias must not be repopulated
+        # by query A's differently named filter representation.
         for primary, suffixed in secondary_filter_keys.items():
             if suffixed not in form_data:
                 secondary.pop(primary, None)
@@ -1776,26 +1796,43 @@ def build_query_objects_from_form_data(  # noqa: C901
     if effective_viz != "mixed_timeseries":
         return _finalize_query_objects(form_data, [query])
 
-    secondary = secondary_form_data or retain_mixed_timeseries_secondary_form_data(
-        form_data
-    )
-    # Query A's saved ordering references metrics query B may not select, so the
-    # secondary series orders by ``orderby_b`` or not at all.
-    if (orderby_b := form_data.get("orderby_b")) is not None:
-        secondary["orderby"] = orderby_b
-    elif "orderby_b" not in form_data:
-        secondary.pop("orderby", None)
-    query_b = _base_query_object(
-        secondary,
-        row_limit=row_limit,
-        order_desc=None,
-        filters_prepared=filters_prepared,
-    )
-    # The shared x-axis is deliberately sourced from the complete form data;
-    # Query B's suffixed vocabulary does not include an independent x-axis.
-    secondary["x_axis"] = form_data.get("x_axis")
-    _timeseries_query(secondary, query_b)
-    return _finalize_query_objects(form_data, [query, query_b])
+    # Mirror the frontend ``getEnabledQueryCount``: A and B always run, while
+    # C/D are enabled in order by their own metrics so query indexes stay
+    # aligned with the suffix list.
+    enabled_suffixes = ["_b"]
+    for suffix in ("_c", "_d"):
+        if not _as_list(form_data.get(f"metrics{suffix}")):
+            break
+        enabled_suffixes.append(suffix)
+
+    queries = [query]
+    for suffix in enabled_suffixes:
+        # A caller may supply pre-built secondary form data for Query B.
+        secondary = (
+            secondary_form_data
+            if suffix == "_b" and secondary_form_data is not None
+            else retain_mixed_timeseries_secondary_form_data(form_data, suffix)
+        )
+        # Query A's saved ordering references metrics another query may not
+        # select, so each secondary series orders by its own ``orderby`` key
+        # or not at all.
+        orderby_key = f"orderby{suffix}"
+        if (orderby_value := form_data.get(orderby_key)) is not None:
+            secondary["orderby"] = orderby_value
+        elif orderby_key not in form_data:
+            secondary.pop("orderby", None)
+        secondary_query = _base_query_object(
+            secondary,
+            row_limit=row_limit,
+            order_desc=None,
+            filters_prepared=filters_prepared,
+        )
+        # The shared x-axis is deliberately sourced from the complete form
+        # data; a suffixed vocabulary does not include an independent x-axis.
+        secondary["x_axis"] = form_data.get("x_axis")
+        _timeseries_query(secondary, secondary_query)
+        queries.append(secondary_query)
+    return _finalize_query_objects(form_data, queries)
 
 
 def build_query_context_from_form_data(

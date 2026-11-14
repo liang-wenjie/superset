@@ -718,6 +718,48 @@ def test_mixed_secondary_sort_direction_ignores_primary_override() -> None:
     assert queries[1]["series_limit"] == 1
 
 
+def test_mixed_timeseries_extra_queries_are_enabled_in_order() -> None:
+    """Mirror the frontend: A/B always run, C/D only with their own metrics."""
+    from superset.common.form_data_query_context import (
+        build_query_objects_from_form_data,
+    )
+
+    base = {
+        "viz_type": "mixed_timeseries",
+        "x_axis": "ds",
+        "metrics": ["revenue"],
+        "metrics_b": ["cost"],
+        "groupby": ["region"],
+    }
+    assert len(build_query_objects_from_form_data(base)) == 2
+
+    with_c = build_query_objects_from_form_data(
+        {**base, "metrics_c": ["margin"], "groupby_c": ["channel"]}
+    )
+    assert len(with_c) == 3
+    assert with_c[2]["metrics"] == ["margin"]
+
+    with_cd = build_query_objects_from_form_data(
+        {
+            **base,
+            "metrics_c": ["margin"],
+            "metrics_d": ["forecast"],
+            "groupby_d": ["segment"],
+        }
+    )
+    assert len(with_cd) == 4
+    assert [query["metrics"] for query in with_cd] == [
+        ["revenue"],
+        ["cost"],
+        ["margin"],
+        ["forecast"],
+    ]
+
+    # D without C must not create a sparse suffix -> query index mapping.
+    only_d = build_query_objects_from_form_data({**base, "metrics_d": ["forecast"]})
+    assert len(only_d) == 2
+
+
 def test_big_number_native_axis_pivot_references_selected_column() -> None:
     """Native axes must use the same label in SELECT and post-processing."""
     context = build_query_context_from_form_data(

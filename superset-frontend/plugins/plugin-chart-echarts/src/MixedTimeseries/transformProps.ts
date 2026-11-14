@@ -35,6 +35,7 @@ import {
   isPhysicalColumn,
   isTimeseriesAnnotationLayer,
   isXAxisSet,
+  QueryFormColumn,
   QueryFormData,
   QueryFormMetric,
   resolveAutoCurrency,
@@ -130,8 +131,10 @@ import { mergeCustomEChartOptions } from '../utils/mergeCustomEChartOptions';
 import {
   getDimensionColumnNames,
   getHiddenDimensionLabelsByQuery,
+  HiddenDimensionLabel,
   stripDimensionValueLabels,
 } from '../utils/inlineFilterSeriesName';
+import { MIN_QUERY_COUNT, QUERY_LABELS, displayKey } from './queryConfig';
 
 const getFormatter = (
   customFormatters: Record<string, ValueFormatter>,
@@ -270,6 +273,33 @@ export default function transformProps(
     metricsB = [],
   }: EchartsMixedTimeseriesFormData = { ...DEFAULT_FORM_DATA, ...formData };
 
+  const extraQueryIndexes = queriesData
+    .map((_, index) => index)
+    .filter(index => index >= MIN_QUERY_COUNT);
+  const formDataValues = formData as Record<string, unknown>;
+
+  // Query C/D controls live in form_data under camelCase letter suffixes
+  // (`seriesTypeC`, `metricsC`, ...). Falling back to Query A's resolved value
+  // keeps an unconfigured query visually consistent with the primary one.
+  const readQueryControl = <T>(base: string, index: number, fallback: T): T =>
+    (formDataValues[displayKey(base, index)] as T | undefined) ?? fallback;
+
+  // Custom/column formatters are keyed by metric label across the whole
+  // chart, so every enabled query's metrics must participate. Otherwise a
+  // Query C metric with its own saved number format silently inherits the
+  // axis default.
+  const allMetricsForFormatters: QueryFormMetric[] = [
+    ...ensureIsArray(metrics),
+    ...ensureIsArray(metricsB),
+    ...extraQueryIndexes.flatMap(index =>
+      ensureIsArray(
+        formDataValues[displayKey('metrics', index)] as
+          | QueryFormMetric[]
+          | undefined,
+      ),
+    ),
+  ];
+
   // A single-select chart inline filter on a groupby column pins the query to
   // one dimension value, making the ", <value>" part of every series name
   // redundant. Drop it from the rendered names so the legend, tooltip and the
@@ -380,12 +410,18 @@ export default function transformProps(
     !rawXAxisDataTypeIsUsable && isDesignatedTemporalColumn
       ? GenericDataType.Temporal
       : rawXAxisDataType;
+  const hasExtraBarSeries = extraQueryIndexes.some(
+    index =>
+      readQueryControl('seriesType', index, seriesType) ===
+      EchartsTimeseriesSeriesType.Bar,
+  );
   const xAxisType = getAxisType(
     stack,
     xAxisForceCategorical,
     xAxisDataType,
     seriesType === EchartsTimeseriesSeriesType.Bar ||
-      seriesTypeB === EchartsTimeseriesSeriesType.Bar
+      seriesTypeB === EchartsTimeseriesSeriesType.Bar ||
+      hasExtraBarSeries
       ? EchartsTimeseriesSeriesType.Bar
       : seriesType,
   );
@@ -492,7 +528,7 @@ export default function transformProps(
         })
       : getNumberFormatter(yAxisFormatSecondary);
   const customFormatters = buildCustomFormatters(
-    [...ensureIsArray(metrics), ...ensureIsArray(metricsB)],
+    allMetricsForFormatters,
     currencyFormats,
     columnFormats,
     yAxisFormat,
@@ -501,7 +537,7 @@ export default function transformProps(
     currencyCodeColumn,
   );
   const customFormattersSecondary = buildCustomFormatters(
-    [...ensureIsArray(metrics), ...ensureIsArray(metricsB)],
+    allMetricsForFormatters,
     currencyFormats,
     columnFormats,
     yAxisFormatSecondary,
@@ -845,6 +881,256 @@ export default function transformProps(
     }
   });
 
+  // Query A and B keep their dedicated paths above. C and D are optional
+  // extra queries emitted by buildQuery; they share the same x-axis and the
+  // same pair of value axes but carry their own display controls.
+  const displayLabelMaps: Record<string, string[]>[] = [
+    displayLabelMap,
+    displayLabelMapB,
+  ];
+  const groupbys: QueryFormColumn[][] = [groupby, groupbyB];
+  const allRebasedData: TimeseriesDataRecord[][] = [
+    rebasedDataA as TimeseriesDataRecord[],
+    rebasedDataB as TimeseriesDataRecord[],
+  ];
+  const allSeriesTypes: (EchartsTimeseriesSeriesType | undefined)[] = [
+    seriesType,
+    seriesTypeB,
+  ];
+  const allYAxisIndexes: (number | undefined)[] = [yAxisIndex, yAxisIndexB];
+  const allShowValues: (boolean | undefined)[] = [showValue, showValueB];
+
+  // ECharts places points by category but draws a line in data-array order,
+  // so every secondary query must follow Query A's category order (the same
+  // fix applied to rawSeriesB above). Recompute the positions here rather
+  // than touching the A/B path.
+  const primaryCategoryPosition = new Map<string, number>();
+  if (xAxisType === AxisType.Category && rawSeriesA.length > 0) {
+    ensureIsArray(rawSeriesA[0].data)
+      .map(datum => (Array.isArray(datum) ? datum[categoryIndex] : datum))
+      .filter(
+        (value): value is string | number =>
+          typeof value === 'string' || typeof value === 'number',
+      )
+      .forEach((category, idx) =>
+        primaryCategoryPosition.set(String(category), idx),
+      );
+  }
+  const alignToPrimaryCategoryOrder = (seriesList: typeof rawSeriesB): void => {
+    if (primaryCategoryPosition.size === 0) return;
+    seriesList.forEach(seriesItem => {
+      if (Array.isArray(seriesItem.data) && seriesItem.data.length > 0) {
+        seriesItem.data = [...seriesItem.data].sort((a, b) => {
+          const aKey = Array.isArray(a) ? String(a[categoryIndex]) : '';
+          const bKey = Array.isArray(b) ? String(b[categoryIndex]) : '';
+          const ia = primaryCategoryPosition.get(aKey);
+          const ib = primaryCategoryPosition.get(bKey);
+          if (ia === undefined && ib === undefined) return 0;
+          if (ia === undefined) return 1;
+          if (ib === undefined) return -1;
+          return ia - ib;
+        });
+      }
+    });
+  };
+
+  extraQueryIndexes.forEach(index => {
+    const result = queriesData[index] as
+      | TimeseriesChartDataResponseResult
+      | undefined;
+    const data = (result?.data || []) as TimeseriesDataRecord[];
+    const rawLabelMapExtra = result?.label_map as
+      | Record<string, string[]>
+      | undefined;
+    const queryMetrics = ensureIsArray(
+      formDataValues[displayKey('metrics', index)] as
+        | QueryFormMetric[]
+        | undefined,
+    );
+    const queryGroupby = ensureIsArray(
+      formDataValues[displayKey('groupby', index)] as
+        | QueryFormColumn[]
+        | undefined,
+    );
+    // buildQuery never emits more queries than QUERY_LABELS covers, but keep a
+    // stable fallback for malformed/legacy payloads with extra responses.
+    const queryLabel: string = QUERY_LABELS[index] ?? String(index);
+    const querySeriesType = readQueryControl('seriesType', index, seriesType);
+    const queryArea = readQueryControl('area', index, area);
+    const queryMarkerEnabled = readQueryControl(
+      'markerEnabled',
+      index,
+      markerEnabled,
+    );
+    const queryMarkerSize = readQueryControl('markerSize', index, markerSize);
+    const queryOpacity = readQueryControl('opacity', index, opacity);
+    const queryShowValue = readQueryControl('showValue', index, showValue);
+    const queryOnlyTotal = readQueryControl('onlyTotal', index, onlyTotal);
+    const queryStack = readQueryControl('stack', index, stack);
+    const queryYAxisIndex = readQueryControl(
+      'yAxisIndex',
+      index,
+      yAxisIndex ?? 0,
+    );
+    const queryLabelPosition = readQueryControl(
+      'labelPosition',
+      index,
+      labelPosition,
+    );
+    const querySortSeriesType = readQueryControl(
+      'sortSeriesType',
+      index,
+      sortSeriesType,
+    );
+    const querySortSeriesAscending = readQueryControl(
+      'sortSeriesAscending',
+      index,
+      sortSeriesAscending,
+    );
+
+    const rebasedData = rebaseForecastDatum(data, verboseMap);
+    const {
+      totalStackedValues: queryTotalStackedValues,
+      thresholdValues: queryThresholdValues,
+    } = extractDataTotalValues(rebasedData, {
+      stack: Boolean(queryStack),
+      percentageThreshold,
+      xAxisCol: xAxisLabel,
+    });
+    const [rawSeries, sortedTotalValues] = extractSeries(rebasedData, {
+      fillNeighborValue: queryStack ? 0 : undefined,
+      xAxis: xAxisLabel,
+      isHorizontal,
+      sortSeriesType: querySortSeriesType,
+      sortSeriesAscending: querySortSeriesAscending,
+      stack: Boolean(queryStack),
+      totalStackedValues: queryTotalStackedValues,
+      xAxisType,
+    });
+    alignToPrimaryCategoryOrder(rawSeries);
+
+    const extraDisplayLabelMap: Record<string, string[]> = {};
+    const hiddenValues =
+      (hiddenDimensionLabels as Record<string, HiddenDimensionLabel[]>)[
+        queryLabel
+      ]?.map(({ value }) => value) ?? [];
+    const queryShowValueIndexes = extractShowValueIndexes(rawSeries, {
+      stack: queryStack,
+      onlyTotal: queryOnlyTotal,
+      isHorizontal,
+    });
+    const queryMetricDisplayName =
+      getMetricDisplayName(queryMetrics[0], verboseMap) || '';
+
+    rawSeries.forEach(entry => {
+      const entryName = String(entry.name || '');
+      const seriesEntry = inverted[entryName] || entryName;
+      const derivedSeries = isDerivedSeries(
+        entry,
+        chartProps.rawFormData,
+        seriesEntry,
+      );
+      const lineStyle: LineStyleOption = {};
+      if (derivedSeries && timeShiftColor) {
+        const offset = getTimeOffset(entry, array) || seriesEntry;
+        if (!offsetPatterns[offset]) {
+          offsetPatterns[offset] = Object.keys(offsetPatterns).length + 1;
+        }
+        const patternIndex = offsetPatterns[offset];
+        lineStyle.type = [(patternIndex % 5) + 1, (patternIndex % 3) + 1];
+        lineStyle.opacity = OpacityEnum.DerivedSeries;
+      }
+      const colorScaleKey = getOriginalSeries(seriesEntry, array);
+      const labelMapValues = rawLabelMapExtra?.[seriesEntry];
+      let displayName: string;
+      const identifier = ` (Query ${queryLabel})`;
+      if (queryGroupby.length > 0) {
+        const metricDisplayName =
+          labelMapValues && labelMapValues.length > 1
+            ? getMetricDisplayName(labelMapValues[0], verboseMap)
+            : queryMetricDisplayName;
+        const metricPart = showQueryIdentifiers
+          ? `${metricDisplayName}${identifier}`
+          : metricDisplayName;
+        displayName = entryName.includes(metricPart)
+          ? entryName
+          : `${metricPart}, ${entryName}`;
+      } else {
+        displayName = showQueryIdentifiers
+          ? `${entryName}${identifier}`
+          : entryName;
+      }
+      displayName = stripDimensionValueLabels(displayName, hiddenValues);
+      if (labelMapValues) {
+        extraDisplayLabelMap[displayName] = labelMapValues;
+      }
+
+      const axisFormatterConfig = getAxisFormatterConfig(queryYAxisIndex);
+      const seriesFormatter = getFormatter(
+        axisFormatterConfig.customFormatters,
+        axisFormatterConfig.formatter,
+        queryMetrics,
+        labelMapValues?.[0] ?? '',
+        !!contributionMode,
+      );
+      const transformedSeries = transformSeries(
+        {
+          ...entry,
+          id: `${displayName || ''}`,
+          name: `${displayName || ''}`,
+        },
+        colorScale,
+        colorScaleKey,
+        {
+          area: queryArea,
+          connectNulls: querySeriesType !== EchartsTimeseriesSeriesType.Bar,
+          markerEnabled: queryMarkerEnabled,
+          markerSize: queryMarkerSize,
+          areaOpacity: queryOpacity,
+          seriesType: querySeriesType,
+          showValue: queryShowValue,
+          valueLabelPosition: BarValueLabelPosition.OutsideEnd,
+          onlyTotal: queryOnlyTotal,
+          stack: Boolean(queryStack),
+          stackIdSuffix: `\n${queryLabel.toLowerCase()}`,
+          yAxisIndex: queryYAxisIndex,
+          filterState,
+          seriesKey: entry.name,
+          sliceId,
+          queryIndex: index,
+          formatter:
+            querySeriesType === EchartsTimeseriesSeriesType.Bar
+              ? getOverMaxHiddenFormatter({
+                  max: getAxisMax(queryYAxisIndex),
+                  formatter: seriesFormatter,
+                })
+              : seriesFormatter,
+          totalStackedValues: sortedTotalValues,
+          showValueIndexes: queryShowValueIndexes,
+          thresholdValues: queryThresholdValues,
+          timeShiftColor,
+          theme,
+          labelPosition: queryLabelPosition,
+          isHorizontal,
+          lineStyle,
+        },
+      );
+      if (transformedSeries) {
+        series.push(transformedSeries);
+        mapSeriesIdToAxis(transformedSeries, queryYAxisIndex);
+      }
+    });
+
+    displayLabelMaps.push(extraDisplayLabelMap);
+    groupbys.push(queryGroupby);
+    allRebasedData.push(rebasedData as TimeseriesDataRecord[]);
+    allSeriesTypes.push(querySeriesType);
+    allYAxisIndexes.push(queryYAxisIndex);
+    allShowValues.push(queryShowValue);
+  });
+
+  const hasBarSeries = allSeriesTypes.includes(EchartsTimeseriesSeriesType.Bar);
+
   // default to 0-100% range when doing row-level contribution chart
   if (contributionMode === 'row' && stack) {
     if (yAxisMin === undefined) yAxisMin = 0;
@@ -875,10 +1161,7 @@ export default function transformProps(
   // collide) has to be bypassed too, not just ECharts' own hideOverlap.
   const showAllLabels = xAxisLabelInterval === '0';
   const xAxisDomain = getXAxisDomain(
-    [
-      rebasedDataA as Record<string, unknown>[],
-      rebasedDataB as Record<string, unknown>[],
-    ],
+    allRebasedData.map(rows => rows as Record<string, unknown>[]),
     xAxisLabel,
   );
   const boundaryFormatter = getBoundaryTimeFormatter(
@@ -969,7 +1252,7 @@ export default function transformProps(
       chartPadding.left,
       chartPadding.bottom,
     ];
-    if (showValue || showValueB) {
+    if (allShowValues.some(Boolean)) {
       chartPadding.right = Math.max(
         chartPadding.right || 0,
         TIMESERIES_CONSTANTS.horizontalBarLabelRightPadding,
@@ -999,17 +1282,11 @@ export default function transformProps(
   // category axis runs along `height`, so the plot length comes from the
   // swapped vertical padding instead of `width`. See getGrainBarMaxWidth
   // for the domain/grain part of the mechanism.
-  if (
-    seriesType === EchartsTimeseriesSeriesType.Bar ||
-    seriesTypeB === EchartsTimeseriesSeriesType.Bar
-  ) {
+  if (hasBarSeries) {
     const barMaxWidthPx = getGrainBarMaxWidth(
       xAxisType,
       resolvedTimeGrain,
-      [
-        rebasedDataA as Record<string, unknown>[],
-        rebasedDataB as Record<string, unknown>[],
-      ],
+      allRebasedData.map(rows => rows as Record<string, unknown>[]),
       xAxisLabel,
       isHorizontal
         ? Math.max(height - chartPadding.top - chartPadding.bottom, 0)
@@ -1024,7 +1301,9 @@ export default function transformProps(
     }
   }
 
-  const alignTicks = yAxisIndex !== yAxisIndexB;
+  // Both value axes stay shared across all queries; align their ticks as soon
+  // as at least one query uses each of them.
+  const alignTicks = new Set(allYAxisIndexes.map(axis => axis ?? 0)).size > 1;
 
   // ECharts assigns a missing axis `position` in array order: the first value
   // axis goes left (bottom once the pair becomes xAxis in horizontal mode)
@@ -1056,9 +1335,9 @@ export default function transformProps(
     });
   }
 
-  // Both queries share the axis, so a bucket contributed by either needs a tick.
+  // All queries share the axis, so a bucket contributed by any of them needs a tick.
   const temporalTickValues = resolveTemporalTickValues(
-    [...rebasedDataA, ...rebasedDataB],
+    allRebasedData.flat(),
     xAxisLabel,
     xAxisType,
     resolvedTimeGrain,
@@ -1111,10 +1390,7 @@ export default function transformProps(
         truncateXAxis,
         xAxisMin,
         xAxisMax,
-        seriesType === EchartsTimeseriesSeriesType.Bar ||
-          seriesTypeB === EchartsTimeseriesSeriesType.Bar
-          ? EchartsTimeseriesSeriesType.Bar
-          : undefined,
+        hasBarSeries ? EchartsTimeseriesSeriesType.Bar : undefined,
       ),
     },
     yAxis: [
@@ -1206,23 +1482,24 @@ export default function transformProps(
             // the display-keyed maps, whose values lead with the raw metric
             // label both with and without dimensions. Fall back to the
             // verbose-name inversion for series absent from the maps.
-            let formatterKey;
-            if (primarySeries.has(key)) {
-              formatterKey = displayLabelMap[key]?.[0] ?? inverted[key];
-            } else {
-              formatterKey = displayLabelMapB[key]?.[0] ?? inverted[key];
-            }
+            // Resolve the raw metric label from whichever query rendered this
+            // series name. A and B stay first so pre-existing charts resolve
+            // exactly as before.
+            const labelMapForSeries =
+              displayLabelMaps.find(map => Boolean(map?.[key])) ??
+              displayLabelMap;
+            const formatterKey = labelMapForSeries[key]?.[0] ?? inverted[key];
             const tooltipFormatter = getFormatter(
               customFormatters,
               formatter,
-              metrics,
+              allMetricsForFormatters,
               formatterKey,
               !!contributionMode,
             );
             const tooltipFormatterSecondary = getFormatter(
               customFormattersSecondary,
               formatterSecondary,
-              metricsB,
+              allMetricsForFormatters,
               formatterKey,
               !!contributionMode,
             );
@@ -1335,6 +1612,10 @@ export default function transformProps(
     labelMapB: displayLabelMapB,
     groupby,
     groupbyB,
+    // Per-query maps/dimensions let the component resolve cross filters and
+    // drill for any number of queries instead of only A and B.
+    labelMaps: displayLabelMaps,
+    groupbys,
     seriesBreakdown: rawSeriesA.length,
     selectedValues: filterState.selectedValues || [],
     onContextMenu,

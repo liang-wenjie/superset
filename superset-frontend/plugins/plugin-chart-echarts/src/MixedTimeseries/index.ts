@@ -29,6 +29,7 @@ import {
   EchartsMixedTimeseriesFormData,
   EchartsMixedTimeseriesProps,
 } from './types';
+import { MAX_QUERY_COUNT } from './queryConfig';
 import { EchartsChartPlugin } from '../types';
 
 export default class EchartsTimeseriesChartPlugin extends EchartsChartPlugin<
@@ -59,7 +60,7 @@ export default class EchartsTimeseriesChartPlugin extends EchartsChartPlugin<
         category: t('Evolution'),
         credits: ['https://echarts.apache.org'],
         description: t(
-          'Visualize two different series using the same x-axis. Note that both series can be visualized with a different chart type (e.g. 1 using bars and 1 using a line).',
+          'Visualize multiple series using the same x-axis. Each query can be visualized with a different chart type (e.g. bars and a line).',
         ),
         supportedAnnotationTypes: [
           AnnotationType.Event,
@@ -80,7 +81,10 @@ export default class EchartsTimeseriesChartPlugin extends EchartsChartPlugin<
           t('Transformable'),
           t('Featured'),
         ],
-        queryObjectCount: 2,
+        // A and B always run; C/D are enabled in order by their own metrics,
+        // so the actual count is 2, 3 or 4 depending on the saved chart.
+        queryObjectCount: MAX_QUERY_COUNT,
+        dynamicQueryObjectCount: true,
       },
       transformProps,
     });

@@ -47,6 +47,7 @@ import {
 } from '../components/chartDataTableUtils';
 import { formatSeriesName } from '../utils/series';
 import { useLegendEventHandlers } from '../utils/legendEventHandlers';
+import { queryKey } from './queryConfig';
 
 const MIN_CHART_HEIGHT = 80;
 const EMPTY_COLUMN_LAYOUT: ColumnLayout = { boundaries: [], indexes: [] };
@@ -60,10 +61,11 @@ export default function EchartsMixedTimeseries({
   labelMapB,
   groupby,
   groupbyB,
+  labelMaps,
+  groupbys,
   selectedValues,
   formData,
   emitCrossFilters,
-  seriesBreakdown,
   onContextMenu,
   onFocusedSeries,
   xValueFormatter,
@@ -164,9 +166,28 @@ export default function EchartsMixedTimeseries({
     Math.min(MIN_CHART_HEIGHT, height),
   );
 
-  const isFirstQuery = useCallback(
-    (seriesIndex: number) => seriesIndex < seriesBreakdown,
-    [seriesBreakdown],
+  // Props created before per-query maps existed still supply the plain A/B
+  // values; fall back to those so older callers keep working.
+  const resolvedLabelMaps = useMemo(
+    () => labelMaps ?? [labelMap, labelMapB],
+    [labelMaps, labelMap, labelMapB],
+  );
+  const resolvedGroupbys = useMemo(
+    () => groupbys ?? [groupby, groupbyB],
+    [groupbys, groupby, groupbyB],
+  );
+  // Resolving by the rendered series name avoids having to keep a
+  // series-index -> query-index map in sync with annotation and forecast
+  // series, which transformProps inserts ahead of the query series. A and B
+  // stay first in the array, so existing charts resolve exactly as before.
+  const queryIndexForSeries = useCallback(
+    (seriesName: string): number => {
+      const found = resolvedLabelMaps.findIndex(map =>
+        Boolean(map?.[seriesName]),
+      );
+      return found >= 0 ? found : 0;
+    },
+    [resolvedLabelMaps],
   );
 
   // A horizontal chart stores each datum as [value, category]; a vertical
@@ -174,7 +195,7 @@ export default function EchartsMixedTimeseries({
   const categoryIndex = isHorizontalMixedChart(formData) ? 1 : 0;
 
   const getCrossFilterDataMask = useCallback(
-    (seriesName: string, seriesIndex: number) => {
+    (seriesName: string) => {
       const selected: string[] = Object.values(selectedValues || {});
       let values: string[];
       if (selected.includes(seriesName)) {
@@ -183,8 +204,9 @@ export default function EchartsMixedTimeseries({
         values = [seriesName];
       }
 
-      const currentGroupBy = isFirstQuery(seriesIndex) ? groupby : groupbyB;
-      const currentLabelMap = isFirstQuery(seriesIndex) ? labelMap : labelMapB;
+      const queryIndex = queryIndexForSeries(seriesName);
+      const currentGroupBy = resolvedGroupbys[queryIndex] ?? [];
+      const currentLabelMap = resolvedLabelMaps[queryIndex] ?? {};
       const groupbyValues = values
         .map(value => currentLabelMap?.[value])
         .filter(value => !!value);
@@ -224,27 +246,25 @@ export default function EchartsMixedTimeseries({
         isCurrentValueSelected: selected.includes(seriesName),
       };
     },
-    [groupby, groupbyB, isFirstQuery, labelMap, labelMapB, selectedValues],
+    [resolvedGroupbys, resolvedLabelMaps, queryIndexForSeries, selectedValues],
   );
 
   const handleChange = useCallback(
-    (seriesName: string, seriesIndex: number) => {
-      const isFirst = isFirstQuery(seriesIndex);
+    (seriesName: string) => {
+      const queryIndex = queryIndexForSeries(seriesName);
       if (
         !emitCrossFilters ||
-        (isFirst && groupby.length === 0) ||
-        (!isFirst && groupbyB.length === 0)
+        (resolvedGroupbys[queryIndex] ?? []).length === 0
       ) {
         return;
       }
 
-      setDataMask(getCrossFilterDataMask(seriesName, seriesIndex).dataMask);
+      setDataMask(getCrossFilterDataMask(seriesName).dataMask);
     },
     [
-      isFirstQuery,
+      queryIndexForSeries,
       emitCrossFilters,
-      groupby.length,
-      groupbyB.length,
+      resolvedGroupbys,
       setDataMask,
       getCrossFilterDataMask,
     ],
@@ -258,8 +278,8 @@ export default function EchartsMixedTimeseries({
   const eventHandlers: EventHandlers = {
     ...legendEventHandlers,
     click: props => {
-      const { seriesName, seriesIndex } = props;
-      handleChange(seriesName, seriesIndex);
+      const { seriesName } = props;
+      handleChange(seriesName);
     },
     mouseout: () => {
       onFocusedSeries(null);
@@ -270,13 +290,14 @@ export default function EchartsMixedTimeseries({
     contextmenu: async eventParams => {
       if (onContextMenu) {
         eventParams.event.stop();
-        const { data, seriesName, seriesIndex } = eventParams;
+        const { data, seriesName } = eventParams;
         const pointerEvent = eventParams.event.event;
         const drillToDetailFilters: BinaryQueryObjectFilterClause[] = [];
         const drillByFilters: BinaryQueryObjectFilterClause[] = [];
-        const isFirst = isFirstQuery(seriesIndex);
-        const currentGroupBy = isFirst ? formData.groupby : formData.groupbyB;
-        const seriesValues = (isFirst ? labelMap : labelMapB)[seriesName] || [];
+        const queryIndex = queryIndexForSeries(seriesName);
+        const currentGroupBy = resolvedGroupbys[queryIndex] ?? [];
+        const seriesValues =
+          (resolvedLabelMaps[queryIndex] ?? {})[seriesName] || [];
         // Label map values may carry metric/offset labels ahead of the
         // dimension values — anchor from the tail, like getCrossFilterDataMask.
         const metricsCount = seriesValues.length - currentGroupBy.length;
@@ -325,18 +346,17 @@ export default function EchartsMixedTimeseries({
             });
           });
         }
-        const hasCrossFilter =
-          (isFirst && groupby.length > 0) || (!isFirst && groupbyB.length > 0);
+        const hasCrossFilter = currentGroupBy.length > 0;
 
         onContextMenu(pointerEvent.clientX, pointerEvent.clientY, {
           drillToDetail: drillToDetailFilters,
           crossFilter: hasCrossFilter
-            ? getCrossFilterDataMask(seriesName, seriesIndex)
+            ? getCrossFilterDataMask(seriesName)
             : undefined,
           drillBy: {
             filters: drillByFilters,
-            groupbyFieldName: isFirst ? 'groupby' : 'groupby_b',
-            adhocFilterFieldName: isFirst ? 'adhoc_filters' : 'adhoc_filters_b',
+            groupbyFieldName: queryKey('groupby', queryIndex),
+            adhocFilterFieldName: queryKey('adhoc_filters', queryIndex),
           },
         });
       }

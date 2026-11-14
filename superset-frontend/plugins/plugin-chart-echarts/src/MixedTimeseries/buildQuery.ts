@@ -41,10 +41,7 @@ import {
   timeCompareOperator,
   resampleOperator,
 } from '@superset-ui/chart-controls';
-import {
-  retainFormDataSuffix,
-  removeFormDataSuffix,
-} from '../utils/formDataSuffix';
+import { getEnabledQueryIndexes, retainQuerySuffix } from './queryConfig';
 
 /**
  * Identity of a SIMPLE adhoc metric: the physical column it aggregates plus
@@ -154,37 +151,31 @@ export default function buildQuery(formData: QueryFormData) {
     ...formData,
   };
 
-  const formData1 = removeFormDataSuffix(baseFormData, '_b');
-  const formData2Raw = retainFormDataSuffix(baseFormData, '_b');
-  // When "Share settings with Query A" is on, Query B must select the same
-  // categories as Query A: inherit A's sort metric, sort direction, row limit,
-  // metric truncation and empty-column handling, regardless of B's own saved
-  // values. Otherwise B can run its own sort/limit and pick a disjoint set of
-  // categories, leaving B empty on A's x-axis.
-  let formData2 =
-    baseFormData.share_query_settings === true
-      ? {
-          ...formData2Raw,
-          timeseries_limit_metric: formData1.timeseries_limit_metric,
-          order_desc: formData1.order_desc,
-          row_limit: formData1.row_limit,
-          truncate_metric: formData1.truncate_metric,
-          show_empty_columns: formData1.show_empty_columns,
-        }
-      : formData2Raw;
+  // Query A and B always run; C and D are enabled, in order, by their own
+  // metrics. `queriesData[i]` therefore always maps to QUERY_SUFFIXES[i].
+  const queryFormDataList = getEnabledQueryIndexes(baseFormData).map(index =>
+    retainQuerySuffix(baseFormData, index),
+  );
+  const primaryFormData = queryFormDataList[0];
+
+  // When "Share settings with Query A" is on, every secondary query must
+  // select the same categories as Query A: inherit A's sort metric, sort
+  // direction, row limit, metric truncation and empty-column handling,
+  // regardless of its own saved values. Otherwise a secondary query can run
+  // its own sort/limit and pick a disjoint set of categories, leaving it
+  // empty on A's x-axis.
   // Filter sharing is a separate choice from the settings sharing above: a
-  // mixed chart runs A and B as independent queries, so a filter applied to A
-  // (e.g. 分类1 IN ('账号毛利')) does not reach B by itself, and B's
-  // unfiltered result can pull in categories A excluded that then appear as
-  // empty columns on the shared x-axis. When "Share filters with Query A" is
-  // on and B defines no meaningful filters of its own, inherit A's filters.
-  // The default `created_at (No filter)` temporal range does not constrain the
-  // query, so it must not block the inheritance either.
+  // mixed chart runs each query independently, so a filter applied to A
+  // (e.g. 分类1 IN ('账号毛利')) does not reach the others by itself.
+  // When "Share filters with Query A" is on and a secondary query defines no
+  // meaningful filters of its own, inherit A's filters. The default
+  // `created_at (No filter)` temporal range does not constrain the query, so
+  // it must not block the inheritance either.
   // Inline-filter buttons are injected into formData by the chart holder at
   // render time and belong to exactly one query. They are neither inherited
-  // from A nor treated as Query B defining its own saved filters: sharing A's
-  // saved filters must keep the x-axis aligned even when B has a button, and
-  // that button's own clause must survive the inheritance.
+  // from A nor treated as a secondary query defining its own saved filters:
+  // sharing A's saved filters must keep the x-axis aligned even when another
+  // query has a button, and that button's own clause must survive.
   const isInlineFilter = (filter: unknown): boolean => {
     const name = (filter as Record<string, unknown> | undefined)
       ?.filterOptionName;
@@ -204,20 +195,38 @@ export default function buildQuery(formData: QueryFormData) {
           record.comparator === '')
       );
     });
-  if (
-    baseFormData.share_query_filters === true &&
-    !hasMeaningfulFilters(formData2Raw.adhoc_filters)
-  ) {
-    formData2 = {
-      ...formData2,
-      adhoc_filters: [
-        ...stripInlineFilters(formData1.adhoc_filters),
-        ...keepInlineFilters(formData2Raw.adhoc_filters),
-      ],
-    };
-  }
 
-  const queryContexts = [formData1, formData2].map(fd =>
+  const resolvedFormDataList = queryFormDataList.map((fd, index) => {
+    if (index === 0) {
+      return fd;
+    }
+    let resolved =
+      baseFormData.share_query_settings === true
+        ? {
+            ...fd,
+            timeseries_limit_metric: primaryFormData.timeseries_limit_metric,
+            order_desc: primaryFormData.order_desc,
+            row_limit: primaryFormData.row_limit,
+            truncate_metric: primaryFormData.truncate_metric,
+            show_empty_columns: primaryFormData.show_empty_columns,
+          }
+        : fd;
+    if (
+      baseFormData.share_query_filters === true &&
+      !hasMeaningfulFilters(fd.adhoc_filters)
+    ) {
+      resolved = {
+        ...resolved,
+        adhoc_filters: [
+          ...stripInlineFilters(primaryFormData.adhoc_filters),
+          ...keepInlineFilters(fd.adhoc_filters),
+        ],
+      };
+    }
+    return resolved;
+  });
+
+  const queryContexts = resolvedFormDataList.map(fd =>
     buildQueryContext(fd, baseQueryObject => {
       const queryObject = {
         ...baseQueryObject,
@@ -268,6 +277,6 @@ export default function buildQuery(formData: QueryFormData) {
 
   return {
     ...queryContexts[0],
-    queries: [...queryContexts[0].queries, ...queryContexts[1].queries],
+    queries: queryContexts.flatMap(context => context.queries),
   };
 }

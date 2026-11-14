@@ -757,6 +757,67 @@ test('two query-scoped inline buttons never cross into the other query', () => {
   expect(whereB).not.toContain('East');
 });
 
+test('a legacy chart still emits exactly two queries', () => {
+  const { queries } = buildQuery(formDataMixedChart);
+  expect(queries).toHaveLength(2);
+  expect(queries.map(query => query.metrics)).toEqual([
+    ['sum(sales)'],
+    ['count'],
+  ]);
+});
+
+test('Query C is emitted only when metrics_c is configured', () => {
+  const formData = {
+    ...formDataMixedChart,
+    metrics_c: ['avg(price)'],
+    groupby_c: ['region'],
+    adhoc_filters_c: [],
+  };
+  const { queries } = buildQuery(formData);
+  expect(queries).toHaveLength(3);
+  expect(queries.map(query => query.metrics)).toEqual([
+    ['sum(sales)'],
+    ['count'],
+    ['avg(price)'],
+  ]);
+  expect(queries[2].columns).toContain('region');
+});
+
+test('Query C and D are enabled in order, up to four queries', () => {
+  const formData = {
+    ...formDataMixedChart,
+    metrics_c: ['avg(price)'],
+    metrics_d: ['max(price)'],
+    groupby_d: ['channel'],
+  };
+  expect(buildQuery(formData).queries).toHaveLength(4);
+  expect(buildQuery(formData).queries.map(query => query.metrics)).toEqual([
+    ['sum(sales)'],
+    ['count'],
+    ['avg(price)'],
+    ['max(price)'],
+  ]);
+  // D without C must not create a sparse suffix -> queriesData mapping.
+  const onlyD = { ...formDataMixedChart, metrics_d: ['max(price)'] };
+  expect(buildQuery(onlyD).queries).toHaveLength(2);
+});
+
+test('sharing applies to Query C as well as Query B', () => {
+  const formData = {
+    ...categoricalXAxisFormData,
+    share_query_settings: true,
+    share_query_filters: true,
+    metrics_c: ['count'],
+    adhoc_filters_b: undefined,
+    adhoc_filters_c: undefined,
+  };
+  const { queries } = buildQuery(formData);
+  expect(queries).toHaveLength(3);
+  expect(queries[1].order_desc).toBe(false);
+  expect(queries[2].order_desc).toBe(false);
+  expect(queries[2].extras?.where).toContain("foo in ('a', 'b')");
+});
+
 test('Query B settings stay independent when sharing is disabled', () => {
   const formData = {
     ...categoricalXAxisFormData,

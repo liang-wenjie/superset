@@ -198,6 +198,9 @@ export type EchartsMixedTimeseriesChartTransformedProps =
     CrossFilterTransformedProps & {
       groupbyB: QueryFormColumn[];
       labelMapB: Record<string, string[]>;
+      /** Per-query lookups, indexed by the query's position in queriesData. */
+      labelMaps?: Record<string, string[]>[];
+      groupbys?: QueryFormColumn[][];
       seriesBreakdown: number;
       xValueFormatter: TimeFormatter | StringConstructor;
       xAxis: {

@@ -17,7 +17,11 @@
  * under the License.
  */
 import { t } from '@apache-superset/core/translation';
-import { ensureIsArray } from '@superset-ui/core';
+import {
+  ensureIsArray,
+  QueryFormColumn,
+  QueryFormMetric,
+} from '@superset-ui/core';
 import { cloneDeep } from 'lodash-es';
 import {
   ControlPanelsContainerProps,
@@ -51,6 +55,27 @@ import {
   xAxisLabelInterval,
   forceMaxInterval,
 } from '../controls';
+import {
+  DISPLAY_SUFFIXES,
+  MIN_QUERY_COUNT,
+  QUERY_LABELS,
+  QUERY_SUFFIXES,
+  queryKey,
+} from './queryConfig';
+
+const QUERY_SECTION_LABELS = [
+  t('Query A'),
+  t('Query B'),
+  t('Query C'),
+  t('Query D'),
+] as const;
+
+const ADVANCED_SECTION_LABELS = [
+  t('Advanced analytics Query A'),
+  t('Advanced analytics Query B'),
+  t('Advanced analytics Query C'),
+  t('Advanced analytics Query D'),
+] as const;
 
 const {
   area,
@@ -72,10 +97,11 @@ const {
 function createQuerySection(
   label: string,
   controlSuffix: string,
+  expanded = true,
 ): ControlPanelSectionConfig {
   return {
     label,
-    expanded: true,
+    expanded,
     controlSetRows: [
       ...(controlSuffix === '_b'
         ? [
@@ -88,8 +114,8 @@ function createQuerySection(
                   default: true,
                   description: t(
                     'Apply Query A\u2019s sort metric, sort direction, row ' +
-                      'limit and empty-column handling to Query B as well, so ' +
-                      'both queries select the same categories.',
+                      'limit and empty-column handling to the other queries ' +
+                      'as well, so all queries select the same categories.',
                   ),
                 },
               },
@@ -102,10 +128,10 @@ function createQuerySection(
                   label: t('Share filters with Query A'),
                   default: true,
                   description: t(
-                    'Apply Query A\u2019s filters to Query B as well, so ' +
-                      'categories Query A filtered out do not appear on the ' +
-                      'shared x-axis. Query B\u2019s own filters, when it ' +
-                      'defines any, take precedence.',
+                    'Apply Query A\u2019s filters to the other queries as ' +
+                      'well, so categories Query A filtered out do not ' +
+                      'appear on the shared x-axis. Each query\u2019s own ' +
+                      'filters, when it defines any, take precedence.',
                   ),
                 },
               },
@@ -451,10 +477,17 @@ const config: ControlPanelConfig = {
       expanded: true,
       controlSetRows: [['x_axis'], ['time_grain_sqla']],
     },
-    createQuerySection(t('Query A'), ''),
-    createAdvancedAnalyticsSection(t('Advanced analytics Query A'), ''),
-    createQuerySection(t('Query B'), '_b'),
-    createAdvancedAnalyticsSection(t('Advanced analytics Query B'), '_b'),
+    ...QUERY_LABELS.flatMap((_, index) => [
+      createQuerySection(
+        QUERY_SECTION_LABELS[index],
+        QUERY_SUFFIXES[index],
+        index < MIN_QUERY_COUNT,
+      ),
+      createAdvancedAnalyticsSection(
+        ADVANCED_SECTION_LABELS[index],
+        QUERY_SUFFIXES[index],
+      ),
+    ]),
     sections.annotationsAndLayersControls,
     sections.titleControls,
     {
@@ -474,7 +507,7 @@ const config: ControlPanelConfig = {
                 [OrientationType.Horizontal, t('Horizontal')],
               ],
               description: t(
-                'Orientation of the chart. For horizontal bars, set both Query A and Query B to the Bar series type.',
+                'Orientation of the chart. For horizontal bars, set every query to the Bar series type.',
               ),
               // Never let the field be stashed out of form_data; a missing
               // value makes the control appear to have no effect.
@@ -505,8 +538,12 @@ const config: ControlPanelConfig = {
       controlSetRows: [
         ['color_scheme'],
         ['time_shift_color'],
-        ...createCustomizeSection(t('Query A'), ''),
-        ...createCustomizeSection(t('Query B'), 'B'),
+        ...QUERY_LABELS.flatMap((_, index) =>
+          createCustomizeSection(
+            QUERY_SECTION_LABELS[index],
+            DISPLAY_SUFFIXES[index],
+          ),
+        ),
         ['zoomable'],
         [
           {
@@ -562,7 +599,7 @@ const config: ControlPanelConfig = {
               type: 'CheckboxControl',
               label: t('Show query identifiers'),
               description: t(
-                'Add Query A and Query B identifiers to tooltips to help differentiate series',
+                'Add query identifiers to tooltips to help differentiate series',
               ),
               default: false,
               renderTrigger: true,
@@ -703,21 +740,31 @@ const config: ControlPanelConfig = {
     },
   ],
   formDataOverrides: formData => {
-    const groupby = getStandardizedControls().controls.columns.filter(
-      col => !ensureIsArray(formData.groupby_b).includes(col),
+    const values = formData as Record<string, unknown>;
+    const secondaryIndexes = QUERY_SUFFIXES.slice(1).map(
+      (_, offset) => offset + MIN_QUERY_COUNT,
     );
-    getStandardizedControls().controls.columns =
-      getStandardizedControls().controls.columns.filter(
-        col => !groupby.includes(col),
-      );
+    const secondaryGroupbys = secondaryIndexes.flatMap(index =>
+      ensureIsArray(
+        values[queryKey('groupby', index)] as QueryFormColumn[] | undefined,
+      ),
+    );
+    const secondaryMetrics = secondaryIndexes.flatMap(index =>
+      ensureIsArray(
+        values[queryKey('metrics', index)] as QueryFormMetric[] | undefined,
+      ),
+    );
 
-    const metrics = getStandardizedControls().controls.metrics.filter(
-      metric => !ensureIsArray(formData.metrics_b).includes(metric),
+    const { controls } = getStandardizedControls();
+    const groupby = controls.columns.filter(
+      col => !secondaryGroupbys.includes(col),
     );
-    getStandardizedControls().controls.metrics =
-      getStandardizedControls().controls.metrics.filter(
-        col => !metrics.includes(col),
-      );
+    controls.columns = controls.columns.filter(col => !groupby.includes(col));
+
+    const metrics = controls.metrics.filter(
+      metric => !secondaryMetrics.includes(metric),
+    );
+    controls.metrics = controls.metrics.filter(col => !metrics.includes(col));
 
     return {
       ...formData,
