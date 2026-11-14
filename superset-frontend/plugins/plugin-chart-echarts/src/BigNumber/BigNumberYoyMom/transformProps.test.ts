@@ -97,6 +97,19 @@ describe('BigNumberYoyMom transformProps', () => {
       ) * element.style.fontSize,
     );
 
+  // An INDEPENDENT, browser-like glyph model. The plugin uses one flat ASCII
+  // factor, so border assertions must not share that same optimistic model.
+  const paintedWidth = (element: Record<string, any>): number =>
+    Math.ceil(
+      Array.from(String(element.style.text)).reduce((total, char) => {
+        if (char.charCodeAt(0) > 255) return total + 1;
+        if (char >= '0' && char <= '9') return total + 0.56;
+        if ('%,'.includes(char)) return total + 0.9;
+        if ('.- '.includes(char)) return total + 0.3;
+        return total + 0.62;
+      }, 0) * element.style.fontSize,
+    );
+
   const DARK_THEME = {
     colorBgContainer: '#141414',
     colorText: 'rgba(255, 255, 255, 0.88)',
@@ -2028,21 +2041,6 @@ describe('BigNumberYoyMom transformProps', () => {
   });
 
   describe('dashboard 5 percent-sign clipping regression', () => {
-    // An INDEPENDENT, browser-like glyph model. The plugin uses a single flat
-    // ASCII factor for comparison labels, so validate the painted right edge
-    // with a per-glyph model instead: the assertion must not pass just because
-    // the layout and the test share the same optimistic numbers.
-    const paintedWidth = (element: Record<string, any>): number =>
-      Math.ceil(
-        Array.from(String(element.style.text)).reduce((total, char) => {
-          if (char.charCodeAt(0) > 255) return total + 1;
-          if (char >= '0' && char <= '9') return total + 0.56;
-          if ('%,'.includes(char)) return total + 0.9;
-          if ('.- '.includes(char)) return total + 0.3;
-          return total + 0.62;
-        }, 0) * element.style.fontSize,
-      );
-
     // slice 17 "财报分析_概览_费用合计": two metric slots formatted as
     // percentages, uniform sizing on, spacing slider at its maximum.
     const feeTotalGraphic = (tileWidth: number): Record<string, any>[] =>
@@ -2114,6 +2112,76 @@ describe('BigNumberYoyMom transformProps', () => {
           comparisons[0].left + paintedWidth(comparisons[0]),
         );
       });
+    });
+  });
+
+  describe('widest spacing with mixed-length indicators', () => {
+    // slice 30 "财报分析_概览_成本合计": row 1 has three indicators and ends
+    // with a SHORT metric value, row 2 has only two visible indicators.
+    const costTotalGraphic = (): Record<string, any>[] =>
+      transformProps({
+        ...buildChartProps(
+          [
+            {
+              'SUM(sales)': 1234567,
+              'SUM(sales)__1 month ago': 1000000,
+              'SUM(sales)__1 year ago': 1500000,
+              count: 42,
+            },
+          ],
+          {
+            bigNumberLeft: 0,
+            comparisonGap: MAX_COMPARISON_GAP,
+            uniformBigNumberFontSize: true,
+            uniformBigNumberReferenceTexts: ['$3,808,637.34'],
+            metric_rows: [
+              {
+                slots: [
+                  {
+                    label: '同比',
+                    mode: 'time_shift',
+                    offset: '1 year ago',
+                    numberFormat: ',.2%',
+                  },
+                  {
+                    label: '环比',
+                    mode: 'time_shift',
+                    offset: '1 month ago',
+                    numberFormat: ',.2%',
+                  },
+                  { label: '信息', mode: 'metric', column: 'count' },
+                ],
+              },
+              {
+                slots: [
+                  { label: '详细', mode: 'metric', column: 'count' },
+                  { label: '信息', mode: 'metric', column: 'count' },
+                  // No column: hidden by the renderer, must not take a column.
+                  { label: '', mode: 'metric', show: true },
+                ],
+              },
+            ],
+          },
+        ),
+        width: 290,
+        height: 200,
+      }).echartOptions.graphic as Record<string, any>[];
+
+    test('reaches the right border even when the last indicator is short', () => {
+      const comparisons = costTotalGraphic().slice(2);
+      expect(comparisons).toHaveLength(5);
+      const longRow = comparisons.slice(0, 3);
+      const shortRow = comparisons.slice(3);
+      expect(String(longRow[2].style.text)).toContain('42');
+      const paintedRight = longRow[2].left + paintedWidth(longRow[2]);
+      // Uniform sizing fits the font with a shared design text that is much
+      // wider than "信息 ↑42". Reserving that design width used to stop the
+      // last indicator ~50px short of the border.
+      expect(paintedRight).toBeGreaterThan(290 - 30);
+      expect(paintedRight).toBeLessThanOrEqual(290 - 8);
+      // The shorter row still fills only the first two shared columns.
+      expect(shortRow[0].left).toBe(longRow[0].left);
+      expect(shortRow[1].left).toBe(longRow[1].left);
     });
   });
 

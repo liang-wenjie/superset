@@ -1043,11 +1043,23 @@ export default function transformProps(
     const displayIndexes = reverse
       ? [...activeIndexes].reverse()
       : activeIndexes;
+    const displayWidths = displayIndexes.map(
+      slotIndex => widths[slotIndex] ?? 0,
+    );
+    // Width of the text that is ACTUALLY painted, in display order. Uniform
+    // sizing fits the font against a shared design text, but that design text
+    // can be much wider than a short real value ("信息 ↑42"). Reserving its
+    // width for the last indicator made "widest spacing" stop well short of
+    // the right border on mixed-length rows.
+    const renderDisplayWidths = displayIndexes.map(
+      slotIndex => renderWidths[rowIndex]?.[slotIndex] ?? 0,
+    );
     return {
       contents,
       widths,
       displayIndexes,
-      displayWidths: displayIndexes.map(slotIndex => widths[slotIndex] ?? 0),
+      displayWidths,
+      renderDisplayWidths,
     };
   });
   // ONE step for every row. The floor keeps ANY row's adjacent indicators
@@ -1064,25 +1076,38 @@ export default function transformProps(
       .filter(layout => layout.displayIndexes.length > 1)
       .map(layout => {
         const count = layout.displayIndexes.length;
-        return Math.max(
-          0,
-          (layoutWidth - layout.displayWidths[count - 1]) / (count - 1),
-        );
+        // Only the LAST indicator owns the right edge, so measure it with the
+        // text that is really drawn. The design text is still used for the
+        // shared font size and for the non-overlap floor below.
+        const lastWidth =
+          layout.renderDisplayWidths[count - 1] ||
+          layout.displayWidths[count - 1];
+        return Math.max(0, (layoutWidth - lastWidth) / (count - 1));
       }),
   );
   const step = Math.max(minStep, Math.min(columnWidth + gapPullPx, maxStep));
   const comparisonLeftsForRow = (rowIndex: number): (number | null)[] => {
-    const { contents, widths, displayIndexes, displayWidths } =
-      rowLayouts[rowIndex];
+    const {
+      contents,
+      widths,
+      displayIndexes,
+      displayWidths,
+      renderDisplayWidths,
+    } = rowLayouts[rowIndex];
     const lefts: (number | null)[] = contents.map(() => null);
     displayIndexes.forEach((slotIndex, positionIndex) => {
       const desired = comparisonLeft + positionIndex * step;
-      // Clamp against the WIDER of the fit text and the text really drawn,
-      // so a long value can never be cut off by the tile border.
-      const textWidth = Math.max(
-        displayWidths[positionIndex],
-        renderWidths[rowIndex]?.[slotIndex] ?? 0,
-      );
+      const isLast = positionIndex === displayIndexes.length - 1;
+      // The last indicator is pinned against the border using the REAL text
+      // width, matching maxStep above. For the others keep the WIDER of the
+      // fit text and the real text so a long value can never be cut off and
+      // neighbouring indicators never overlap.
+      const textWidth = isLast
+        ? renderDisplayWidths[positionIndex] || displayWidths[positionIndex]
+        : Math.max(
+            displayWidths[positionIndex],
+            renderWidths[rowIndex]?.[slotIndex] ?? 0,
+          );
       lefts[slotIndex] = clampLeft(desired, textWidth);
     });
     if (rowIndex === 0 && hasLegacyComparisonLefts && maxSlotCount <= 2) {
