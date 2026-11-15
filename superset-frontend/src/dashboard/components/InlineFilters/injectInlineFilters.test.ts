@@ -20,6 +20,7 @@ import type { QueryFormData } from '@superset-ui/core';
 import { injectInlineFilters } from './injectInlineFilters';
 import {
   buildInlineAdhocFilter,
+  getEnabledInlineFilterQueryLabels,
   getInlineFilterDependencies,
   getInlineFilterTargetKeys,
   getInlineFilterType,
@@ -551,4 +552,99 @@ test('cascading defaults to siblings on the same query plus unscoped ones', () =
       f => f.id,
     ),
   ).toEqual(['c']);
+});
+
+test('enabled query labels follow the buildQuery C/D gating', () => {
+  expect(getEnabledInlineFilterQueryLabels({})).toEqual(['A', 'B']);
+  expect(getEnabledInlineFilterQueryLabels({ metrics_c: ['count'] })).toEqual([
+    'A',
+    'B',
+    'C',
+  ]);
+  expect(
+    getEnabledInlineFilterQueryLabels({
+      metrics_c: ['count'],
+      metrics_d: ['sum(sales)'],
+    }),
+  ).toEqual(['A', 'B', 'C', 'D']);
+  // D without C would create a sparse suffix -> queriesData mapping.
+  expect(
+    getEnabledInlineFilterQueryLabels({ metrics_d: ['sum(sales)'] }),
+  ).toEqual(['A', 'B']);
+  // ChartProps exposes camelCase form data.
+  expect(getEnabledInlineFilterQueryLabels({ metricsC: ['count'] })).toEqual([
+    'A',
+    'B',
+    'C',
+  ]);
+});
+
+test('getInlineFilterTargetKeys maps Query C and D onto their own keys', () => {
+  const keys = [INLINE_FILTER_ADHOC_KEY_A, INLINE_FILTER_ADHOC_KEY_B];
+  expect(
+    getInlineFilterTargetKeys({ ...single, queryScope: 'C' }, keys),
+  ).toEqual(['adhoc_filters_c']);
+  expect(
+    getInlineFilterTargetKeys({ ...single, queryScope: 'D' }, keys),
+  ).toEqual(['adhoc_filters_d']);
+});
+
+test('Query C and D scopes inject only into their own enabled query keys', () => {
+  const result = injectInlineFilters(
+    makeFormData({
+      metrics_c: ['count'],
+      metrics_d: ['sum(sales)'],
+    }),
+    [
+      { ...single, queryScope: 'C' },
+      { ...single, id: 'f2', queryScope: 'D' },
+    ],
+    { f1: 'East', f2: 'West' },
+  );
+  const source = result as unknown as Record<string, Filters>;
+  expect(injectedFilters(result)).toHaveLength(0);
+  expect(source.adhoc_filters_c).toHaveLength(1);
+  expect(source.adhoc_filters_c[0]).toMatchObject({
+    subject: 'category',
+    operator: '==',
+    comparator: 'East',
+    filterOptionName: 'inline_f1',
+  });
+  expect(source.adhoc_filters_d).toHaveLength(1);
+  expect(source.adhoc_filters_d[0]).toMatchObject({
+    subject: 'category',
+    operator: '==',
+    comparator: 'West',
+    filterOptionName: 'inline_f2',
+  });
+  expect(source.adhoc_filters_b).toEqual([]);
+});
+
+test('an unscoped filter reaches every enabled query', () => {
+  const result = injectInlineFilters(
+    makeFormData({ metrics_c: ['count'], metrics_d: ['sum(sales)'] }),
+    [single],
+    { f1: 'East' },
+  );
+  const source = result as unknown as Record<string, Filters>;
+  [
+    INLINE_FILTER_ADHOC_KEY_A,
+    INLINE_FILTER_ADHOC_KEY_B,
+    'adhoc_filters_c',
+    'adhoc_filters_d',
+  ].forEach(key => {
+    expect(source[key].filter(f => f.isExtra === true)).toHaveLength(1);
+  });
+});
+
+test('a Query D scope is ignored when Query D is not enabled', () => {
+  const result = injectInlineFilters(
+    makeFormData({ metrics_c: ['count'] }),
+    [{ ...single, queryScope: 'D' }],
+    { f1: 'East' },
+  );
+  const source = result as unknown as Record<string, Filters>;
+  expect(source.adhoc_filters_d).toBeUndefined();
+  expect(source.adhoc_filters_c).toEqual([]);
+  expect(injectedFilters(result)).toHaveLength(0);
 });

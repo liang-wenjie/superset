@@ -33,6 +33,7 @@ import type {
   InlineFilterChangeValue,
   InlineFilterConfig,
   InlineFilterMatchMode,
+  InlineFilterQueryLabel,
   InlineFilterQueryScope,
   InlineFilterType,
   InlineFilterValue,
@@ -42,6 +43,7 @@ import {
   isInlineFilterInput,
   isInlineFilterInverse,
   isInlineFilterMulti,
+  isInlineFilterQueryLabel,
   normalizeInlineFilterValue,
   sortInlineFilterOptions,
 } from 'src/dashboard/components/InlineFilters/types';
@@ -199,8 +201,13 @@ export interface InlineFiltersControlProps {
   datasourceType?: string;
   /** Datasource metrics offered in the "Sort metric" picker. */
   metrics?: MetricOption[];
-  /** Show the "Apply to" picker on charts with two query sections. */
+  /** Show the "Apply to" picker on charts with multiple query sections. */
   supportsMultipleQueries?: boolean;
+  /**
+   * Query sections the chart actually runs. When omitted, falls back to A/B
+   * for backwards compatibility with callers that only set the boolean above.
+   */
+  queryScopes?: InlineFilterQueryLabel[];
   onChange?: (value: InlineFilterConfig[]) => void;
   renderTrigger?: boolean;
   hovered?: boolean;
@@ -235,21 +242,33 @@ const FILTER_TYPE_LABELS: Record<InlineFilterType, string> = {
   input: t('Input'),
 };
 
-const QUERY_SCOPE_OPTIONS: { label: string; value: InlineFilterQueryScope }[] =
-  [
-    { label: t('Both queries'), value: 'all' },
-    { label: t('Query A'), value: 'A' },
-    { label: t('Query B'), value: 'B' },
-  ];
+const QUERY_SCOPE_LABELS: Record<InlineFilterQueryLabel, string> = {
+  A: t('Query A'),
+  B: t('Query B'),
+  C: t('Query C'),
+  D: t('Query D'),
+};
+
+/** Only the queries the chart actually runs are offered in the picker. */
+const getQueryScopeOptions = (
+  scopes: InlineFilterQueryLabel[],
+): { label: string; value: InlineFilterQueryScope }[] => [
+  {
+    // Keep the existing translation for legacy two-query charts.
+    label: scopes.length > 2 ? t('All queries') : t('Both queries'),
+    value: 'all',
+  },
+  ...scopes.map(scope => ({
+    label: QUERY_SCOPE_LABELS[scope],
+    value: scope as InlineFilterQueryScope,
+  })),
+];
 
 /** Labels are only shown for a filter explicitly bound to one query. */
 const getQueryScopeLabel = (
   scope?: InlineFilterQueryScope,
-): string | undefined => {
-  if (scope === 'A') return t('Query A');
-  if (scope === 'B') return t('Query B');
-  return undefined;
-};
+): string | undefined =>
+  isInlineFilterQueryLabel(scope) ? QUERY_SCOPE_LABELS[scope] : undefined;
 
 type ColumnValuesStatus = 'idle' | 'loading' | 'loaded' | 'empty' | 'error';
 
@@ -300,12 +319,15 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
   datasourceType,
   metrics = [],
   supportsMultipleQueries = false,
+  queryScopes,
   onChange,
   renderTrigger,
   hovered,
   validationErrors,
 }) => {
   const theme = useTheme();
+  const availableScopes: InlineFilterQueryLabel[] =
+    queryScopes ?? (supportsMultipleQueries ? ['A', 'B'] : []);
   const groups: InlineFilterConfig[] = Array.isArray(value) ? value : [];
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [createPair, setCreatePair] = useState(false);
@@ -356,22 +378,30 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
     if (isInlineFilterInput(draft)) draft.defaultToFirstItem = false;
     // `all` is the legacy shape: leaving the key out keeps charts saved before
     // this field existed unchanged and preserves the broadcast behaviour.
-    draft.queryScope =
-      draft.queryScope === 'A' || draft.queryScope === 'B'
-        ? draft.queryScope
-        : undefined;
+    draft.queryScope = isInlineFilterQueryLabel(draft.queryScope)
+      ? draft.queryScope
+      : undefined;
     const next =
       editor.index === null
         ? [...groups, draft]
         : groups.map((group, idx) => (idx === editor.index ? draft : group));
     // The paired shortcut only applies while creating a filter. Each button
     // gets its own id, which is what keeps the two selections independent in
-    // the runtime selection map.
-    if (createPair && editor.index === null && draft.queryScope !== undefined) {
+    // the runtime selection map. Pair with the next enabled query, wrapping
+    // around, so two-query charts keep the original A<->B behaviour.
+    if (
+      createPair &&
+      editor.index === null &&
+      isInlineFilterQueryLabel(draft.queryScope) &&
+      availableScopes.length > 1
+    ) {
+      const currentIndex = availableScopes.indexOf(draft.queryScope);
+      const pairIndex =
+        currentIndex < 0 ? 0 : (currentIndex + 1) % availableScopes.length;
       next.push({
         ...draft,
         id: nextId(),
-        queryScope: draft.queryScope === 'A' ? 'B' : 'A',
+        queryScope: availableScopes[pairIndex],
       });
     }
     emit(next);
@@ -720,14 +750,14 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
             )}
 
             <SectionTitle>{t('Filter settings')}</SectionTitle>
-            {supportsMultipleQueries && (
+            {availableScopes.length > 1 && (
               <>
                 <Row>
                   <FieldLabel>{t('Apply to')}</FieldLabel>
                   <StyledSelect
                     aria-label={t('Apply to query')}
                     value={draft.queryScope ?? 'all'}
-                    options={QUERY_SCOPE_OPTIONS}
+                    options={getQueryScopeOptions(availableScopes)}
                     onChange={(scope: string) =>
                       patchDraft({
                         queryScope: scope as InlineFilterQueryScope,
@@ -743,7 +773,8 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
                   )}
                 </Hint>
                 {editor?.index === null &&
-                  (draft.queryScope === 'A' || draft.queryScope === 'B') && (
+                  isInlineFilterQueryLabel(draft.queryScope) &&
+                  availableScopes.length > 1 && (
                     <>
                       <Row>
                         <Switch

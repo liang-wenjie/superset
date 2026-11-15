@@ -52,6 +52,8 @@ const SEARCH_DEBOUNCE_MS = 250;
 const QUERY_SCOPE_LABELS: Partial<Record<InlineFilterQueryScope, string>> = {
   A: t('Query A'),
   B: t('Query B'),
+  C: t('Query C'),
+  D: t('Query D'),
 };
 
 // Distinct values are usually much longer than the compact filter trigger.
@@ -362,6 +364,13 @@ export interface ChartInlineFilterBarProps {
    * endpoint for suggestions, not Query A's.
    */
   chartAdhocFiltersB?: JsonObject[];
+  /**
+   * Saved adhoc filters of Query C/D (``adhoc_filters_c`` /
+   * ``adhoc_filters_d``). A filter bound to one of those queries inherits its
+   * own WHERE clauses when asking the values endpoint for suggestions.
+   */
+  chartAdhocFiltersC?: JsonObject[];
+  chartAdhocFiltersD?: JsonObject[];
   /** Legacy ``formData.filters`` (``{col, op, val}``), inherited the same way. */
   chartLegacyFilters?: JsonObject[];
   /**
@@ -384,6 +393,8 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   datasourceType,
   chartAdhocFilters,
   chartAdhocFiltersB,
+  chartAdhocFiltersC,
+  chartAdhocFiltersD,
   chartLegacyFilters,
   dashboardFilters,
 }) => {
@@ -409,6 +420,8 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
   const selectionKey = JSON.stringify(selection);
   const chartAdhocFiltersKey = JSON.stringify(chartAdhocFilters);
   const chartAdhocFiltersBKey = JSON.stringify(chartAdhocFiltersB);
+  const chartAdhocFiltersCKey = JSON.stringify(chartAdhocFiltersC);
+  const chartAdhocFiltersDKey = JSON.stringify(chartAdhocFiltersD);
   const chartLegacyFiltersKey = JSON.stringify(chartLegacyFilters);
   const dashboardFiltersKey = JSON.stringify(dashboardFilters);
   const searchTermsKey = JSON.stringify(searchTerms);
@@ -489,10 +502,18 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
           }
         }
         try {
+          // A filter scoped to a secondary query must inherit that query's
+          // own saved WHERE clauses, not Query A's. Unscoped (and Query A)
+          // filters keep using `adhoc_filters`.
+          const adhocByQuery: Record<string, JsonObject[] | undefined> = {
+            B: chartAdhocFiltersB,
+            C: chartAdhocFiltersC,
+            D: chartAdhocFiltersD,
+          };
           const adhocForQuery =
-            f.queryScope === 'B'
-              ? (chartAdhocFiltersB ?? [])
-              : (chartAdhocFilters ?? []);
+            (f.queryScope ? adhocByQuery[f.queryScope] : undefined) ??
+            chartAdhocFilters ??
+            [];
           const whereAdhoc = adhocForQuery.filter(
             filter => (filter?.clause ?? 'WHERE') === 'WHERE',
           );
@@ -577,6 +598,8 @@ export const ChartInlineFilterBar: React.FC<ChartInlineFilterBarProps> = ({
     selectionKey,
     chartAdhocFiltersKey,
     chartAdhocFiltersBKey,
+    chartAdhocFiltersCKey,
+    chartAdhocFiltersDKey,
     chartLegacyFiltersKey,
     dashboardFiltersKey,
     searchTermsKey,

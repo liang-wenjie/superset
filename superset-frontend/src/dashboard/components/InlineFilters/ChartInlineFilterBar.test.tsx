@@ -783,6 +783,80 @@ test('a Query B filter inherits Query B saved filters for its value list', async
   ).toEqual(['from_b']);
 });
 
+test('a Query C filter inherits Query C saved filters for its value list', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['A'] } });
+  render(
+    <ChartInlineFilterBar
+      filters={[{ ...filters[0], queryScope: 'C' }]}
+      selection={{}}
+      onSelect={jest.fn()}
+      datasourceId={1}
+      datasourceType="table"
+      chartAdhocFilters={[
+        { clause: 'WHERE', subject: 'from_a', operator: '==', comparator: 'x' },
+      ]}
+      chartAdhocFiltersC={[
+        { clause: 'WHERE', subject: 'from_c', operator: '==', comparator: 'y' },
+      ]}
+    />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalled());
+  const { endpoint } = mockGet.mock.calls[0][0] as { endpoint: string };
+  const params = new URLSearchParams(endpoint.split('?')[1] ?? '');
+  const chartFilters = JSON.parse(params.get('chart_filters') ?? '{}');
+  expect(
+    (chartFilters.adhoc_filters ?? []).map(
+      (filter: { subject: string }) => filter.subject,
+    ),
+  ).toEqual(['from_c']);
+});
+
+test('a Query D filter inherits Query D saved filters for its value list', async () => {
+  mockGet.mockResolvedValue({ json: { result: ['A'] } });
+  render(
+    <ChartInlineFilterBar
+      filters={[{ ...filters[0], queryScope: 'D' }]}
+      selection={{}}
+      onSelect={jest.fn()}
+      datasourceId={1}
+      datasourceType="table"
+      chartAdhocFilters={[
+        { clause: 'WHERE', subject: 'from_a', operator: '==', comparator: 'x' },
+      ]}
+      chartAdhocFiltersD={[
+        { clause: 'WHERE', subject: 'from_d', operator: '==', comparator: 'y' },
+      ]}
+    />,
+  );
+  await waitFor(() => expect(mockGet).toHaveBeenCalled());
+  const { endpoint } = mockGet.mock.calls[0][0] as { endpoint: string };
+  const params = new URLSearchParams(endpoint.split('?')[1] ?? '');
+  const chartFilters = JSON.parse(params.get('chart_filters') ?? '{}');
+  expect(
+    (chartFilters.adhoc_filters ?? []).map(
+      (filter: { subject: string }) => filter.subject,
+    ),
+  ).toEqual(['from_d']);
+});
+
+test('Query C and D scoped filters are tagged with their query', () => {
+  render(
+    <ChartInlineFilterBar
+      filters={[
+        { ...filters[0], id: 'fc', queryScope: 'C' },
+        { ...filters[0], id: 'fd', queryScope: 'D' },
+      ]}
+      selection={{}}
+      onSelect={jest.fn()}
+    />,
+  );
+  expect(
+    screen
+      .getAllByTestId('inline-filter-scope-tag')
+      .map(tag => tag.textContent),
+  ).toEqual(['Query C', 'Query D']);
+});
+
 describe('reconcileInlineFilterSelections', () => {
   const config = { id: 'f', column: 'month' };
   const options = {

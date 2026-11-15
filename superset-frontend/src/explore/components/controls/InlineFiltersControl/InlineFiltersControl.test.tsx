@@ -179,6 +179,7 @@ interface InlineFiltersControlConfig {
     datasourceType?: string;
     metrics: { label: string; value: string }[];
     supportsMultipleQueries: boolean;
+    queryScopes: string[];
   };
 }
 
@@ -247,6 +248,31 @@ test('the query picker is offered only for charts with two query sections', () =
       form_data: { viz_type: 'table', datasource: '7__table' },
     }).supportsMultipleQueries,
   ).toBe(false);
+  expect(
+    inlineFiltersConfig.mapStateToProps({
+      form_data: { viz_type: 'mixed_timeseries', datasource: '7__table' },
+    }).queryScopes,
+  ).toEqual(['A', 'B']);
+  expect(
+    inlineFiltersConfig.mapStateToProps({
+      form_data: {
+        viz_type: 'mixed_timeseries',
+        metrics_c: ['count'],
+        metrics_d: ['sum(sales)'],
+      },
+    }).queryScopes,
+  ).toEqual(['A', 'B', 'C', 'D']);
+  // D without C must not create a sparse suffix -> queriesData mapping.
+  expect(
+    inlineFiltersConfig.mapStateToProps({
+      form_data: { viz_type: 'mixed_timeseries', metrics_d: ['sum(sales)'] },
+    }).queryScopes,
+  ).toEqual(['A', 'B']);
+  expect(
+    inlineFiltersConfig.mapStateToProps({
+      form_data: { viz_type: 'table' },
+    }).queryScopes,
+  ).toEqual([]);
 });
 
 test('the config actually rendered by Explore supplies datasource and metrics', () => {
@@ -1019,6 +1045,82 @@ test('the paired shortcut creates two independent filters', async () => {
   ).toEqual(['B', 'A']);
   expect(emitted[0].id).not.toBe(emitted[1].id);
   expect(emitted[1].column).toBe(emitted[0].column);
+});
+
+test('a two-query chart does not offer Query C or Query D', async () => {
+  render(
+    <InlineFiltersControl
+      {...props}
+      value={[]}
+      supportsMultipleQueries
+      queryScopes={['A', 'B']}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: '+ Add inline filter' }),
+  );
+  const select = screen.getByLabelText('Apply to query');
+  expect(select).toHaveTextContent('Both queries');
+  expect(select).not.toHaveTextContent('Query C');
+  expect(select).not.toHaveTextContent('Query D');
+});
+
+test('a four-query chart offers Query C and D and saves a C scope', async () => {
+  const onChange = jest.fn();
+  render(
+    <InlineFiltersControl
+      {...props}
+      value={[]}
+      supportsMultipleQueries
+      queryScopes={['A', 'B', 'C', 'D']}
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: '+ Add inline filter' }),
+  );
+  const select = screen.getByLabelText('Apply to query');
+  expect(select).toHaveTextContent('All queries');
+  expect(select).toHaveTextContent('Query C');
+  expect(select).toHaveTextContent('Query D');
+  await userEvent.selectOptions(
+    screen.getByLabelText('Column'),
+    '本年度销售额',
+  );
+  await userEvent.selectOptions(select, 'C');
+  await save();
+  expect(lastEmitted(onChange)[0]).toMatchObject({ queryScope: 'C' });
+});
+
+test('the paired shortcut advances to the next enabled query', async () => {
+  const onChange = jest.fn();
+  render(
+    <InlineFiltersControl
+      {...props}
+      value={[]}
+      supportsMultipleQueries
+      queryScopes={['A', 'B', 'C', 'D']}
+      onChange={onChange}
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: '+ Add inline filter' }),
+  );
+  await userEvent.selectOptions(
+    screen.getByLabelText('Column'),
+    '本年度销售额',
+  );
+  await userEvent.selectOptions(screen.getByLabelText('Apply to query'), 'C');
+  await userEvent.click(
+    screen.getByRole('switch', {
+      name: 'Also create a matching filter for the other query',
+    }),
+  );
+  await save();
+  const emitted = lastEmitted(onChange);
+  expect(
+    emitted.map((filter: { queryScope: string }) => filter.queryScope),
+  ).toEqual(['C', 'D']);
 });
 
 test('a scoped filter is labelled with its query in the compact list', () => {

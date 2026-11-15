@@ -35,11 +35,17 @@ export type HiddenDimensionLabel = {
   value: string;
 };
 
+/** Mirrors the query labels in `MixedTimeseries/queryConfig.ts`. */
+export const HIDDEN_DIMENSION_QUERY_LABELS = ['A', 'B', 'C', 'D'] as const;
+
+export type HiddenDimensionQueryLabel =
+  (typeof HIDDEN_DIMENSION_QUERY_LABELS)[number];
+
 /** Single-select values that belong to each query section of a mixed chart. */
-export type HiddenDimensionLabelsByQuery = {
-  A: HiddenDimensionLabel[];
-  B: HiddenDimensionLabel[];
-};
+export type HiddenDimensionLabelsByQuery = Record<
+  HiddenDimensionQueryLabel,
+  HiddenDimensionLabel[]
+>;
 
 type InlineFilterShape = {
   id?: unknown;
@@ -62,7 +68,8 @@ const INLINE_FILTER_PREFIX = 'inline_';
  * `ChartProps` stores two copies of form data: `rawFormData` keeps the original
  * snake_case keys while `formData` is passed through `convertKeysToCamelCase`.
  * Either one may be the copy that actually carries the injected filters, so
- * both spellings have to be recognized, including the `_b` Query B section.
+ * both spellings have to be recognized, including every suffixed query
+ * section (`_b`, `_c`, `_d` / `B`, `C`, `D`).
  */
 const isAdhocFilterKey = (key: string): boolean =>
   key === 'adhoc_filters' ||
@@ -90,16 +97,21 @@ const isSingleSelect = (config: InlineFilterShape): boolean => {
 const getInjectedSingleValues = (
   sources: Record<string, unknown>[],
   configs: InlineFilterShape[],
-): Record<'A' | 'B', Map<string, string>> => {
-  const result = {
-    A: new Map<string, string>(),
-    B: new Map<string, string>(),
-  };
+): Record<HiddenDimensionQueryLabel, Map<string, string>> => {
+  const result = Object.fromEntries(
+    HIDDEN_DIMENSION_QUERY_LABELS.map(label => [
+      label,
+      new Map<string, string>(),
+    ]),
+  ) as Record<HiddenDimensionQueryLabel, Map<string, string>>;
   const scopeById = new Map<string, string>();
   configs.forEach(config => {
     if (config && typeof config.id === 'string') {
       const scope =
-        config.queryScope === 'A' || config.queryScope === 'B'
+        typeof config.queryScope === 'string' &&
+        (HIDDEN_DIMENSION_QUERY_LABELS as readonly string[]).includes(
+          config.queryScope,
+        )
           ? config.queryScope
           : 'all';
       scopeById.set(config.id, scope);
@@ -129,10 +141,13 @@ const getInjectedSingleValues = (
         const scope = scopeById.get(id) ?? 'all';
         // A filter explicitly bound to one query only rewrites that query's
         // series names. Legacy (unscoped) filters keep the original behaviour:
-        // their selection applies to every query, regardless of which
+        // their selection applies to every enabled query, regardless of which
         // adhoc_filters* section happens to carry the injected clause.
-        if (scope === 'all' || scope === 'A') result.A.set(id, value);
-        if (scope === 'all' || scope === 'B') result.B.set(id, value);
+        HIDDEN_DIMENSION_QUERY_LABELS.forEach(label => {
+          if (scope === 'all' || scope === label) {
+            result[label].set(id, value);
+          }
+        });
       });
     });
   });
@@ -166,31 +181,38 @@ const getRecords = (
 
 /**
  * Single-select inline filters whose column is a chart dimension, split by
- * query section. A filter bound to Query A is injected only into
- * `adhoc_filters`, so it must not strip dimension values from Query B's
- * series names (and vice versa). Unscoped filters reach both queries.
+ * query section. A filter bound to one query is injected only into that
+ * query's `adhoc_filters*` key, so it must not strip dimension values from
+ * another query's series names. Unscoped filters reach every enabled query.
  */
 export function getHiddenDimensionLabelsByQuery(
   ...sources: (QueryFormData | undefined | null)[]
 ): HiddenDimensionLabelsByQuery {
+  const empty = () =>
+    Object.fromEntries(
+      HIDDEN_DIMENSION_QUERY_LABELS.map(label => [label, []]),
+    ) as unknown as HiddenDimensionLabelsByQuery;
   const records = getRecords(sources);
-  if (records.length === 0) return { A: [], B: [] };
+  if (records.length === 0) return empty();
   const configs = records.flatMap(getConfigs);
-  if (configs.length === 0) return { A: [], B: [] };
+  if (configs.length === 0) return empty();
   const selected = getInjectedSingleValues(records, configs);
-  return {
-    A: collectForQuery(configs, selected.A),
-    B: collectForQuery(configs, selected.B),
-  };
+  return Object.fromEntries(
+    HIDDEN_DIMENSION_QUERY_LABELS.map(label => [
+      label,
+      collectForQuery(configs, selected[label]),
+    ]),
+  ) as HiddenDimensionLabelsByQuery;
 }
 
 /** All single-select dimension labels, for single-query charts. */
 export function getHiddenDimensionLabels(
   ...sources: (QueryFormData | undefined | null)[]
 ): HiddenDimensionLabel[] {
-  const { A, B } = getHiddenDimensionLabelsByQuery(...sources);
+  const byQuery = getHiddenDimensionLabelsByQuery(...sources);
+  const all = HIDDEN_DIMENSION_QUERY_LABELS.flatMap(label => byQuery[label]);
   const seen = new Set<string>();
-  return [...A, ...B].filter(({ column, value }) => {
+  return all.filter(({ column, value }) => {
     const key = `${column}\u0000${value}`;
     if (seen.has(key)) return false;
     seen.add(key);

@@ -36,6 +36,9 @@ interface DashboardInlineFilterBarProps {
   chartAdhocFilters?: JsonObject[];
   /** Query B's saved adhoc filters for filters bound to Query B. */
   chartAdhocFiltersB?: JsonObject[];
+  /** Query C/D saved adhoc filters, for mixed charts enabling those queries. */
+  chartAdhocFiltersC?: JsonObject[];
+  chartAdhocFiltersD?: JsonObject[];
   /** Legacy chart filters (``{col, op, val}``), inherited the same way. */
   chartLegacyFilters?: JsonObject[];
   /** Runtime dashboard/cross filters already applied to this holder's query. */
@@ -68,6 +71,8 @@ export const DashboardInlineFilterBar: React.FC<
   datasourceType,
   chartAdhocFilters,
   chartAdhocFiltersB,
+  chartAdhocFiltersC,
+  chartAdhocFiltersD,
   chartLegacyFilters,
   dashboardFilters,
 }) => {
@@ -96,6 +101,8 @@ export const DashboardInlineFilterBar: React.FC<
       datasourceType={datasourceType}
       chartAdhocFilters={chartAdhocFilters}
       chartAdhocFiltersB={chartAdhocFiltersB}
+      chartAdhocFiltersC={chartAdhocFiltersC}
+      chartAdhocFiltersD={chartAdhocFiltersD}
       chartLegacyFilters={chartLegacyFilters}
       dashboardFilters={dashboardFilters}
     />

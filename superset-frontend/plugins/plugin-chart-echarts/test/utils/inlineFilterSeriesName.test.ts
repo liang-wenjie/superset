@@ -200,7 +200,9 @@ describe('getHiddenDimensionLabels', () => {
 });
 
 describe('getHiddenDimensionLabelsByQuery', () => {
-  test('a Query A filter never hides a Query B dimension label', () => {
+  const emptyCD = { C: [], D: [] };
+
+  test('a Query A filter never hides another query dimension label', () => {
     expect(
       getHiddenDimensionLabelsByQuery(
         makeFormData({ config: [{ ...singleConfig, queryScope: 'A' }] }),
@@ -208,6 +210,7 @@ describe('getHiddenDimensionLabelsByQuery', () => {
     ).toEqual({
       A: [{ column: 'gender', value: 'girl' }],
       B: [],
+      ...emptyCD,
     });
   });
 
@@ -222,6 +225,7 @@ describe('getHiddenDimensionLabelsByQuery', () => {
     ).toEqual({
       A: [],
       B: [{ column: 'gender', value: 'girl' }],
+      ...emptyCD,
     });
   });
 
@@ -239,32 +243,38 @@ describe('getHiddenDimensionLabelsByQuery', () => {
     expect(getHiddenDimensionLabelsByQuery(both)).toEqual({
       A: [{ column: 'gender', value: 'girl' }],
       B: [{ column: 'gender', value: 'boy' }],
+      ...emptyCD,
     });
   });
 
-  test('a legacy unscoped filter still affects both queries', () => {
+  test('a legacy unscoped filter still affects every query', () => {
     // Charts saved before query scopes existed may only carry the injected
-    // clause on Query A. Their selection must keep rewriting both queries'
+    // clause on Query A. Their selection must keep rewriting every query's
     // series names exactly as before.
+    const value = { column: 'gender', value: 'girl' };
     expect(getHiddenDimensionLabelsByQuery(makeFormData())).toEqual({
-      A: [{ column: 'gender', value: 'girl' }],
-      B: [{ column: 'gender', value: 'girl' }],
+      A: [value],
+      B: [value],
+      C: [value],
+      D: [value],
     });
   });
 
-  test('an unscoped injection present in both sections reaches both queries', () => {
+  test('an unscoped injection present in both sections reaches every query', () => {
     const both = asFormData({
       inline_filters: [singleConfig],
       adhoc_filters: [injected()],
       adhoc_filters_b: [injected()],
     });
+    const value = { column: 'gender', value: 'girl' };
     expect(getHiddenDimensionLabelsByQuery(both)).toEqual({
-      A: [{ column: 'gender', value: 'girl' }],
-      B: [{ column: 'gender', value: 'girl' }],
+      A: [value],
+      B: [value],
+      C: [value],
+      D: [value],
     });
-    expect(getHiddenDimensionLabels(both)).toEqual([
-      { column: 'gender', value: 'girl' },
-    ]);
+    // The flat single-query helper still de-duplicates across buckets.
+    expect(getHiddenDimensionLabels(both)).toEqual([value]);
   });
 
   test('reads camelCased Query B sections into the B bucket only', () => {
@@ -275,6 +285,45 @@ describe('getHiddenDimensionLabelsByQuery', () => {
     expect(getHiddenDimensionLabelsByQuery(camelCased)).toEqual({
       A: [],
       B: [{ column: 'gender', value: 'girl' }],
+      ...emptyCD,
+    });
+  });
+
+  test('routes Query C and Query D scopes into their own buckets', () => {
+    const fourQueries = asFormData({
+      inline_filters: [
+        { ...singleConfig, queryScope: 'C' },
+        { ...singleConfig, id: 'f4', queryScope: 'D' },
+      ],
+      adhoc_filters_c: [injected()],
+      adhoc_filters_d: [
+        injected({ filterOptionName: 'inline_f4', comparator: 'boy' }),
+      ],
+    });
+    expect(getHiddenDimensionLabelsByQuery(fourQueries)).toEqual({
+      A: [],
+      B: [],
+      C: [{ column: 'gender', value: 'girl' }],
+      D: [{ column: 'gender', value: 'boy' }],
+    });
+  });
+
+  test('reads camelCased Query C and Query D sections', () => {
+    const camelCased = asFormData({
+      inlineFilters: [
+        { ...singleConfig, queryScope: 'C' },
+        { ...singleConfig, id: 'f4', queryScope: 'D' },
+      ],
+      adhocFiltersC: [injected()],
+      adhocFiltersD: [
+        injected({ filterOptionName: 'inline_f4', comparator: 'boy' }),
+      ],
+    });
+    expect(getHiddenDimensionLabelsByQuery(camelCased)).toEqual({
+      A: [],
+      B: [],
+      C: [{ column: 'gender', value: 'girl' }],
+      D: [{ column: 'gender', value: 'boy' }],
     });
   });
 });

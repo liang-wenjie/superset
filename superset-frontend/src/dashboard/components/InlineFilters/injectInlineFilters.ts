@@ -20,10 +20,12 @@ import { ensureIsArray, JsonObject, QueryFormData } from '@superset-ui/core';
 import type { InlineFilterConfig, InlineFilterSelection } from './types';
 import {
   buildInlineAdhocFilter,
+  getEnabledInlineFilterQueryLabels,
+  getInlineFilterAdhocKey,
   getInlineFilterTargetKeys,
   INLINE_FILTER_ADHOC_KEY_A,
-  INLINE_FILTER_ADHOC_KEY_B,
   isInlineFilterMulti,
+  isInlineFilterQueryLabel,
   normalizeInlineFilterValue,
   resolveInlineFilterValue,
 } from './types';
@@ -37,16 +39,16 @@ const isAdhocFiltersKey = (key: string): boolean =>
  * filters are keyed by `inline_<id>` so re-injection is idempotent.
  *
  * Each filter declares which query section it targets: `queryScope: 'A'` goes
- * only to `adhoc_filters`, `'B'` only to `adhoc_filters_b`, and an unscoped
- * filter (the shape saved before this field existed) goes to every query
- * section the chart declares. Mixed charts run A and B as separate queries,
- * so scoping is what makes two buttons produce a comparison instead of
- * filtering both series with the same value.
+ * only to `adhoc_filters`, `'B'` to `adhoc_filters_b`, `'C'`/`'D'` to their
+ * own suffixed keys, and an unscoped filter (the shape saved before this
+ * field existed) goes to every enabled query section. Mixed charts can run up
+ * to four independent queries, so scoping is what makes two buttons produce
+ * a comparison instead of filtering every series with the same value.
  *
- * A scoped filter also materializes both query keys when they are missing.
- * `retainFormDataSuffix` falls back to Query A's `adhoc_filters` whenever the
- * chart has no `adhoc_filters_b`, so leaving that key absent would apply a
- * Query A button to Query B through the buildQuery layer.
+ * A scoped filter also materializes the keys of every enabled query when they
+ * are missing. The suffix-promotion layer falls back to Query A's
+ * `adhoc_filters` whenever a secondary query has no `adhoc_filters*` key, so
+ * leaving that key absent would apply a Query A button to the other queries.
  *
  * A filter with no entry in `selection` uses its configured `defaultValue`;
  * an explicitly cleared filter (`null`) does not, so "All" stays reachable.
@@ -61,28 +63,23 @@ export function injectInlineFilters(
 
   const source = formData as unknown as Record<string, unknown>;
   const adhocKeys = new Set(Object.keys(source).filter(isAdhocFiltersKey));
-  const hasScopedFilters = config.some(
-    cfg => cfg.queryScope === 'A' || cfg.queryScope === 'B',
+  const hasScopedFilters = config.some(cfg =>
+    isInlineFilterQueryLabel(cfg.queryScope),
   );
   // A chart with a Query B section (any `*_b` control) always declares both
   // keys. Unscoped filters must reach both sections explicitly: relying on
   // filter sharing to copy them over would lose the clauses when the build
   // query strips inline filters from the shared list.
   const hasQueryBSection = Object.keys(source).some(key => key.endsWith('_b'));
-  // A mixed chart can enable extra queries (C/D) by configuring their
-  // metrics. Materialize each enabled query's adhoc-filter key so an
-  // unscoped filter reaches them too; without the key the injection layer has
-  // nowhere to put the clause and that query would silently ignore it.
-  const extraQuerySuffixes = (['_c', '_d'] as const).filter(
-    suffix =>
-      ensureIsArray(source[`metrics${suffix}`] as unknown[] | undefined)
-        .length > 0,
-  );
-  if (hasScopedFilters || hasQueryBSection || extraQuerySuffixes.length > 0) {
-    adhocKeys.add(INLINE_FILTER_ADHOC_KEY_A);
-    adhocKeys.add(INLINE_FILTER_ADHOC_KEY_B);
-    extraQuerySuffixes.forEach(suffix => {
-      adhocKeys.add(`adhoc_filters${suffix}`);
+  // Mixed charts enable C/D by configuring their metrics. Materialize the
+  // adhoc-filter key of every enabled query so an unscoped filter reaches
+  // them too; the injection layer has nowhere to put a clause otherwise.
+  // A scope naming a query that is no longer enabled resolves to a key absent
+  // from `adhocKeys`, so its clause is dropped by the `entries` loop below.
+  const enabledQueries = getEnabledInlineFilterQueryLabels(source);
+  if (hasScopedFilters || hasQueryBSection || enabledQueries.length > 2) {
+    enabledQueries.forEach(label => {
+      adhocKeys.add(getInlineFilterAdhocKey(label));
     });
   }
   if (adhocKeys.size === 0) return formData;

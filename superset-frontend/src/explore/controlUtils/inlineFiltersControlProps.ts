@@ -17,6 +17,8 @@
  * under the License.
  */
 import { t } from '@apache-superset/core/translation';
+import { getEnabledInlineFilterQueryLabels } from 'src/dashboard/components/InlineFilters/types';
+import type { InlineFilterQueryLabel } from 'src/dashboard/components/InlineFilters/types';
 
 export const INLINE_FILTERS_CONTROL_DESCRIPTION = t(
   'Add quick-filter dropdowns at the top-left of the chart. Click "+ Add ' +
@@ -40,6 +42,11 @@ export type InlineFiltersControlProps = {
   metrics: InlineFilterMetricOption[];
   /** True for charts that declare a second query section (`*_b`). */
   supportsMultipleQueries: boolean;
+  /**
+   * Query sections the chart actually runs: A/B for a two-query chart, plus
+   * C/D when their metrics are configured. Empty for single-query charts.
+   */
+  queryScopes: InlineFilterQueryLabel[];
 };
 
 /**
@@ -130,11 +137,19 @@ export function getInlineFiltersControlProps(
   const supportsMultipleQueries =
     formData.viz_type === 'mixed_timeseries' || hasQueryBControls;
 
+  // Mixed charts run A and B unconditionally; C/D are enabled in order by
+  // their own metrics. Offer only those query sections in the "Apply to"
+  // picker so a two-query chart never shows inert C/D options.
+  const queryScopes = supportsMultipleQueries
+    ? getEnabledInlineFilterQueryLabels(formData)
+    : [];
+
   return {
     columns: datasource?.columns ?? [],
     datasourceId: datasource?.id ?? keyId,
     datasourceType: datasource?.type ?? keyType,
     metrics: metricOptions,
     supportsMultipleQueries,
+    queryScopes,
   };
 }

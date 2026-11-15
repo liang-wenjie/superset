@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { ensureIsArray } from '@superset-ui/core';
 
 /** A single inline filter value as returned by the column values endpoint. */
 export type InlineFilterValue = string | number | boolean;
@@ -88,27 +89,81 @@ export type InlineFilterMatchMode = 'exact' | 'contains';
 /**
  * Which query section a filter targets in a multi-query chart. `all` (and a
  * missing value, for charts saved before this field existed) applies the
- * filter to every query section, preserving the original behaviour.
+ * filter to every enabled query section, preserving the original behaviour.
+ * The labels mirror `MixedTimeseries/queryConfig.ts`: A/B always run, C/D are
+ * enabled in order by their own metrics.
  */
-export type InlineFilterQueryScope = 'all' | 'A' | 'B';
+export const INLINE_FILTER_QUERY_LABELS = ['A', 'B', 'C', 'D'] as const;
+
+export type InlineFilterQueryLabel =
+  (typeof INLINE_FILTER_QUERY_LABELS)[number];
+
+export type InlineFilterQueryScope = 'all' | InlineFilterQueryLabel;
+
+/** Adhoc-filter key carrying the WHERE clauses of each query section. */
+export const INLINE_FILTER_ADHOC_KEYS: Record<InlineFilterQueryLabel, string> =
+  {
+    A: 'adhoc_filters',
+    B: 'adhoc_filters_b',
+    C: 'adhoc_filters_c',
+    D: 'adhoc_filters_d',
+  };
 
 /** Query A stores its adhoc filters on the unsuffixed key. */
-export const INLINE_FILTER_ADHOC_KEY_A = 'adhoc_filters';
+export const INLINE_FILTER_ADHOC_KEY_A = INLINE_FILTER_ADHOC_KEYS.A;
 
 /** Mixed charts keep Query B's adhoc filters on the `_b` suffixed key. */
-export const INLINE_FILTER_ADHOC_KEY_B = 'adhoc_filters_b';
+export const INLINE_FILTER_ADHOC_KEY_B = INLINE_FILTER_ADHOC_KEYS.B;
+
+export const isInlineFilterQueryLabel = (
+  value: unknown,
+): value is InlineFilterQueryLabel =>
+  typeof value === 'string' &&
+  (INLINE_FILTER_QUERY_LABELS as readonly string[]).includes(value);
+
+export const getInlineFilterAdhocKey = (
+  label: InlineFilterQueryLabel,
+): string => INLINE_FILTER_ADHOC_KEYS[label];
+
+/**
+ * Query sections a mixed-timeseries chart actually runs. A/B are
+ * unconditional; C/D require their own metrics and are enabled in order so
+ * the labels keep matching `queriesData` indexes. Mirrors
+ * `getEnabledQueryCount` in `MixedTimeseries/queryConfig.ts` — keep in sync.
+ *
+ * `form_data` is snake_case while `ChartProps.formData` is camelCased, so
+ * both `metrics_c` and `metricsC` are accepted.
+ */
+export const getEnabledInlineFilterQueryLabels = (
+  formData: Record<string, unknown>,
+): InlineFilterQueryLabel[] => {
+  const labels: InlineFilterQueryLabel[] = ['A', 'B'];
+  const hasMetrics = (label: 'C' | 'D'): boolean => {
+    const value =
+      formData[`metrics_${label.toLowerCase()}`] ?? formData[`metrics${label}`];
+    return ensureIsArray(value as unknown[] | undefined).length > 0;
+  };
+  if (hasMetrics('C')) {
+    labels.push('C');
+    if (hasMetrics('D')) labels.push('D');
+  }
+  return labels;
+};
 
 /**
  * Keys a filter's WHERE clause belongs in. Scoped filters always target their
- * own key; the injection layer materializes a missing key so Query B never
- * silently inherits Query A's filters through `retainFormDataSuffix`.
+ * own key; the injection layer materializes the keys of enabled queries so a
+ * secondary query never silently inherits Query A's filters through the
+ * suffix-promotion layer. A scope naming a query the chart no longer runs is
+ * simply dropped by the injection layer (only enabled keys are written).
  */
 export function getInlineFilterTargetKeys(
   config: InlineFilterConfig,
   availableKeys: string[],
 ): string[] {
-  if (config.queryScope === 'A') return [INLINE_FILTER_ADHOC_KEY_A];
-  if (config.queryScope === 'B') return [INLINE_FILTER_ADHOC_KEY_B];
+  if (isInlineFilterQueryLabel(config.queryScope)) {
+    return [getInlineFilterAdhocKey(config.queryScope)];
+  }
   return availableKeys;
 }
 
@@ -203,7 +258,9 @@ export interface InlineFilterConfig {
   /**
    * Query section this filter applies to in a multi-query chart. A missing
    * value means `all`, so charts saved before this field existed keep
-   * filtering every query section unchanged.
+   * filtering every query section unchanged. Only the query sections the chart
+   * actually runs are offered in the picker; a stale scope is ignored by the
+   * injection layer instead of adding a clause to a non-existent query.
    */
   queryScope?: InlineFilterQueryScope;
 }

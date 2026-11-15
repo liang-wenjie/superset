@@ -959,6 +959,16 @@ const Chart = (props: ChartProps) => {
               | JsonObject[]
               | undefined
           }
+          chartAdhocFiltersC={
+            (chart?.form_data as JsonObject | undefined)?.adhoc_filters_c as
+              | JsonObject[]
+              | undefined
+          }
+          chartAdhocFiltersD={
+            (chart?.form_data as JsonObject | undefined)?.adhoc_filters_d as
+              | JsonObject[]
+              | undefined
+          }
           chartLegacyFilters={
             (chart?.form_data as JsonObject | undefined)?.filters as
               | JsonObject[]
