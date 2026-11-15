@@ -28,8 +28,8 @@ export const INLINE_FILTERS_CONTROL_DESCRIPTION = t(
     '(ascending / descending), "Select first filter value by default" ' +
     '(otherwise pick a real column value as the default), sort metric, ' +
     'search box, required, an inverse selection switch and dependencies ' +
-    'on the other filters. On charts with two queries, each filter can be ' +
-    'bound to Query A or Query B so two buttons filter them independently ' +
+    'on the other filters. On charts with multiple queries, each filter can ' +
+    'be bound to one query so several buttons filter them independently ' +
     'for comparison. Changes are saved when the dialog is confirmed.',
 );
 

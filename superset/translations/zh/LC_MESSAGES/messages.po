@@ -6484,14 +6484,14 @@ msgid "Density"
 msgstr "密度"
 
 msgid "Dependencies"
-msgstr ""
+msgstr "依赖项"
 
 #, fuzzy
 msgid "Dependent on"
 msgstr "取决于"
 
 msgid "Depends on"
-msgstr ""
+msgstr "依赖于"
 
 msgid "Deployment default"
 msgstr ""
@@ -9899,7 +9899,7 @@ msgid "Label Line"
 msgstr "标签线"
 
 msgid "Label Position"
-msgstr ""
+msgstr "标签位置"
 
 msgid "Label Template"
 msgstr "标签模板"
@@ -23242,3 +23242,319 @@ msgstr "不冻结"
 #: superset-frontend/plugins/plugin-chart-table/src/controlPanel.tsx
 msgid "Keep this many leftmost columns visible while scrolling horizontally. Requires sticky table headers."
 msgstr "横向滚动时保持左侧指定数量的列始终可见。需要启用表头固定（Sticky header）。"
+
+#: superset-frontend/src/dashboard/components/InlineFilters/ChartInlineFilterBar.tsx
+msgid " (exclude)"
+msgstr " （排除）"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "+ Add inline filter"
+msgstr "+ 添加内联筛选器"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Add inline filter"
+msgstr "添加内联筛选器"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Add query identifiers to tooltips to help differentiate series"
+msgstr "在提示框中添加查询标识，以区分不同序列"
+
+#: superset-frontend/src/explore/controlUtils/inlineFiltersControlProps.ts
+msgid "Add quick-filter dropdowns at the top-left of the chart. Click \"+ Add inline filter\" to configure a filter in a dialog: filter type (single / multiple / text input, with exact or fuzzy matching for text input), column, label, description, sort direction (ascending / descending), \"Select first filter value by default\" (otherwise pick a real column value as the default), sort metric, search box, required, an inverse selection switch and dependencies on the other filters. On charts with multiple queries, each filter can be bound to one query so several buttons filter them independently for comparison. Changes are saved when the dialog is confirmed."
+msgstr "在图表左上角添加快捷筛选下拉框。点击「+ 添加内联筛选器」在对话框中配置筛选器：筛选类型（单选／多选／文本输入，文本输入支持精确或模糊匹配）、字段、标签、描述、排序方向（升序／降序）、「默认选中首个筛选值」（否则选择一个真实的字段值作为默认值）、排序指标、搜索框、必填、反选开关以及对其他筛选器的依赖。在多查询图表上，每个筛选器可绑定到某一个查询，从而用多个按钮独立筛选以便对比。更改在确认对话框后保存。"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Advanced analytics Query C"
+msgstr "高级分析 查询 C"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Advanced analytics Query D"
+msgstr "高级分析 查询 D"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "All queries"
+msgstr "所有查询"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "All sibling inline filters"
+msgstr "所有同级内联筛选器"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Also create a matching filter for the other query"
+msgstr "同时为另一个查询创建匹配的筛选器"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Apply Query A’s filters to the other queries as well, so categories Query A filtered out do not appear on the shared x-axis. Each query’s own filters, when it defines any, take precedence."
+msgstr "把查询 A 的筛选条件同时应用到其他查询，使查询 A 已排除的类目不会出现在共享 X 轴上；其他查询若定义了自己的筛选条件，则以自身为准。"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Apply Query A’s sort metric, sort direction, row limit and empty-column handling to the other queries as well, so all queries select the same categories."
+msgstr "把查询 A 的排序指标、排序方向、行数上限和空列处理方式同时应用到其他查询，使所有查询选出相同的类目。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Apply to"
+msgstr "应用于"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Apply to query"
+msgstr "应用于查询"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Ascending"
+msgstr "升序"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Ascending or descending order of the dropdown values. It also decides which value counts as \"first\" when the switch below is on."
+msgstr "下拉选项值的升序或降序排列；下方开关打开时，它也决定哪个值算作「首个」。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Bind this filter to one query, or leave it on the shared option to filter every query with the same value. Two filters on the same column, one per query, let you compare them."
+msgstr "把此筛选器绑定到某一个查询，或保留共享选项，用同一个值筛选所有查询。同一字段上分别绑定不同查询的两个筛选器可用于对比。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Both queries"
+msgstr "两个查询"
+
+#: superset-frontend/src/explore/controlPanels/sections.tsx
+msgid "Chart inline filters"
+msgstr "图表内联筛选器"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Could not load this column's values (check dataset permissions). You can still type a value."
+msgstr "无法加载该字段的值（请检查数据集权限）。仍可手动输入一个值。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Creates a second button with the same settings, bound to the other query. Each button keeps its own selection."
+msgstr "以相同设置创建第二个按钮，绑定到另一个查询。每个按钮保留各自的选择。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Default value"
+msgstr "默认值"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Default value & sorting"
+msgstr "默认值与排序"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Descending"
+msgstr "降序"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Display label"
+msgstr "显示标签"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Draw the primary value axis on the right and the secondary value axis on the left. Each series keeps its own scale, bounds and number format; only the side its axis is drawn on changes."
+msgstr "把主数值轴绘制在右侧、次数值轴绘制在左侧。每个序列仍保留自己的刻度、边界和数值格式，仅改变其坐标轴的绘制侧。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Edit inline filter"
+msgstr "编辑内联筛选器"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Exact match"
+msgstr "精确匹配"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Exact match filters on equality; fuzzy match wraps the typed text in wildcards and uses a case-insensitive contains comparison."
+msgstr "精确匹配按相等比较；模糊匹配会为输入文本加上通配符，并使用不区分大小写的包含比较。"
+
+#: superset-frontend/src/dashboard/components/InlineFilters/ChartInlineFilterBar.tsx
+msgid "Exclude"
+msgstr "排除"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Exclude the selected values instead of including them: != / NOT IN, or NOT ILIKE for a fuzzy text input. Works with every filter type."
+msgstr "排除所选值而不是包含它们：!= / NOT IN，模糊文本输入则使用 NOT ILIKE。适用于所有筛选类型。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Field"
+msgstr "字段"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Filter settings"
+msgstr "筛选器设置"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "First value (ascending)"
+msgstr "首个值（升序）"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "First value (descending)"
+msgstr "首个值（降序）"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Fuzzy match (contains)"
+msgstr "模糊匹配（包含）"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Input"
+msgstr "输入"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Keep rows whose aggregate values are all empty, so the x-axis still lists every category (values stay blank)."
+msgstr "保留聚合值全为空的行，使 X 轴仍列出所有类目（数值保持空白）。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Label (e.g. Category)"
+msgstr "标签（例如：分类）"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Leave empty to follow every sibling inline filter. Turn the switch off to stop inheriting their values entirely."
+msgstr "留空表示跟随所有同级内联筛选器；关闭开关可完全停止继承它们的值。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Let users type in the dropdown to search the available values. The search is sent to the server, so high-cardinality columns work too."
+msgstr "允许用户在下拉框中输入以搜索可用值。搜索会发送到服务端，因此高基数字段同样适用。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Loading the values of this column..."
+msgstr "正在加载该字段的值…"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Match mode"
+msgstr "匹配方式"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Minimum label column width"
+msgstr "标签列最小宽度"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Minimum width in pixels for the series-name column of the data table. 0 fits the column to the longest series name. Value columns stay aligned to the X axis categories."
+msgstr "数据表中序列名称列的最小宽度（像素）。0 表示按最长序列名称自适应；数值列仍与 X 轴类目对齐。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Multi"
+msgstr "多选"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Multiple select"
+msgstr "多选"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "No column values loaded. Type a value to use as the default."
+msgstr "尚未加载字段值。可手动输入一个值作为默认值。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "No inline filters configured."
+msgstr "尚未配置内联筛选器。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "No saved metrics on this dataset. Type a saved metric name, or leave this empty to sort by value."
+msgstr "该数据集没有已保存的指标。可输入已保存指标的名称，或留空以按值排序。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "No values were returned for this column. Type a value to use as the default."
+msgstr "该字段未返回任何值。可手动输入一个值作为默认值。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Order the available values by a saved metric instead of by the value itself. This runs an extra query per filter. Leave empty to sort by value."
+msgstr "按已保存指标而非值本身对可用值排序。每个筛选器会额外发起一次查询；留空则按值排序。"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Orientation of the chart. For horizontal bars, set every query to the Bar series type."
+msgstr "图表方向。使用横向条形图时，请把每个查询的序列类型都设为 Bar（条形）。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Pick a real value of this column. Applied only on first load; an explicit clear keeps the filter cleared."
+msgstr "选择该字段的一个真实值。仅在首次加载时生效；用户显式清空后筛选器保持清空。"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+#: superset-frontend/src/dashboard/components/InlineFilters/ChartInlineFilterBar.tsx
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Query C"
+msgstr "查询 C"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+#: superset-frontend/src/dashboard/components/InlineFilters/ChartInlineFilterBar.tsx
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Query D"
+msgstr "查询 D"
+
+#: superset-frontend/src/explore/controlPanels/sections.tsx
+msgid "Quick-filter dropdowns rendered at the top-left of the chart. Picking a value re-queries this chart only. On charts with multiple queries, a filter can be bound to a specific query."
+msgstr "在图表左上角渲染快捷筛选下拉框。选择值只会重新查询当前图表。在多查询图表上，筛选器可绑定到指定的查询。"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Render a table under the X axis with one row per series and columns aligned to the X axis categories. Vertical charts only."
+msgstr "在 X 轴下方渲染表格，每个序列一行，列与 X 轴类目对齐。仅支持竖向图表。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Select a column first"
+msgstr "请先选择字段"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Select a column first, then pick or type its default value."
+msgstr "请先选择字段，再选择或输入其默认值。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Select default value"
+msgstr "选择默认值"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Share filters with Query A"
+msgstr "与查询 A 共享筛选条件"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Share settings with Query A"
+msgstr "与查询 A 共享设置"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Show data table below X axis"
+msgstr "在 X 轴下方显示数据表"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Show search box"
+msgstr "显示搜索框"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Shown as a tooltip on the filter label"
+msgstr "作为提示信息显示在筛选器标签旁"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Single and Multiple show a value dropdown; Text input lets users type a value instead of picking one. Use the Inverse selection switch below to exclude matches."
+msgstr "单选和多选显示值下拉框；文本输入允许用户直接输入值。使用下方的「反选」开关可排除匹配项。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Single select"
+msgstr "单选"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Sort by the value itself"
+msgstr "按值本身排序"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx
+msgid "Swap Y axes"
+msgstr "交换 Y 轴"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Text input"
+msgstr "文本输入"
+
+#: superset-frontend/src/explore/controlPanels/sections.tsx
+msgid "The minimum number of rolling periods required to show a value. For instance if you do a cumulative sum on 7 days you may want your \"Min Period\" to be 7, so that all data points shown are the total of 7 periods. This will hide the \"ramp up\" taking place over the first 7 periods"
+msgstr "显示数值所需的最小滚动周期数。例如对 7 天做累计求和时，可把「最小周期」设为 7，使所有数据点都是 7 个周期的合计，从而隐藏前 7 个周期的「爬升」过程。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "These values depend on other filters"
+msgstr "这些值依赖其他筛选器"
+
+#: superset-frontend/src/dashboard/components/InlineFilters/ChartInlineFilterBar.tsx
+msgid "Type an exact value"
+msgstr "输入精确值"
+
+#: superset-frontend/src/dashboard/components/InlineFilters/ChartInlineFilterBar.tsx
+msgid "Type to search (contains)"
+msgstr "输入以搜索（包含）"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "Users cannot clear a required filter. Without a default value, the first available value is applied automatically."
+msgstr "用户无法清空必填筛选器。未设置默认值时，将自动应用首个可用值。"
+
+#: superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/index.ts
+msgid "Visualize multiple series using the same x-axis. Each query can be visualized with a different chart type (e.g. bars and a line)."
+msgstr "在同一 X 轴上可视化多个序列。每个查询可使用不同的图表类型（例如条形和折线）。"
+
+#: superset-frontend/src/explore/components/controls/InlineFiltersControl/index.tsx
+msgid "When on, the first value after sorting is selected automatically and a custom default cannot be set. Switching it off lets you pick a value from the dropdown below."
+msgstr "开启后，排序后的首个值会被自动选中，且无法设置自定义默认值；关闭后可在下方下拉框中选择值。"

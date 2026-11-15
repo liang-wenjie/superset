@@ -769,7 +769,7 @@ const InlineFiltersControl: React.FC<InlineFiltersControlProps> = ({
                 </Row>
                 <Hint>
                   {t(
-                    'Bind this filter to one query, or leave it on Both queries to filter every query with the same value. Two filters on the same column, one per query, let you compare them.',
+                    'Bind this filter to one query, or leave it on the shared option to filter every query with the same value. Two filters on the same column, one per query, let you compare them.',
                   )}
                 </Hint>
                 {editor?.index === null &&

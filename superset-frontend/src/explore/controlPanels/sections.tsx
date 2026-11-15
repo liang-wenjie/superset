@@ -105,7 +105,7 @@ export const annotations: ControlPanelSectionConfig = {
 export const inlineFilters: ControlPanelSectionConfig = {
   label: t('Chart inline filters'),
   description: t(
-    'Quick-filter dropdowns rendered at the top-left of the chart. Picking a value re-queries this chart only. On charts with two queries, a filter can be bound to Query A or Query B.',
+    'Quick-filter dropdowns rendered at the top-left of the chart. Picking a value re-queries this chart only. On charts with multiple queries, a filter can be bound to a specific query.',
   ),
   expanded: true,
   // Do not use the plain 'inline_filters' string shortcut here. That resolves
